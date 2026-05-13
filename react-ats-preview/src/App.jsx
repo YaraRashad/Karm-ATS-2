@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.mjs?url";
 import mammoth from "mammoth/mammoth.browser";
+import { createWorker } from "tesseract.js";
 import {
   authConfigReady,
   backendActions,
@@ -831,7 +832,7 @@ function LegacyAtsApp({ sessionUser, backendData, dataError, reloadData, logout:
   const pages = { dashboard: DashboardPage, requests: HiringRequestsPage, jobs: JobsPage, candidates: CandidatesPage, pipeline: PipelinePage, interviews: InterviewsPage, offers: OffersPage, settings: SettingsPage };
   const PageComponent = pages[activePage] || DashboardPage;
 
-  const ctx = { jobs: scopedJobs, setJobs, candidates: scopedCandidates, setCandidates, applications: scopedApplications, setApplications, scorecards, setScorecards, offers: scopedOffers, setOffers, interviews: scopedInterviews, setInterviews, hiringRequests: scopedHiringRequests, setHiringRequests, roleAssignments, setRoleAssignments, ROLES_CONFIG, auditLogs: derivedAuditLogs, backendUsers: allUsers, openModal, closeModal, currentRole, roleConfig, canViewSalary, canApproveOffers, allUsers, stageIndex, backendActions, reloadData, sessionUser };
+  const ctx = { jobs: scopedJobs, setJobs, candidates: scopedCandidates, setCandidates, applications: scopedApplications, setApplications, scorecards, setScorecards, offers: scopedOffers, setOffers, interviews: scopedInterviews, setInterviews, hiringRequests: scopedHiringRequests, setHiringRequests, roleAssignments, setRoleAssignments, ROLES_CONFIG, auditLogs: derivedAuditLogs, dashboardAuditLogs: auditLogs, backendUsers: allUsers, openModal, closeModal, currentRole, roleConfig, canViewSalary, canApproveOffers, allUsers, stageIndex, backendActions, reloadData, sessionUser };
 
   return (
     <>
@@ -914,7 +915,7 @@ function ModalRouter({ modal, closeModal, ctx }) {
 }
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
-function DashboardPage({ jobs, candidates, applications, offers, interviews, scorecards, currentRole, roleConfig, openModal }) {
+function DashboardPage({ jobs, candidates, applications, offers, interviews, scorecards, dashboardAuditLogs = [], currentRole, roleConfig, openModal }) {
   const openJobs = jobs.filter(j => j.status === "Open").length;
   const activeApps = applications.filter(a => a.status === "Active").length;
   const hiredApps = applications.filter(a => a.stage === "Hired").length;
@@ -946,13 +947,29 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, sco
   const topSources = Object.entries(sourceCount).sort((a, b) => b[1] - a[1]);
   const maxSource = Math.max(...Object.values(sourceCount), 1);
 
-  const recentActivities = [
-    { text: "Sara El-Sayed moved to Final Interview", time: "2h ago", color: "#4f8ef7" },
-    { text: "Offer created for Sara El-Sayed (Job: BDM)", time: "3h ago", color: "#f59e0b" },
-    { text: "Ahmed Kamel scorecard submitted by Mohi Mohsen", time: "5h ago", color: "#2dd4b4" },
-    { text: "New candidate: Youssef Tawfik added (O&M Technician)", time: "8h ago", color: "#a78bfa" },
-    { text: "Financial Controller req opened by Yara Rashad", time: "1d ago", color: "#fb923c" },
-  ];
+  const activityColor = (action) => {
+    const normalized = String(action || "").toLowerCase();
+    if (normalized.includes("offer")) return "#f59e0b";
+    if (normalized.includes("reject")) return "#f87171";
+    if (normalized.includes("interview") || normalized.includes("scorecard")) return "#2dd4b4";
+    if (normalized.includes("candidate")) return "#4f8ef7";
+    if (normalized.includes("requisition") || normalized.includes("position")) return "#a78bfa";
+    return "#4f8ef7";
+  };
+  const activityText = (log) => {
+    const action = log.action ? String(log.action) : "System activity";
+    const user = log.user ? ` by ${log.user}` : "";
+    const change = log.newValue && log.newValue !== "—" ? ` → ${log.newValue}` : "";
+    return `${action}${change}${user}`;
+  };
+  const recentActivities = dashboardAuditLogs
+    .slice(0, 8)
+    .map(log => ({
+      id: log.id,
+      text: activityText(log),
+      time: formatRelativeActivity(log.at),
+      color: activityColor(log.action),
+    }));
 
   return (
     <>
@@ -1041,15 +1058,19 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, sco
           <div className="card">
             <div className="card-header"><div className="card-title">Recent activity</div></div>
             <div className="card-body" style={{ padding: "12px 20px" }}>
-              {recentActivities.map((a, i) => (
-                <div key={i} className="activity-item">
+              {recentActivities.length > 0 ? recentActivities.map((a, i) => (
+                <div key={a.id || i} className="activity-item">
                   <div style={{ width: 8, height: 8, borderRadius: "50%", background: a.color, marginTop: 5, flexShrink: 0 }} />
                   <div>
                     <div className="activity-text">{a.text}</div>
                     <div className="activity-time">{a.time}</div>
                   </div>
                 </div>
-              ))}
+              )) : (
+                <div style={{ padding: "24px 0", color: "var(--text3)", fontSize: 12, textAlign: "center" }}>
+                  No production activity recorded yet.
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -2134,12 +2155,13 @@ function CandidatesPage({ candidates, setCandidates, applications, jobs, roleCon
 }
 
 // ── CV PARSER MODAL ───────────────────────────────────────────────────────────
-function CVParserModal({ jobs, setJobs, candidates, setCandidates, applications, setApplications, closeModal, ctx }) {
+function CVParserModal({ jobs, setJobs, candidates, setCandidates, applications, setApplications, closeModal, ctx, initialFiles = null }) {
   const [phase, setPhase] = useState("drop"); // drop | parsing | review | done
   const [dragOver, setDragOver] = useState(false);
   const [parsedFiles, setParsedFiles] = useState([]); // [{fileName, extracted, editing}]
   const [currentIdx, setCurrentIdx] = useState(0);
   const [error, setError] = useState("");
+  const [initialFilesHandled, setInitialFilesHandled] = useState(false);
   const fileInputRef = useState(null);
 
   const COLORS = ["#4f8ef7","#2dd4b4","#a78bfa","#f59e0b","#fb923c","#f87171","#4ade80","#38bdf8","#e879f9","#34d399"];
@@ -2176,6 +2198,39 @@ function CVParserModal({ jobs, setJobs, candidates, setCandidates, applications,
     return Array.from(seen.values());
   }, [jobs]);
 
+  const renderPdfPageToCanvas = async (page) => {
+    const viewport = page.getViewport({ scale: 2 });
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d", { alpha: false });
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    await page.render({ canvasContext: context, viewport }).promise;
+    return canvas;
+  };
+
+  const extractPdfTextWithOcr = async (pdf) => {
+    if (typeof document === "undefined") return "";
+    let worker;
+    try {
+      worker = await createWorker("eng");
+      const pages = [];
+      const maxPages = Math.min(pdf.numPages, 4);
+      for (let pageNo = 1; pageNo <= maxPages; pageNo += 1) {
+        const page = await pdf.getPage(pageNo);
+        const canvas = await renderPdfPageToCanvas(page);
+        const result = await worker.recognize(canvas);
+        const text = result?.data?.text || "";
+        if (text.trim()) pages.push(text);
+      }
+      return pages.join("\n");
+    } catch (e) {
+      console.warn("CV OCR failed", e);
+      return "";
+    } finally {
+      if (worker) await worker.terminate();
+    }
+  };
+
   const extractPdfText = async (file) => {
     const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
     const pages = [];
@@ -2198,7 +2253,10 @@ function CVParserModal({ jobs, setJobs, candidates, setCandidates, applications,
         .filter(Boolean);
       pages.push(pageLines.join("\n"));
     }
-    return pages.join("\n");
+    const textLayerText = pages.join("\n");
+    if (textLayerText.replace(/\s+/g, "").length >= 30) return textLayerText;
+    const ocrText = await extractPdfTextWithOcr(pdf);
+    return ocrText || textLayerText;
   };
 
   const extractDocxText = async (file) => {
@@ -2357,6 +2415,12 @@ function CVParserModal({ jobs, setJobs, candidates, setCandidates, applications,
     setCurrentIdx(0);
     setPhase("review");
   };
+
+  useEffect(() => {
+    if (initialFilesHandled || !initialFiles?.length) return;
+    setInitialFilesHandled(true);
+    handleFiles(initialFiles);
+  }, [initialFiles, initialFilesHandled]);
 
   const updateField = (field, value) => {
     setParsedFiles(prev => prev.map((p, i) => i === currentIdx ? { ...p, extracted: { ...p.extracted, [field]: value } } : p));
@@ -2552,7 +2616,7 @@ function CVParserModal({ jobs, setJobs, candidates, setCandidates, applications,
             <div style={{ textAlign: "center", padding: "52px 24px" }}>
               <div style={{ fontSize: 44, marginBottom: 20, animation: "spin 1s linear infinite", display: "inline-block" }}>⚙️</div>
               <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>Reading CV files locally</div>
-              <div style={{ fontSize: 13, color: "var(--text3)" }}>Creating editable candidate drafts and attaching each CV...</div>
+              <div style={{ fontSize: 13, color: "var(--text3)" }}>Extracting text and running OCR for scanned PDFs when needed...</div>
               <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
             </div>
           )}
@@ -2704,7 +2768,7 @@ function CVParserModal({ jobs, setJobs, candidates, setCandidates, applications,
 }
 
 // ── PIPELINE PAGE ─────────────────────────────────────────────────────────────
-function PipelinePage({ applications, setApplications, candidates, setCandidates, jobs, setJobs, interviews, roleConfig, openModal }) {
+function PipelinePage({ applications, setApplications, candidates, setCandidates, jobs, setJobs, interviews, roleConfig, openModal, backendActions, reloadData }) {
   const [filterJob, setFilterJob] = useState("All");
   const [filterEntity, setFilterEntity] = useState("All");
   const [filterDept, setFilterDept] = useState("All");
@@ -2714,6 +2778,8 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
   const [bulkStage, setBulkStage] = useState("HR Screening");
   const [rejectModal, setRejectModal] = useState(null);
   const [showCVParser, setShowCVParser] = useState(false);
+  const [cvParserFiles, setCvParserFiles] = useState(null);
+  const [cvDropActive, setCvDropActive] = useState(false);
   const [dragAppId, setDragAppId] = useState(null);
   const [dragOverStage, setDragOverStage] = useState(null);
 
@@ -2743,8 +2809,8 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
   const moveApplications = async (ids, stage, notes = "") => {
     if (!canMove) return;
     try {
-      await Promise.all(ids.map(id => ctx.backendActions.moveApplication(id, { stage: STAGE_TO_BACKEND[stage] || "applied", reason: notes })));
-      await ctx.reloadData?.();
+      await Promise.all(ids.map(id => backendActions.moveApplication(id, { stage: STAGE_TO_BACKEND[stage] || "applied", reason: notes })));
+      await reloadData?.();
       setSelectedApps([]);
       return;
     } catch (e) {
@@ -2784,8 +2850,8 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
   const confirmReject = async ({ appIds, category, reason }) => {
     if (!canMove) return;
     try {
-      await Promise.all(appIds.map(id => ctx.backendActions.rejectApplication(id, { reason: `${category}: ${reason}` })));
-      await ctx.reloadData?.();
+      await Promise.all(appIds.map(id => backendActions.rejectApplication(id, { reason: `${category}: ${reason}` })));
+      await reloadData?.();
       setSelectedApps(prev => prev.filter(id => !appIds.includes(id)));
       setRejectModal(null);
       return;
@@ -2840,6 +2906,20 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
     setDragOverStage(null);
   };
 
+  const openCvParser = (files = null) => {
+    setCvParserFiles(files);
+    setShowCVParser(true);
+  };
+
+  const handleCvDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setCvDropActive(false);
+    setDragOverStage(null);
+    const files = Array.from(e.dataTransfer.files || []);
+    if (files.length) openCvParser(files);
+  };
+
   return (
     <>
       {showCVParser && (
@@ -2850,8 +2930,9 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
           setCandidates={setCandidates}
           applications={applications}
           setApplications={setApplications}
-          ctx={ctx}
-          closeModal={() => setShowCVParser(false)}
+          ctx={{ backendActions, reloadData }}
+          initialFiles={cvParserFiles}
+          closeModal={() => { setShowCVParser(false); setCvParserFiles(null); }}
         />
       )}
       {rejectModal && (
@@ -2870,7 +2951,7 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
           <div className="page-sub">{filteredApps.length} active applications in view</div>
         </div>
         {canUpload && (
-          <button className="btn btn-primary" onClick={() => setShowCVParser(true)}>
+          <button className="btn btn-primary" onClick={() => openCvParser()}>
             <span style={{ fontSize: 16, lineHeight: 1 }}>📄</span> Upload CVs
           </button>
         )}
@@ -2950,10 +3031,13 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
                   {/* CV drop zone in Applied column */}
                   {isApplied && canUpload && (
                     <div
-                      onClick={() => setShowCVParser(true)}
-                      style={{ border: "1.5px dashed var(--border2)", borderRadius: "var(--radius)", padding: "12px 8px", textAlign: "center", cursor: "pointer", marginBottom: 6, transition: "all 0.15s" }}
+                      onClick={() => openCvParser()}
+                      onDragOver={e => { e.preventDefault(); e.stopPropagation(); setCvDropActive(true); }}
+                      onDragLeave={e => { e.preventDefault(); e.stopPropagation(); setCvDropActive(false); }}
+                      onDrop={handleCvDrop}
+                      style={{ border: `1.5px dashed ${cvDropActive ? "var(--accent)" : "var(--border2)"}`, borderRadius: "var(--radius)", padding: "12px 8px", textAlign: "center", cursor: "pointer", marginBottom: 6, transition: "all 0.15s", background: cvDropActive ? "var(--accent-soft)" : "transparent" }}
                       onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.background = "var(--accent-soft)"; }}
-                      onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border2)"; e.currentTarget.style.background = "transparent"; }}
+                      onMouseLeave={e => { if (!cvDropActive) { e.currentTarget.style.borderColor = "var(--border2)"; e.currentTarget.style.background = "transparent"; } }}
                     >
                       <div style={{ fontSize: 18, marginBottom: 4 }}>📄</div>
                       <div style={{ fontSize: 10, color: "var(--text3)", fontFamily: "var(--mono)", lineHeight: 1.4 }}>Drop CV here<br />to auto-parse</div>
@@ -4212,7 +4296,8 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
   const [moveNotes, setMoveNotes] = useState(activeApp?.notes || "");
   const [newNote, setNewNote] = useState("");
   const [notesLog, setNotesLog] = useState(c.notesLog || []);
-  const cvUrl = c.cvUrl && c.cvUrl !== "#" ? c.cvUrl : SAMPLE_CV_URL;
+  const [showCvPreview, setShowCvPreview] = useState(false);
+  const cvUrl = c.cvUrl && c.cvUrl !== "#" ? c.cvUrl : "";
   const latestScore = candidateScorecards[0];
   const latestRating = candidateScorecards.length ? (candidateScorecards.reduce((sum, s) => sum + ((s.knowledge + s.attitude + s.feedback) / 3), 0) / candidateScorecards.length).toFixed(1) : "—";
   const canMoveCandidate = !!ctx.roleConfig.canMoveCandidates;
@@ -4337,14 +4422,26 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
                 <div className="form-label" style={{ margin: 0 }}>CV Viewer</div>
                 <div style={{ display: "flex", gap: 8 }}>
-                  <a className="btn btn-ghost btn-sm" href={cvUrl} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>View CV</a>
-                  <a className="btn btn-ghost btn-sm" href={cvUrl} download={c.cvFileName || `${c.name.replace(/\s+/g, "_")}_CV.pdf`} style={{ textDecoration: "none" }}>Download CV</a>
+                  {cvUrl ? (
+                    <>
+                      <button className="btn btn-ghost btn-sm" onClick={() => setShowCvPreview(v => !v)}>{showCvPreview ? "Hide CV" : "View CV"}</button>
+                      <a className="btn btn-ghost btn-sm" href={cvUrl} download={c.cvFileName || `${c.name.replace(/\s+/g, "_")}_CV.pdf`} style={{ textDecoration: "none" }}>Download CV</a>
+                    </>
+                  ) : (
+                    <span className="badge badge-gray">No CV attached</span>
+                  )}
                 </div>
               </div>
-              <object data={cvUrl} type="application/pdf" style={{ width: "100%", height: 260, border: "1px solid var(--border)", borderRadius: "var(--radius)", background: "white" }}>
-                <iframe title={`${c.name} CV`} src={cvUrl} style={{ width: "100%", height: 260, border: 0 }} />
-              </object>
-              <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 8, fontFamily: "var(--mono)" }}>{c.cvFileName || "Sample CV preview"}</div>
+              {showCvPreview && cvUrl ? (
+                <object data={cvUrl} type="application/pdf" style={{ width: "100%", height: 260, border: "1px solid var(--border)", borderRadius: "var(--radius)", background: "white" }}>
+                  <iframe title={`${c.name} CV`} src={cvUrl} style={{ width: "100%", height: 260, border: 0 }} />
+                </object>
+              ) : (
+                <div style={{ minHeight: 180, border: "1px dashed var(--border2)", borderRadius: "var(--radius)", display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", color: "var(--text3)", fontSize: 12, padding: 16 }}>
+                  {cvUrl ? "CV is attached. Click View CV to preview it, or Download CV to save it." : "No CV has been uploaded for this candidate yet."}
+                </div>
+              )}
+              <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 8, fontFamily: "var(--mono)" }}>{c.cvFileName || "No CV file"}</div>
             </div>
             <div style={{ background: "var(--bg3)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: 14 }}>
               <div className="form-label">Decision Summary</div>

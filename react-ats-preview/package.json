@@ -16,6 +16,7 @@
     "pdfjs-dist": "^5.7.284",
     "react": "latest",
     "react-dom": "latest",
+    "tesseract.js": "^7.0.0",
     "vite": "latest",
     "xlsx": "^0.18.5"
   }
