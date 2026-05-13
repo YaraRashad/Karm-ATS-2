@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+!.env.azure.template
+
+# Build output
+dist/
+**/dist/
+
+# Local/demo data and uploads
+data/
+**/uploads/
+
+# Deployment artifacts generated manually
+*.zip
+karm-ats-api-deploy/
+react-ats-preview/github-pages-upload*/
+
+# OS/editor noise
+.DS_Store
+**/.DS_Store
+*.log
+
+# Prisma scratch backups
+*.sql.bak
