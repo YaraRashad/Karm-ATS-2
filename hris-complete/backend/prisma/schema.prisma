@@ -1,0 +1,624 @@
+// ─── HRIS Platform — Prisma Schema ───────────────────────────────────
+// Database: PostgreSQL
+// Covers: Auth, Employees, Positions, Candidates, Applications,
+//         Scorecards, Offers, Templates, Audit log
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum Entity {
+  egypt
+  cyprus
+  uk
+  tunisia
+}
+
+enum UserRole {
+  admin
+  recruiter
+  hiring_manager
+  interviewer
+}
+
+enum AccessScope {
+  all_data
+  recruitment_data
+  assigned_jobs
+  assigned_interviews
+}
+
+enum EmploymentType {
+  full_time
+  part_time
+  contract
+  internship
+}
+
+enum SeniorityLevel {
+  junior
+  mid
+  senior
+  lead
+  director
+  vp
+}
+
+enum PositionStatus {
+  draft
+  pending_approval
+  open
+  on_hold
+  closed
+}
+
+enum Priority {
+  low
+  normal
+  high
+  urgent
+}
+
+enum HeadcountApprovalStatus {
+  not_requested
+  pending
+  approved
+  rejected
+}
+
+enum ApplicationStage {
+  applied
+  screening
+  interview
+  assessment
+  offer
+  hired
+  rejected
+}
+
+enum CandidateSource {
+  linkedin
+  referral
+  direct
+  agency
+  job_board
+  internal
+  other
+}
+
+enum InterviewType {
+  phone_screen
+  technical
+  behavioral
+  panel
+  final
+  case_study
+}
+
+enum ScoreRating {
+  one
+  two
+  three
+  four
+  five
+}
+
+enum OverallRecommendation {
+  strong_yes
+  yes
+  neutral
+  no
+  strong_no
+}
+
+enum OfferStatus {
+  draft
+  pending_approval
+  approved
+  sent
+  accepted
+  declined
+  expired
+  withdrawn
+}
+
+enum ApprovalStatus {
+  waiting
+  pending
+  approved
+  rejected
+}
+
+enum AuditAction {
+  created
+  updated
+  deleted
+  status_changed
+  approved
+  rejected
+  sent
+  viewed
+  login
+  logout
+  candidate_moved
+  feedback_submitted
+  interview_scheduled
+  offer_created
+  role_changed
+  file_uploaded
+}
+
+// ─────────────────────────────────────────────
+// IDENTITY & AUTH
+// ─────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String?
+  azureAdObjectId String? @unique
+  microsoftTenantId String?
+  firstName     String
+  lastName      String
+  role          UserRole
+  departmentId  String?
+  department    Department? @relation(fields: [departmentId], references: [id])
+  accessScope   AccessScope @default(assigned_jobs)
+  canViewSalary Boolean   @default(false)
+  canApproveOffers Boolean @default(false)
+  canApproveRequisitions Boolean @default(false)
+  entities      Entity[]  // which entities this user can access
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  employee          Employee?
+  createdPositions  Position[]       @relation("PositionCreator")
+  scorecards        Scorecard[]      @relation("ScorecardInterviewer")
+  interviews        Interview[]      @relation("InterviewInterviewer")
+  approvalSteps     ApprovalStep[]
+  offerNotes        OfferNote[]
+  applicationNotes  ApplicationNote[]
+  auditLogs         AuditLog[]
+  refreshTokens     RefreshToken[]
+  files             FileObject[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("refresh_tokens")
+}
+
+// ─────────────────────────────────────────────
+// ORGANISATION STRUCTURE
+// ─────────────────────────────────────────────
+
+model Department {
+  id          String     @id @default(cuid())
+  name        String
+  entity      Entity
+  headId      String?    // department head employee id
+  costCenter  String?
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+
+  positions   Position[]
+  employees   Employee[]
+  users       User[]
+
+  @@unique([name, entity])
+  @@map("departments")
+}
+
+model GradeBand {
+  id          String  @id @default(cuid())
+  grade       String  // IC3, IC4, IC5, M1, M2, D1, D2
+  entity      Entity
+  currency    String  // EGP, EUR, GBP, TND
+  salaryMin   Int
+  salaryMax   Int
+  bonusMin    Int     @default(0)  // % of base
+  bonusMax    Int     @default(0)
+  isActive    Boolean @default(true)
+
+  positions   Position[]
+  offers      Offer[]
+
+  @@unique([grade, entity])
+  @@map("grade_bands")
+}
+
+// ─────────────────────────────────────────────
+// EMPLOYEES
+// ─────────────────────────────────────────────
+
+model Employee {
+  id                String         @id @default(cuid())
+  userId            String         @unique
+  user              User           @relation(fields: [userId], references: [id])
+  employeeNumber    String         @unique
+  entity            Entity
+  departmentId      String
+  department        Department     @relation(fields: [departmentId], references: [id])
+  positionTitle     String
+  grade             String?
+  managerId         String?
+  manager           Employee?      @relation("ManagerSubordinates", fields: [managerId], references: [id])
+  subordinates      Employee[]     @relation("ManagerSubordinates")
+  employmentType    EmploymentType @default(full_time)
+  startDate         DateTime
+  endDate           DateTime?
+  probationEndDate  DateTime?
+  isActive          Boolean        @default(true)
+  nationality       String?
+  noticePeriodDays  Int            @default(30)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  // HR as hiring manager for positions
+  managedPositions  Position[]     @relation("PositionHiringManager")
+
+  @@map("employees")
+}
+
+// ─────────────────────────────────────────────
+// POSITIONS
+// ─────────────────────────────────────────────
+
+model Position {
+  id                  String                  @id @default(cuid())
+  title               String
+  departmentId        String
+  department          Department              @relation(fields: [departmentId], references: [id])
+  entity              Entity
+  seniority           SeniorityLevel
+  employmentType      EmploymentType          @default(full_time)
+  gradeBandId         String?
+  gradeBand           GradeBand?              @relation(fields: [gradeBandId], references: [id])
+  currency            String
+  salaryMin           Int
+  salaryMax           Int
+  status              PositionStatus          @default(draft)
+  priority            Priority                @default(normal)
+  headcountStatus     HeadcountApprovalStatus @default(not_requested)
+  headcountApprovedAt DateTime?
+  headcountApprovedBy String?
+  headcountRationale  String?
+  openDate            DateTime?
+  targetCloseDate     DateTime?
+  closedDate          DateTime?
+  hiringManagerId     String?
+  hiringManager       Employee?               @relation("PositionHiringManager", fields: [hiringManagerId], references: [id])
+  recruiterId         String?
+  recruiter           User?                   @relation("PositionCreator", fields: [recruiterId], references: [id])
+  scorecardTemplateId String?
+  scorecardTemplate   ScorecardTemplate?      @relation(fields: [scorecardTemplateId], references: [id])
+  description         String?
+  requirements        String[]
+  isActive            Boolean                 @default(true)
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  applications  Application[]
+  offers        Offer[]
+
+  @@map("positions")
+}
+
+// ─────────────────────────────────────────────
+// CANDIDATES & APPLICATIONS
+// ─────────────────────────────────────────────
+
+model Candidate {
+  id                 String          @id @default(cuid())
+  firstName          String
+  lastName           String
+  email              String          @unique
+  phone              String?
+  linkedinUrl        String?
+  currentTitle       String?
+  currentCompany     String?
+  totalYearsExp      Int?
+  location           String?
+  nationality        String?
+  noticePeriodDays   Int?
+  salaryExpectation  Int?
+  salaryCurrency     String?
+  resumeUrl          String?
+  source             CandidateSource @default(direct)
+  tags               String[]
+  isActive           Boolean         @default(true)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  applications  Application[]
+  files         FileObject[]
+
+  @@map("candidates")
+}
+
+model Application {
+  id              String           @id @default(cuid())
+  candidateId     String
+  candidate       Candidate        @relation(fields: [candidateId], references: [id])
+  positionId      String
+  position        Position         @relation(fields: [positionId], references: [id])
+  stage           ApplicationStage @default(applied)
+  stageEnteredAt  DateTime         @default(now())
+  appliedAt       DateTime         @default(now())
+  isActive        Boolean          @default(true)
+  disqualifyReason String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  scorecards  Scorecard[]
+  interviews  Interview[]
+  offers      Offer[]
+  notes       ApplicationNote[]
+  stageHistory ApplicationStageHistory[]
+
+  @@unique([candidateId, positionId])
+  @@map("applications")
+}
+
+model ApplicationStageHistory {
+  id            String           @id @default(cuid())
+  applicationId String
+  application   Application      @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  fromStage     ApplicationStage?
+  toStage       ApplicationStage
+  movedAt       DateTime         @default(now())
+  movedById     String?
+  reason        String?
+
+  @@map("application_stage_history")
+}
+
+model ApplicationNote {
+  id            String      @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  authorId      String
+  author        User        @relation(fields: [authorId], references: [id])
+  content       String
+  isInternal    Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@map("application_notes")
+}
+
+// ─────────────────────────────────────────────
+// INTERVIEWS & SCORECARDS
+// ─────────────────────────────────────────────
+
+model Interview {
+  id              String        @id @default(cuid())
+  applicationId   String
+  application     Application   @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  interviewerId   String
+  interviewer     User          @relation("InterviewInterviewer", fields: [interviewerId], references: [id])
+  type            InterviewType
+  scheduledAt     DateTime
+  durationMinutes Int           @default(60)
+  location        String?
+  meetingLink     String?
+  status          String        @default("scheduled") // scheduled, completed, cancelled, no_show
+  scorecardId     String?       @unique
+  scorecard       Scorecard?    @relation(fields: [scorecardId], references: [id])
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@map("interviews")
+}
+
+model ScorecardTemplate {
+  id          String                     @id @default(cuid())
+  name        String
+  icon        String?
+  description String?
+  appliesTo   String[]                   // department names
+  isActive    Boolean                    @default(true)
+  createdAt   DateTime                   @default(now())
+  updatedAt   DateTime                   @updatedAt
+
+  categories  ScorecardTemplateCategory[]
+  positions   Position[]
+  scorecards  Scorecard[]
+
+  @@map("scorecard_templates")
+}
+
+model ScorecardTemplateCategory {
+  id          String            @id @default(cuid())
+  templateId  String
+  template    ScorecardTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  weight      Int               // 0-100, all categories must sum to 100
+  order       Int               @default(0)
+  colorHex    String            @default("#3a5a8a")
+  levels      String[]          // descriptions for scores 1-5
+
+  ratings     ScorecardRating[]
+
+  @@map("scorecard_template_categories")
+}
+
+model Scorecard {
+  id              String                @id @default(cuid())
+  applicationId   String
+  application     Application           @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  templateId      String
+  template        ScorecardTemplate     @relation(fields: [templateId], references: [id])
+  interviewerId   String
+  interviewer     User                  @relation("ScorecardInterviewer", fields: [interviewerId], references: [id])
+  interviewType   InterviewType
+  recommendation  OverallRecommendation?
+  strengthsSummary String?
+  concernsSummary  String?
+  compositeScore   Decimal?             @db.Decimal(4, 2)  // computed, stored for perf
+  submittedAt      DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  ratings   ScorecardRating[]
+  interview Interview?
+
+  @@map("scorecards")
+}
+
+model ScorecardRating {
+  id          String                    @id @default(cuid())
+  scorecardId String
+  scorecard   Scorecard                 @relation(fields: [scorecardId], references: [id], onDelete: Cascade)
+  categoryId  String
+  category    ScorecardTemplateCategory @relation(fields: [categoryId], references: [id])
+  score       Int                       // 1-5
+  notes       String?
+
+  @@unique([scorecardId, categoryId])
+  @@map("scorecard_ratings")
+}
+
+// ─────────────────────────────────────────────
+// OFFERS
+// ─────────────────────────────────────────────
+
+model Offer {
+  id              String      @id @default(cuid())
+  applicationId   String
+  application     Application @relation(fields: [applicationId], references: [id])
+  positionId      String
+  position        Position    @relation(fields: [positionId], references: [id])
+  gradeBandId     String?
+  gradeBand       GradeBand?  @relation(fields: [gradeBandId], references: [id])
+  currency        String
+  baseSalary      Int
+  bonusTargetPct  Int         @default(0)
+  signingBonus    Int         @default(0)
+  annualLeaveDays Int         @default(21)
+  startDate       DateTime?
+  respondByDate   DateTime?
+  status          OfferStatus @default(draft)
+  sentAt          DateTime?
+  acceptedAt      DateTime?
+  declinedAt      DateTime?
+  declineReason   String?
+  declineNotes    String?
+  bandException   Boolean     @default(false)
+  bandExceptionNote String?
+  onboardingTriggered Boolean @default(false)
+  letterContent   String?     // editable letter body
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  approvalSteps ApprovalStep[]
+  notes         OfferNote[]
+  history       OfferHistory[]
+
+  @@map("offers")
+}
+
+model ApprovalStep {
+  id        String         @id @default(cuid())
+  offerId   String
+  offer     Offer          @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  stepOrder Int
+  role      String         // "Recruiter", "Hiring Manager", "HR Director", "Finance"
+  approverId String?
+  approver  User?          @relation(fields: [approverId], references: [id])
+  status    ApprovalStatus @default(waiting)
+  note      String?
+  actedAt   DateTime?
+  createdAt DateTime       @default(now())
+
+  @@unique([offerId, stepOrder])
+  @@map("approval_steps")
+}
+
+model OfferNote {
+  id        String   @id @default(cuid())
+  offerId   String
+  offer     Offer    @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  content   String
+  createdAt DateTime @default(now())
+
+  @@map("offer_notes")
+}
+
+model OfferHistory {
+  id        String   @id @default(cuid())
+  offerId   String
+  offer     Offer    @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  event     String
+  actorName String
+  actorId   String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@map("offer_history")
+}
+
+// ─────────────────────────────────────────────
+// AUDIT LOG
+// ─────────────────────────────────────────────
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  userId     String?
+  user       User?       @relation(fields: [userId], references: [id])
+  action     AuditAction
+  entity     String      // table name
+  entityId   String
+  before     Json?
+  after      Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime    @default(now())
+
+  @@index([entity, entityId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model FileObject {
+  id          String   @id @default(cuid())
+  candidateId String?
+  candidate   Candidate? @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  uploadedById String
+  uploadedBy User     @relation(fields: [uploadedById], references: [id])
+  originalName String
+  storageKey  String   @unique
+  mimeType    String
+  sizeBytes   Int
+  purpose     String   @default("cv")
+  checksumSha256 String?
+  createdAt   DateTime @default(now())
+
+  @@index([candidateId])
+  @@index([uploadedById])
+  @@map("file_objects")
+}

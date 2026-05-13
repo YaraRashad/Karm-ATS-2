@@ -1,0 +1,60 @@
+name: Deploy frontend to Azure App Service
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "react-ats-preview/**"
+      - ".github/workflows/deploy-frontend.yml"
+
+concurrency:
+  group: production-frontend
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    env:
+      VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+      VITE_AZURE_AD_TENANT_ID: ${{ vars.VITE_AZURE_AD_TENANT_ID }}
+      VITE_AZURE_AD_CLIENT_ID: ${{ vars.VITE_AZURE_AD_CLIENT_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: react-ats-preview/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: react-ats-preview
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: react-ats-preview
+        run: npm run build
+
+      - name: Package frontend
+        working-directory: react-ats-preview
+        run: |
+          mkdir -p ../frontend-release
+          cp -R dist ../frontend-release/dist
+          cp server.js ../frontend-release/server.js
+          node -e "const p=require('./package.json'); const out={name:'karm-ats-web',version:p.version,type:'module',scripts:{start:'node server.js'},engines:{node:'>=22'}}; require('fs').writeFileSync('../frontend-release/package.json', JSON.stringify(out,null,2));"
+          cd ../frontend-release
+          zip -r ../frontend-release.zip .
+
+      - name: Deploy frontend
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: karm-ats-web
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_WEB }}
+          package: frontend-release.zip
