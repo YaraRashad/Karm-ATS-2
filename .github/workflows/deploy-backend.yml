@@ -1,0 +1,53 @@
+name: Deploy backend to Azure App Service
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "hris-complete/backend/**"
+      - ".github/workflows/deploy-backend.yml"
+
+concurrency:
+  group: production-backend
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: hris-complete/backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: hris-complete/backend
+        run: npm ci
+
+      - name: Generate Prisma client
+        working-directory: hris-complete/backend
+        run: npx prisma generate
+
+      - name: Package backend
+        working-directory: hris-complete/backend
+        run: |
+          zip -r ../../backend-release.zip . \
+            -x ".env*" \
+            -x "uploads/*" \
+            -x "*.log"
+
+      - name: Deploy backend
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: karm-ats-api
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_API }}
+          package: backend-release.zip
