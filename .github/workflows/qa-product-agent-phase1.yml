@@ -1,0 +1,81 @@
+name: ATS QA Product Agent - Phase 1
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Live ATS URL to test"
+        required: false
+        default: "https://karm-ats-web.azurewebsites.net"
+      test_prefix:
+        description: "Only create or touch records with this prefix"
+        required: false
+        default: "TEST_"
+
+concurrency:
+  group: ats-qa-product-agent-phase1
+  cancel-in-progress: false
+
+jobs:
+  qa:
+    name: Playwright live ATS QA
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      ATS_BASE_URL: ${{ inputs.base_url }}
+      ATS_TEST_PREFIX: ${{ inputs.test_prefix }}
+      ATS_TEST_EMAIL: ${{ secrets.ATS_TEST_EMAIL }}
+      ATS_TEST_PASSWORD: ${{ secrets.ATS_TEST_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: react-ats-preview/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: react-ats-preview
+        run: npm ci
+
+      - name: Install Playwright browser
+        working-directory: react-ats-preview
+        run: npx playwright install --with-deps chromium
+
+      - name: Run live ATS QA tests
+        working-directory: react-ats-preview
+        run: npm run qa:e2e
+
+      - name: Publish QA summary
+        if: always()
+        run: |
+          {
+            echo "## ATS QA Product Agent - Phase 1"
+            echo ""
+            echo "- Target: $ATS_BASE_URL"
+            echo "- Test record prefix: $ATS_TEST_PREFIX"
+            echo "- Database reset: not performed"
+            echo "- Demo seed: not performed"
+            echo "- Artifacts: Playwright HTML report, screenshots, videos, traces, JSON, and JUnit are uploaded below."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ats-playwright-html-report
+          path: react-ats-preview/playwright-report
+          if-no-files-found: ignore
+
+      - name: Upload Playwright test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ats-playwright-test-results
+          path: react-ats-preview/test-results
+          if-no-files-found: ignore
