@@ -125,7 +125,13 @@ export async function api(path, options = {}, retry = true) {
     }
   }
   if (!res.ok) {
-    const message = body?.error?.message || body?.message || `API request failed (${res.status})`;
+    const details = body?.error?.errors
+      ?.map(e => [e.path || e.param || e.field, e.msg || e.message].filter(Boolean).join(": "))
+      .filter(Boolean)
+      .join("; ");
+    const message = details
+      ? `${body?.error?.message || "Validation failed"} — ${details}`
+      : body?.error?.message || body?.message || `API request failed (${res.status})`;
     throw new Error(message);
   }
   return body?.data ?? body;
@@ -200,6 +206,17 @@ const statusLabel = {
   pending_approval: "Pending Approval",
 };
 
+const positionStatusToApi = {
+  Open: "open",
+  Draft: "draft",
+  Closed: "closed",
+  "On Hold": "on_hold",
+  open: "open",
+  draft: "draft",
+  closed: "closed",
+  on_hold: "on_hold",
+};
+
 function fullName(person) {
   if (!person) return "";
   if (person.name) return person.name;
@@ -251,7 +268,9 @@ export function mapBackendData({ positions = [], candidates = [], applications =
     level: p.seniority || "",
     headcount: p.headcount || 1,
     openDate: p.openDate?.slice?.(0, 10) || p.createdAt?.slice?.(0, 10) || "",
+    recruiterId: p.recruiterId || p.recruiter?.id || "",
     recruiter: fullName(p.recruiter),
+    hiringManagerId: p.hiringManagerId || p.hiringManager?.id || "",
     hiringManager: fullName(p.hiringManager?.user),
     description: p.description || "",
     salaryMin: p.salaryMin || 0,
@@ -386,9 +405,30 @@ export const backendActions = {
       headcountRationale: payload.positionType || "Manpower",
     }),
   }),
+  updatePosition: (id, payload) => {
+    const body = {
+      title: payload.title,
+      departmentName: payload.dept,
+      entity: entityToApi[payload.entity] || payload.entity || "egypt",
+      seniority: seniorityToApi[payload.level] || payload.level || "mid",
+      description: payload.description || "",
+      headcountRationale: payload.positionType || "Manpower",
+      recruiterId: payload.recruiterId || undefined,
+      hiringManagerId: payload.hiringManagerId || undefined,
+    };
+    if (payload.salaryMin !== undefined && payload.salaryMin !== "" && payload.salaryMax !== undefined && payload.salaryMax !== "") {
+      const salaryMin = Number(payload.salaryMin || 0);
+      body.salaryMin = salaryMin;
+      body.salaryMax = Math.max(Number(payload.salaryMax || 0), salaryMin + 1);
+    }
+    return api(`/positions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+  },
   updatePositionStatus: (id, status) => api(`/positions/${id}/status`, {
     method: "PATCH",
-    body: JSON.stringify({ status }),
+    body: JSON.stringify({ status: positionStatusToApi[status] || status }),
   }),
   deletePosition: (id) => api(`/positions/${id}`, { method: "DELETE" }),
   createApplication: (payload) => api("/applications", { method: "POST", body: JSON.stringify(payload) }),
