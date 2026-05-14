@@ -94,7 +94,7 @@ positionsRouter.get('/', async (req, res, next) => {
           department:       { select: { id: true, name: true } },
           gradeBand:        { select: { grade: true, salaryMin: true, salaryMax: true } },
           hiringManager:    { select: { id: true, user: { select: { firstName: true, lastName: true } } } },
-          recruiter:        { select: { id: true, firstName: true, lastName: true } },
+          recruiter:        { select: { id: true, firstName: true, lastName: true, email: true } },
           scorecardTemplate:{ select: { id: true, name: true } },
           _count:           { select: { applications: true } },
         },
@@ -233,13 +233,34 @@ positionsRouter.patch(
         return unprocessable(res, 'Cannot edit a closed position');
       }
 
+      const updates = {};
+      const nextEntity = req.body.entity || existing.entity;
+
+      if (req.body.departmentName && !req.body.departmentId) {
+        const department = await prisma.department.upsert({
+          where: {
+            name_entity: {
+              name: req.body.departmentName,
+              entity: nextEntity,
+            },
+          },
+          update: { isActive: true },
+          create: {
+            name: req.body.departmentName,
+            entity: nextEntity,
+          },
+        });
+        updates.departmentId = department.id;
+      }
+
       const allowed = [
         'title', 'description', 'requirements', 'priority',
         'salaryMin', 'salaryMax', 'targetCloseDate',
-        'hiringManagerId', 'scorecardTemplateId', 'headcountRationale',
+        'hiringManagerId', 'recruiterId', 'scorecardTemplateId',
+        'headcountRationale', 'entity', 'seniority', 'employmentType',
+        'departmentId',
       ];
 
-      const updates = {};
       allowed.forEach(field => {
         if (req.body[field] !== undefined) updates[field] = req.body[field];
       });
@@ -248,10 +269,74 @@ positionsRouter.patch(
         updates.targetCloseDate = new Date(updates.targetCloseDate);
       }
 
+      const salaryMin = updates.salaryMin ?? existing.salaryMin;
+      const salaryMax = updates.salaryMax ?? existing.salaryMax;
+      if (salaryMin >= salaryMax) {
+        return unprocessable(res, 'Salary max must be greater than salary min');
+      }
+
       const updated = await prisma.position.update({
         where: { id: req.params.id },
         data:  updates,
-        include: { department: { select: { id: true, name: true } } },
+        include: {
+          department:    { select: { id: true, name: true } },
+          recruiter:     { select: { id: true, firstName: true, lastName: true, email: true } },
+          hiringManager: { select: { id: true, user: { select: { firstName: true, lastName: true, email: true } } } },
+        },
+      });
+
+      await auditLog(req, {
+        action: 'updated',
+        entity: 'positions',
+        entityId: existing.id,
+        before: existing,
+        after: updated,
+      });
+
+      return ok(res, updated);
+    } catch (err) { next(err); }
+  }
+);
+
+// ── PATCH /positions/:id/recruiter ───────────────────────────────────
+positionsRouter.patch(
+  '/:id/recruiter',
+  requireRoles(CAN_MANAGE_POSITIONS),
+  [body('recruiterId').notEmpty().isString().withMessage('Recruiter is required')],
+  async (req, res, next) => {
+    if (!validate(req, res)) return;
+    try {
+      const existing = await prisma.position.findUnique({
+        where: { id: req.params.id },
+        include: { recruiter: { select: { id: true, firstName: true, lastName: true, email: true } } },
+      });
+      if (!existing) return notFound(res, 'Position');
+
+      const recruiter = await prisma.user.findFirst({
+        where: {
+          id: req.body.recruiterId,
+          isActive: true,
+          role: { in: [ROLES.ADMIN, ROLES.RECRUITER] },
+        },
+        select: { id: true, firstName: true, lastName: true, email: true },
+      });
+      if (!recruiter) return unprocessable(res, 'Selected user must be an active Admin or Recruiter');
+
+      const updated = await prisma.position.update({
+        where: { id: req.params.id },
+        data: { recruiterId: recruiter.id },
+        include: {
+          department: { select: { id: true, name: true } },
+          recruiter:  { select: { id: true, firstName: true, lastName: true, email: true } },
+        },
+      });
+
+      await auditLog(req, {
+        action: 'recruiter_assigned',
+        entity: 'positions',
+        entityId: existing.id,
+        before: { recruiterId: existing.recruiterId, recruiter: existing.recruiter },
+        after: { recruiterId: recruiter.id, recruiter },
       });
 
       return ok(res, updated);
@@ -331,7 +416,7 @@ positionsRouter.post(
 positionsRouter.patch(
   '/:id/status',
   requireRoles(CAN_MANAGE_POSITIONS),
-  [body('status').isIn(['open','on_hold','closed']).withMessage('Invalid status')],
+  [body('status').isIn(['draft','open','on_hold','closed']).withMessage('Invalid status')],
   async (req, res, next) => {
     if (!validate(req, res)) return;
     try {
@@ -340,6 +425,10 @@ positionsRouter.patch(
       if (status === 'closed') {
         updates.closedDate = new Date();
         updates.isActive   = false;
+      } else {
+        updates.isActive = true;
+        updates.closedDate = null;
+        if (status === 'open') updates.openDate = new Date();
       }
       const updated = await prisma.position.update({
         where: { id: req.params.id },
