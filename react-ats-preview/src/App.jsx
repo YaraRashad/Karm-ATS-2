@@ -1717,16 +1717,40 @@ function ManpowerPlanImporter({ closeModal, jobs, setJobs, backendActions, reloa
   );
 }
 
-function JobDetailModal({ job, applications, candidates, jobs, setJobs, openModal, onClose, canEdit, canViewSalary }) {
+function JobDetailModal({ job, applications, candidates, jobs, setJobs, openModal, onClose, canEdit, canViewSalary, backendActions, reloadData }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ ...job });
+  const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+  const viewJob = { ...job, ...form };
+  const normalizeStatus = (status) => ({
+    Open: "open",
+    Draft: "draft",
+    Closed: "closed",
+    "On Hold": "on_hold",
+  }[status] || status || "");
 
   const jobApps = applications.filter(a => a.jobId === job.id && a.status === "Active");
 
-  const saveEdit = () => {
-    setJobs(prev => prev.map(j => j.id === job.id ? { ...j, ...form } : j));
-    setEditing(false);
+  const saveEdit = async () => {
+    setSaving(true);
+    try {
+      const nextJob = { ...job, ...form };
+      if (backendActions?.updatePosition) {
+        await backendActions.updatePosition(job.id, nextJob);
+        if (form.status && normalizeStatus(form.status) !== normalizeStatus(job.status)) {
+          await backendActions.updatePositionStatus(job.id, form.status);
+        }
+        await reloadData?.();
+      }
+      setJobs(prev => prev.map(j => j.id === job.id ? nextJob : j));
+      setForm(nextJob);
+      setEditing(false);
+    } catch (e) {
+      alert(e.message || "Could not save this job requisition.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -1734,9 +1758,9 @@ function JobDetailModal({ job, applications, candidates, jobs, setJobs, openModa
       <div className="modal modal-lg" style={{ maxWidth: 740 }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <div>
-            <div className="modal-title">{editing ? "Edit Job" : job.title}</div>
+            <div className="modal-title">{editing ? "Edit Job" : viewJob.title}</div>
             <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 2, fontFamily: "var(--mono)" }}>
-              {job.dept} · {job.entity} · {job.level}
+              {viewJob.dept} · {viewJob.entity} · {viewJob.level}
             </div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
@@ -1775,12 +1799,13 @@ function JobDetailModal({ job, applications, candidates, jobs, setJobs, openModa
               {/* Job info cards */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 24 }}>
                 {[
-                  { label: "Headcount", value: job.headcount },
+                  { label: "Headcount", value: viewJob.headcount },
                   { label: "Candidates", value: jobApps.length },
-                  { label: "Budget", value: canViewSalary ? (job.salaryMin ? `${job.salaryMin.toLocaleString()} – ${job.salaryMax.toLocaleString()} EGP` : "—") : "Restricted" },
-                  { label: "Approved by", value: job.approvedBy || "—" },
-                  { label: "Approval date", value: job.approvalDate || "—" },
-                  { label: "Open date", value: job.openDate },
+                  { label: "Budget", value: canViewSalary ? (viewJob.salaryMin ? `${viewJob.salaryMin.toLocaleString()} – ${viewJob.salaryMax.toLocaleString()} EGP` : "—") : "Restricted" },
+                  { label: "Recruiter", value: viewJob.recruiter || "Unassigned" },
+                  { label: "Approved by", value: viewJob.approvedBy || "—" },
+                  { label: "Approval date", value: viewJob.approvalDate || "—" },
+                  { label: "Open date", value: viewJob.openDate },
                 ].map(({ label, value }) => (
                   <div key={label} style={{ background: "var(--bg3)", borderRadius: "var(--radius)", padding: "12px 14px", border: "1px solid var(--border)" }}>
                     <div style={{ fontSize: 10, fontFamily: "var(--mono)", color: "var(--text3)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>{label}</div>
@@ -1789,10 +1814,10 @@ function JobDetailModal({ job, applications, candidates, jobs, setJobs, openModa
                 ))}
               </div>
 
-              {job.description && (
+              {viewJob.description && (
                 <div style={{ background: "var(--bg3)", borderRadius: "var(--radius)", padding: "12px 16px", marginBottom: 20, border: "1px solid var(--border)" }}>
                   <div style={{ fontSize: 11, fontFamily: "var(--mono)", color: "var(--text3)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.5px" }}>Description</div>
-                  <div style={{ fontSize: 13, color: "var(--text2)", lineHeight: 1.6 }}>{job.description}</div>
+                  <div style={{ fontSize: 13, color: "var(--text2)", lineHeight: 1.6 }}>{viewJob.description}</div>
                 </div>
               )}
 
@@ -1826,7 +1851,7 @@ function JobDetailModal({ job, applications, candidates, jobs, setJobs, openModa
                                 <div style={{ width: 28, height: 28, borderRadius: "50%", background: cand.color + "22", color: cand.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{initials(cand.name)}</div>
                                 <div>
                                   <div
-                                    onClick={() => openModal("viewCandidate", { candidate: cand, activeApp: app, activeJob: job })}
+                                    onClick={() => openModal("viewCandidate", { candidate: cand, activeApp: app, activeJob: viewJob })}
                                     style={{ fontSize: 13, fontWeight: 500, color: "var(--accent)", cursor: "pointer" }}
                                   >
                                     {cand.name}
@@ -1852,7 +1877,7 @@ function JobDetailModal({ job, applications, candidates, jobs, setJobs, openModa
           {editing ? (
             <>
               <button className="btn btn-ghost" onClick={() => setEditing(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={saveEdit}>Save changes</button>
+              <button className="btn btn-primary" onClick={saveEdit} disabled={saving}>{saving ? "Saving..." : "Save changes"}</button>
             </>
           ) : (
             <button className="btn btn-ghost" onClick={onClose}>Close</button>
@@ -1863,13 +1888,86 @@ function JobDetailModal({ job, applications, candidates, jobs, setJobs, openModa
   );
 }
 
-function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canViewSalary, openModal, backendActions, reloadData }) {
+function AssignRecruiterModal({ job, users = [], setJobs, backendActions, reloadData, onClose }) {
+  const recruiterOptions = users
+    .filter(u => u.active !== false && ["Admin", "Recruiter", "admin", "recruiter"].includes(u.role || u.roleKey))
+    .sort((a, b) => String(a.fullName || "").localeCompare(String(b.fullName || "")));
+  const [recruiterId, setRecruiterId] = useState(job.recruiterId || recruiterOptions[0]?.id || "");
+  const [saving, setSaving] = useState(false);
+  const selected = recruiterOptions.find(u => String(u.id) === String(recruiterId));
+
+  const save = async () => {
+    if (!recruiterId) {
+      alert("Please select a recruiter first.");
+      return;
+    }
+    setSaving(true);
+    try {
+      if (backendActions.assignPositionRecruiter) {
+        await backendActions.assignPositionRecruiter(job.id, recruiterId);
+      } else {
+        await backendActions.updatePosition(job.id, { ...job, recruiterId });
+      }
+      setJobs(prev => prev.map(j => j.id === job.id ? {
+        ...j,
+        recruiterId,
+        recruiter: selected?.fullName || j.recruiter,
+      } : j));
+      await reloadData?.();
+      onClose();
+    } catch (e) {
+      alert(e.message || "Could not assign recruiter.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <div className="modal-title">Assign Recruiter</div>
+            <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>{job.title}</div>
+          </div>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <div className="modal-body">
+          {recruiterOptions.length === 0 ? (
+            <div className="alert alert-amber">
+              <Icon name="alert" size={14} />
+              <span>No active Admin or Recruiter users were found. Add users in Settings first, then assign them here.</span>
+            </div>
+          ) : (
+            <div className="form-group">
+              <label className="form-label">Recruiter</label>
+              <select className="form-select" value={recruiterId} onChange={e => setRecruiterId(e.target.value)}>
+                {recruiterOptions.map(user => (
+                  <option key={user.id} value={user.id}>{user.fullName} — {user.email}</option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={save} disabled={saving || recruiterOptions.length === 0}>
+            {saving ? "Saving..." : "Assign recruiter"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canViewSalary, openModal, backendActions, reloadData, allUsers = [] }) {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("All");
   const [filterEntity, setFilterEntity] = useState("All");
   const [filterDept, setFilterDept] = useState("All");
   const [showImporter, setShowImporter] = useState(false);
   const [selectedJob, setSelectedJob] = useState(null);
+  const [assignRecruiterJob, setAssignRecruiterJob] = useState(null);
   const deptOptions = Array.from(new Set(jobs.map(j => j.dept).filter(Boolean))).sort();
 
   const filtered = jobs.filter(j =>
@@ -1941,6 +2039,18 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
           onClose={() => setSelectedJob(null)}
           canEdit={canCreate}
           canViewSalary={canViewSalary}
+          backendActions={backendActions}
+          reloadData={reloadData}
+        />
+      )}
+      {assignRecruiterJob && (
+        <AssignRecruiterModal
+          job={assignRecruiterJob}
+          users={allUsers}
+          setJobs={setJobs}
+          backendActions={backendActions}
+          reloadData={reloadData}
+          onClose={() => setAssignRecruiterJob(null)}
         />
       )}
       <div className="page-header">
@@ -1982,7 +2092,7 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
         <div className="card">
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Job title</th><th>Department</th><th>Entity</th><th>Position type</th><th>Budget</th><th>Approved by</th><th>Approval date</th><th>HC</th><th>Candidates</th><th>Status</th><th></th></tr></thead>
+              <thead><tr><th>Job title</th><th>Department</th><th>Entity</th><th>Position type</th><th>Budget</th><th>Approved by</th><th>Approval date</th><th>HC</th><th>Candidates</th><th>Recruiter</th><th>Status</th><th></th></tr></thead>
               <tbody>
                 {filtered.map(job => {
                   const appCount = applications.filter(a => a.jobId === job.id && a.status === "Active").length;
@@ -1997,10 +2107,16 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
                       <td style={{ fontFamily: "var(--mono)", color: "var(--text3)" }}>{job.approvalDate || "—"}</td>
                       <td style={{ fontFamily: "var(--mono)" }}>{job.headcount}</td>
                       <td style={{ fontFamily: "var(--mono)", color: "var(--accent)", fontWeight: 600 }}>{appCount}</td>
+                      <td>{job.recruiter || "Unassigned"}</td>
                       <td><span className={`badge ${jobStatusBadge(job.status)}`}>{job.status}</span></td>
                       <td onClick={e => e.stopPropagation()}>
+                        {canCreate && (
+                          <button className="btn btn-ghost btn-sm" onClick={() => setAssignRecruiterJob(job)}>
+                            Assign recruiter
+                          </button>
+                        )}
                         {canCreate && job.status !== "Draft" && (
-                          <button className="btn btn-ghost btn-sm" style={job.status === "Closed" ? { color: "var(--teal)", borderColor: "var(--teal-soft)" } : {}} onClick={() => toggleJobStatus(job.id, job.status)}>
+                          <button className="btn btn-ghost btn-sm" style={job.status === "Closed" ? { color: "var(--teal)", borderColor: "var(--teal-soft)", marginLeft: 6 } : { marginLeft: 6 }} onClick={() => toggleJobStatus(job.id, job.status)}>
                             {job.status === "Open" ? "Close" : "Reopen"}
                           </button>
                         )}
