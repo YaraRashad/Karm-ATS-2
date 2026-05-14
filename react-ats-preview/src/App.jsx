@@ -2351,6 +2351,37 @@ function CVParserModal({ jobs, setJobs, candidates, setCandidates, applications,
     return "";
   };
 
+  const collapseSpacedLetters = (value) => {
+    const words = value.split(/\s+/).filter(Boolean);
+    if (words.length < 4) return value;
+    const rebuilt = [];
+    for (let i = 0; i < words.length; i += 1) {
+      if (/^[A-Za-z]$/.test(words[i])) {
+        let j = i;
+        const letters = [];
+        while (j < words.length && /^[A-Za-z]$/.test(words[j])) {
+          letters.push(words[j]);
+          j += 1;
+        }
+        if (letters.length >= 3) {
+          rebuilt.push(letters.join(""));
+          i = j - 1;
+        } else {
+          rebuilt.push(...letters);
+          i = j - 1;
+        }
+      } else {
+        rebuilt.push(words[i]);
+      }
+    }
+    return rebuilt.join(" ");
+  };
+
+  const normalizeExtractedText = (value) => {
+    const lines = value.split(/\r?\n/).map(line => collapseSpacedLetters(cleanLine(line)));
+    return lines.join("\n");
+  };
+
   const cleanLine = (line) => line.replace(/[•●▪◦|]+/g, " ").replace(/\s+/g, " ").trim();
 
   const isLikelyPersonName = (line) => {
@@ -2432,12 +2463,14 @@ function CVParserModal({ jobs, setJobs, candidates, setCandidates, applications,
   const parseCVLocally = async (file) => {
     let text = "";
     try { text = await readCvText(file); } catch {}
-    const compactText = text.replace(/\s+/g, " ").trim();
-    const email = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || "";
-    const phone = text.match(/(\+?\d[\d\s().-]{8,}\d)/)?.[0] || "";
-    const name = extractCandidateName(text);
-    const skills = extractSkills(`${text} ${file.name}`);
-    const suggestedJobObj = suggestJobForText(`${text} ${file.name}`);
+    const normalizedText = normalizeExtractedText(text);
+    const searchableText = normalizedText.replace(/\s*([@._%+-])\s*/g, "$1");
+    const compactText = normalizedText.replace(/\s+/g, " ").trim();
+    const email = searchableText.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || "";
+    const phone = normalizedText.match(/(\+?\d[\d\s().-]{8,}\d)/)?.[0] || "";
+    const name = extractCandidateName(normalizedText);
+    const skills = extractSkills(`${normalizedText} ${file.name}`);
+    const suggestedJobObj = suggestJobForText(`${normalizedText} ${file.name}`);
     return {
       name,
       email,
@@ -4995,17 +5028,40 @@ function ViewOfferModal({ data, closeModal, ctx }) {
 
 function ScheduleInterviewModal({ data, closeModal, ctx }) {
   const eligibleApps = ctx.applications.filter(a => a.status === "Active" && !["Applied", "Hired", "Rejected", "On Hold"].includes(a.stage));
-  const [form, setForm] = useState({ applicationId: data?.applicationId || eligibleApps[0]?.id || "", type: "1st Interview", scheduledAt: "", format: "In-person", interviewerId: "Mohi Mohsen" });
+  const interviewTypeMap = {
+    "HR Screening": "phone_screen",
+    "1st Interview": "behavioral",
+    "Technical Interview": "technical",
+    "Panel Interview": "panel",
+    "Final Interview": "final",
+  };
+  const interviewerOptions = (ctx.allUsers?.length ? ctx.allUsers : TEAM.map(t => ({
+    id: t.email,
+    email: t.email,
+    fullName: t.fullName,
+    role: "Interviewer",
+    isActive: true,
+  })))
+    .filter(u => u?.isActive !== false && u.email && u.fullName)
+    .sort((a, b) => a.fullName.localeCompare(b.fullName));
+  const defaultInterviewerId = interviewerOptions.find(u => u.fullName === "Mohi Mohsen")?.id || interviewerOptions[0]?.id || "";
+  const [form, setForm] = useState({ applicationId: data?.applicationId || eligibleApps[0]?.id || "", type: "1st Interview", scheduledAt: "", format: "In-person", interviewerUserId: defaultInterviewerId });
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
   const submit = async () => {
     if (!form.applicationId || !form.scheduledAt) return;
+    const selectedInterviewer = interviewerOptions.find(u => u.id === form.interviewerUserId);
+    if (!selectedInterviewer) {
+      alert("Please select an interviewer from the user list.");
+      return;
+    }
     try {
       await ctx.backendActions.createInterview({
         applicationId: form.applicationId,
-        interviewerEmail: ctx.allUsers.find(u => u.fullName === form.interviewerId)?.email,
-        interviewerName: form.interviewerId,
-        type: "technical",
+        interviewerId: selectedInterviewer.id,
+        interviewerEmail: selectedInterviewer.email,
+        interviewerName: selectedInterviewer.fullName,
+        type: interviewTypeMap[form.type] || "technical",
         scheduledAt: form.scheduledAt,
         location: form.format === "In-person" ? "Office" : "",
         meetingLink: form.format === "Video call" ? "TBD" : "",
@@ -5017,12 +5073,10 @@ function ScheduleInterviewModal({ data, closeModal, ctx }) {
       alert(e.message);
       return;
     }
-    const newInterview = { id: Date.now(), applicationId: form.applicationId, type: form.type, scheduledAt: form.scheduledAt, format: form.format, interviewerId: form.interviewerId, status: "Scheduled" };
+    const newInterview = { id: Date.now(), applicationId: form.applicationId, type: form.type, scheduledAt: form.scheduledAt, format: form.format, interviewerId: selectedInterviewer.fullName, status: "Scheduled" };
     ctx.setInterviews(prev => [...prev, newInterview]);
     closeModal();
   };
-
-  const interviewers = TEAM.map(t => t.fullName);
 
   return (
     <div className="modal-overlay" onClick={closeModal}>
@@ -5057,16 +5111,12 @@ function ScheduleInterviewModal({ data, closeModal, ctx }) {
           <div className="form-row">
             <div className="form-group"><label className="form-label">Date & time *</label><input className="form-input" type="datetime-local" value={form.scheduledAt} onChange={e => set("scheduledAt", e.target.value)} /></div>
             <div className="form-group"><label className="form-label">Interviewer</label>
-              <input
-                className="form-input"
-                list="interviewer-options"
-                value={form.interviewerId}
-                onChange={e => set("interviewerId", e.target.value)}
-                placeholder="Type interviewer name"
-              />
-              <datalist id="interviewer-options">
-                {interviewers.map(i => <option key={i} value={i} />)}
-              </datalist>
+              <select className="form-select" value={form.interviewerUserId} onChange={e => set("interviewerUserId", e.target.value)}>
+                <option value="">Select interviewer</option>
+                {interviewerOptions.map(u => (
+                  <option key={u.id} value={u.id}>{u.fullName} — {u.email}</option>
+                ))}
+              </select>
             </div>
           </div>
         </div>
