@@ -67,10 +67,10 @@ filesRouter.post('/cv', requireRoles(CAN_WRITE_CANDIDATES), async (req, res, nex
     });
 
     await auditLog(req, {
-      action: 'file_uploaded',
-      entity: 'candidates',
-      entityId: candidateId,
-      after: { fileId: file.id, filename, sizeBytes: buffer.length },
+      action: 'created',
+      entity: 'files',
+      entityId: file.id,
+      after: { candidateId, filename, sizeBytes: buffer.length },
     });
 
     return created(res, file);

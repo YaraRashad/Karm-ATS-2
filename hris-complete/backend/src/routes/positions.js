@@ -332,7 +332,7 @@ positionsRouter.patch(
       });
 
       await auditLog(req, {
-        action: 'recruiter_assigned',
+        action: 'updated',
         entity: 'positions',
         entityId: existing.id,
         before: { recruiterId: existing.recruiterId, recruiter: existing.recruiter },
