@@ -31,7 +31,7 @@ interviewsRouter.get('/', requireRoles([ROLES.ADMIN, ROLES.RECRUITER, ROLES.HIRI
         ...(status         && { status }),
       },
       include: {
-        interviewer: { select: { id: true, firstName: true, lastName: true } },
+        interviewer: { select: { id: true, firstName: true, lastName: true, email: true } },
         scorecard:   { select: { id: true, submittedAt: true, compositeScore: true } },
         application: {
           include: {
@@ -92,7 +92,7 @@ interviewsRouter.post(
           status: 'scheduled',
         },
         include: {
-          interviewer: { select: { id: true, firstName: true, lastName: true } },
+          interviewer: { select: { id: true, firstName: true, lastName: true, email: true } },
         },
       });
 

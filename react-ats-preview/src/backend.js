@@ -313,6 +313,8 @@ export function mapBackendData({ positions = [], candidates = [], applications =
     scheduledAt: i.scheduledAt,
     format: i.meetingLink ? "Video call" : i.location ? "In-person" : "Phone",
     interviewerId: fullName(i.interviewer),
+    interviewerUserId: i.interviewer?.id || "",
+    interviewerEmail: i.interviewer?.email || "",
     status: i.status === "completed" ? "Completed" : "Scheduled",
   }));
 
