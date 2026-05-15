@@ -2192,7 +2192,7 @@ function CandidatesPage({ candidates, setCandidates, applications, jobs, roleCon
         </div>
         <div style={{ display: "flex", gap: 10 }}>
           <ExportButton onClick={exportCandidates} />
-          {canCreate && <button className="btn btn-primary" onClick={() => openModal("addCandidate")}><Icon name="plus" size={14} /> Add Candidate</button>}
+          {canCreate && <button data-testid="open-add-candidate" className="btn btn-primary" onClick={() => openModal("addCandidate")}><Icon name="plus" size={14} /> Add Candidate</button>}
         </div>
       </div>
       <div className="page-content">
@@ -4441,7 +4441,7 @@ function AddCandidateModal({ data, closeModal, ctx }) {
         </div>
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={closeModal}>Cancel</button>
-          <button className="btn btn-primary" onClick={submit} disabled={form.source === "Referral" && !form.referredBy.trim()} style={{ opacity: form.source === "Referral" && !form.referredBy.trim() ? 0.5 : 1 }}>Add Candidate</button>
+          <button data-testid="submit-add-candidate" className="btn btn-primary" onClick={submit} disabled={form.source === "Referral" && !form.referredBy.trim()} style={{ opacity: form.source === "Referral" && !form.referredBy.trim() ? 0.5 : 1 }}>Add Candidate</button>
         </div>
       </div>
     </div>

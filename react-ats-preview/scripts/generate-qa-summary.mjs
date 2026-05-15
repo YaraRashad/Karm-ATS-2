@@ -147,6 +147,14 @@ function classifyFailure(row) {
       uxRecommendation: "Report QA login token failures separately from product-flow bugs so recruiters are not asked to retest candidate workflows until the test session is valid.",
     };
   }
+  if (normalized.includes("expected the isolated qa account to be admin") || normalized.includes("returned role \"recruiter\"")) {
+    return {
+      severity: "Critical",
+      bug: "Temporary QA login authenticated successfully but returned a non-admin QA role.",
+      suggestedFix: "Deploy the latest backend QA-login code or update the isolated ats.qa@karmsolar.com test account so it returns role admin, accessScope all_data, and admin permissions only for automated QA.",
+      uxRecommendation: "Keep auth setup failures separate from ATS product bugs and show the returned QA user role in every report.",
+    };
+  }
   if (normalized.includes("unexpected 403 api responses observed") || normalized.includes("http-403-responses")) {
     return {
       severity: "High",
@@ -209,6 +217,14 @@ function classifyFailure(row) {
       bug: "Add Candidate UI did not send a candidate-create API request.",
       suggestedFix: "Check the Add Candidate button handler, required field validation, modal state, and API base configuration. The QA test now waits for POST /candidates so UI-only failures are isolated.",
       uxRecommendation: "Show inline validation beside the blocked field instead of silently leaving the modal open.",
+    };
+  }
+  if (normalized.includes("strict mode violation")) {
+    return {
+      severity: "Medium",
+      bug: "The QA test matched more than one UI element, so it could not prove the product flow succeeded.",
+      suggestedFix: "Use stable data-testid selectors or scope locators to the relevant page/modal before treating the result as an ATS product bug.",
+      uxRecommendation: "Expose stable automation hooks on critical recruiter actions such as open modal, submit, save, and confirm.",
     };
   }
   if (normalized.includes("candidate create api failed") || normalized.includes("candidate-create-response")) {
