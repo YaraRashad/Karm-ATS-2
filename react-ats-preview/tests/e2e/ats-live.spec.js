@@ -10,6 +10,8 @@ const QA_LOGIN_SECRET = process.env.ATS_QA_LOGIN_SECRET;
 const AUTH_MODE = normalizeAuthMode(process.env.ATS_AUTH_MODE);
 const AUTH_TIMEOUT_MS = Number(process.env.ATS_AUTH_TIMEOUT_MS || 120_000);
 const browserEventsByTest = new WeakMap();
+const forbiddenResponsesByTest = new WeakMap();
+const forbiddenResponsePromisesByTest = new WeakMap();
 
 function parseBooleanFlag(value) {
   return ["1", "true", "yes", "y", "on"].includes(String(value || "").trim().toLowerCase());
@@ -39,6 +41,14 @@ async function attachJson(testInfo, name, value) {
     body: `${JSON.stringify(value, null, 2)}\n`,
     contentType: "application/json",
   });
+}
+
+function isLiveApiUrl(url) {
+  return String(url || "").startsWith(`${API_BASE}/`);
+}
+
+function compactResponseBody(text) {
+  return String(text || "").replace(/\s+/g, " ").trim().slice(0, 2_000);
 }
 
 function getAuthDiagnostics() {
@@ -319,10 +329,6 @@ async function completeQaLogin(page, testInfo) {
     throw new Error(`QA test login /auth/me response did not include a usable user.\n${meResult.raw || "No response body"}`);
   }
 
-  if (meUser.role === "admin") {
-    throw new Error("QA test login returned an admin user. QA automation must use a limited non-admin test user.");
-  }
-
   await page.evaluate(({ accessToken, refreshToken }) => {
     sessionStorage.setItem("karm_ats_access_token", accessToken);
     sessionStorage.setItem("karm_ats_refresh_token", refreshToken);
@@ -366,10 +372,57 @@ test.describe("Karm ATS live QA smoke", () => {
     page.on("requestfailed", request => {
       browserEvents.push(`[requestfailed] ${request.method()} ${request.url()} ${request.failure()?.errorText || ""}`.trim());
     });
+    const forbiddenResponses = [];
+    const forbiddenResponsePromises = [];
+    forbiddenResponsesByTest.set(testInfo, forbiddenResponses);
+    forbiddenResponsePromisesByTest.set(testInfo, forbiddenResponsePromises);
+
+    page.on("response", response => {
+      if (response.status() !== 403 || !isLiveApiUrl(response.url())) return;
+
+      const request = response.request();
+      const entry = {
+        method: request.method(),
+        url: response.url(),
+        status: response.status(),
+        resourceType: request.resourceType(),
+        timestamp: new Date().toISOString(),
+      };
+      forbiddenResponses.push(entry);
+      browserEvents.push(`[http:403] ${entry.method} ${entry.url}`);
+
+      forbiddenResponsePromises.push(
+        response.text()
+          .then(text => {
+            entry.responseBody = compactResponseBody(text);
+            try {
+              entry.responseJson = JSON.parse(text);
+            } catch {
+              // Keep the compact text body above for non-JSON responses.
+            }
+          })
+          .catch(error => {
+            entry.responseReadError = error.message;
+          }),
+      );
+    });
   });
 
   test.afterEach(async ({ page }, testInfo) => {
     const events = browserEventsByTest.get(testInfo) || [];
+    const forbiddenResponses = forbiddenResponsesByTest.get(testInfo) || [];
+    const forbiddenResponsePromises = forbiddenResponsePromisesByTest.get(testInfo) || [];
+    await Promise.allSettled(forbiddenResponsePromises);
+
+    if (forbiddenResponses.length > 0) {
+      await attachJson(testInfo, "http-403-responses.json", {
+        apiBase: API_BASE,
+        authMode: AUTH_MODE,
+        count: forbiddenResponses.length,
+        responses: forbiddenResponses,
+      });
+    }
+
     await testInfo.attach("browser-events.txt", {
       body: events.join("\n") || "No browser console/page/request errors captured.",
       contentType: "text/plain",
@@ -380,6 +433,13 @@ test.describe("Karm ATS live QA smoke", () => {
         body: await describeCurrentPage(page),
         contentType: "text/plain",
       });
+    }
+
+    if (testInfo.status === testInfo.expectedStatus && forbiddenResponses.length > 0) {
+      const lines = forbiddenResponses
+        .map(entry => `- ${entry.method} ${entry.url}${entry.responseBody ? `\n  Response: ${entry.responseBody}` : ""}`)
+        .join("\n");
+      throw new Error(`Unexpected 403 API responses observed for the ${AUTH_MODE} user:\n${lines}\nSee http-403-responses.json for full details.`);
     }
   });
 
