@@ -52,21 +52,33 @@ function resolveAttachmentPath(attachmentPath) {
   return fs.existsSync(localPath) ? localPath : null;
 }
 
+function readAttachmentContent(attachment) {
+  if (attachment.body) {
+    return Buffer.from(attachment.body, "base64").toString("utf8");
+  }
+
+  const localPath = resolveAttachmentPath(attachment.path);
+  if (!localPath) return "";
+  return fs.readFileSync(localPath, "utf8");
+}
+
+function parseJsonAttachment(attachment) {
+  const text = readAttachmentContent(attachment);
+  if (!text.trim()) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 function readAttachmentText(attachments = []) {
   const usefulAttachments = attachments.filter(attachment =>
-    /auth-mode|browser-events|current-page-state|error-context|qa-login-response|qa-login-session|http-403-responses|candidate-create-response|candidate-persistence/i.test(attachment.name || attachment.path || ""),
+    /auth-mode|browser-events|current-page-state|error-context|qa-login-response|qa-login-session|http-403-responses|candidate-create-response|candidate-persistence|qa-full-audit-report/i.test(attachment.name || attachment.path || ""),
   );
 
   return usefulAttachments.map(attachment => {
-    let text = "";
-    if (attachment.body) {
-      text = Buffer.from(attachment.body, "base64").toString("utf8");
-    } else {
-      const localPath = resolveAttachmentPath(attachment.path);
-      if (localPath) {
-        text = fs.readFileSync(localPath, "utf8");
-      }
-    }
+    const text = readAttachmentContent(attachment);
 
     if (!text.trim()) return "";
     return `Attachment ${attachment.name || path.basename(attachment.path)}:\n${text.trim().slice(0, 6_000)}`;
@@ -113,6 +125,18 @@ function titleIncludes(row, pattern) {
   return row.titlePath.join(" ").toLowerCase().includes(pattern);
 }
 
+function inferModule(row) {
+  const title = row.titlePath.join(" ").toLowerCase();
+  if (title.includes("login") || title.includes("dashboard")) return "Dashboard/Auth";
+  if (title.includes("job") || title.includes("requisition")) return "Job Requisitions";
+  if (title.includes("candidate")) return "Candidates";
+  if (title.includes("pipeline")) return "Pipeline";
+  if (title.includes("interview")) return "Interviews";
+  if (title.includes("offer")) return "Offers";
+  if (title.includes("setting") || title.includes("permission") || title.includes("role")) return "Settings/RBAC";
+  return "General ATS";
+}
+
 function classifyFailure(row) {
   const title = row.titlePath.join(" > ");
   const errorText = [
@@ -125,6 +149,8 @@ function classifyFailure(row) {
 
   if (normalized.includes("qa login was requested") && normalized.includes("ats_qa_login_secret is missing")) {
     return {
+      category: "environment/auth setup issue",
+      module: "Auth/QA setup",
       severity: "Critical",
       bug: "Temporary QA login was requested, but the GitHub Actions QA login secret was missing.",
       suggestedFix: "Add ATS_QA_LOGIN_SECRET as a GitHub Actions secret, confirm it matches QA_TEST_LOGIN_SECRET in the backend App Service, then rerun the QA workflow.",
@@ -133,6 +159,8 @@ function classifyFailure(row) {
   }
   if (normalized.includes("qa test login failed") || normalized.includes("/auth/qa-login")) {
     return {
+      category: "environment/auth setup issue",
+      module: "Auth/QA setup",
       severity: "Critical",
       bug: "Temporary QA login did not create an authenticated ATS session.",
       suggestedFix: "Confirm QA_TEST_LOGIN_ENABLED and QA_TEST_LOGIN_SECRET are set in the backend App Service, ATS_QA_LOGIN_SECRET matches in GitHub Actions, and ATS_API_BASE_URL points to the live backend /api/v1 base URL.",
@@ -141,6 +169,8 @@ function classifyFailure(row) {
   }
   if (normalized.includes("/auth/me rejected") || normalized.includes("qa test login returned tokens, but /auth/me rejected")) {
     return {
+      category: "environment/auth setup issue",
+      module: "Auth/QA setup",
       severity: "Critical",
       bug: "Temporary QA login returned tokens, but the ATS backend rejected the authenticated session.",
       suggestedFix: "Check JWT_SECRET consistency on the backend, confirm the QA login endpoint and /auth/me are served by the same deployed backend, and verify the workflow ATS_API_BASE_URL points to the live /api/v1 backend.",
@@ -149,6 +179,8 @@ function classifyFailure(row) {
   }
   if (normalized.includes("expected the isolated qa account to be admin") || normalized.includes("returned role \"recruiter\"")) {
     return {
+      category: "environment/auth setup issue",
+      module: "Auth/QA setup",
       severity: "Critical",
       bug: "Temporary QA login authenticated successfully but returned a non-admin QA role.",
       suggestedFix: "Deploy the latest backend QA-login code or update the isolated ats.qa@karmsolar.com test account so it returns role admin, accessScope all_data, and admin permissions only for automated QA.",
@@ -165,6 +197,8 @@ function classifyFailure(row) {
   }
   if (normalized.includes("unexpected 403 api responses observed") || normalized.includes("http-403-responses")) {
     return {
+      category: "real product bug",
+      module: "Settings/RBAC",
       severity: "High",
       bug: "The authenticated ATS session received one or more 403 Forbidden responses from the live backend API.",
       suggestedFix: "Open http-403-responses.json in the Playwright artifacts to review the exact method, endpoint, and response body. Confirm whether the route should allow the QA admin account, or update the frontend to avoid unauthorized calls and handle expected 403 responses gracefully.",
@@ -173,6 +207,8 @@ function classifyFailure(row) {
   }
   if (normalized.includes("enter your email, phone, or skype") || normalized.includes("email entry screen")) {
     return {
+      category: "environment/auth setup issue",
+      module: "Microsoft login",
       severity: "Critical",
       bug: "Microsoft login stopped on the email entry screen before the ATS shell loaded.",
       suggestedFix: "Use a resilient Microsoft login loop that submits ATS_TEST_EMAIL, handles account picker/password/stay-signed-in screens, and reports the exact blocking auth page when it cannot continue.",
@@ -181,6 +217,8 @@ function classifyFailure(row) {
   }
   if (normalized.includes("enter password") || normalized.includes("password screen")) {
     return {
+      category: "environment/auth setup issue",
+      module: "Microsoft login",
       severity: "Critical",
       bug: "Microsoft login reached the password step but did not complete.",
       suggestedFix: "Verify ATS_TEST_PASSWORD, confirm the QA account supports non-interactive CI login, and make the login helper submit the password form reliably.",
@@ -189,6 +227,8 @@ function classifyFailure(row) {
   }
   if (normalized.includes("multi-factor") || normalized.includes("authenticator") || normalized.includes("verify your identity") || normalized.includes("more information required")) {
     return {
+      category: "environment/auth setup issue",
+      module: "Microsoft login",
       severity: "Critical",
       bug: "Microsoft login is blocked by MFA, authenticator setup, or conditional access.",
       suggestedFix: "Use a dedicated ATS QA account with the approved CI authentication policy, or switch the QA workflow to a pre-authenticated storage state managed as a GitHub secret.",
@@ -197,6 +237,8 @@ function classifyFailure(row) {
   }
   if (normalized.includes("request sent") || normalized.includes("needs admin approval") || normalized.includes("admin has been notified")) {
     return {
+      category: "environment/auth setup issue",
+      module: "Microsoft login",
       severity: "Critical",
       bug: "The Microsoft QA user is not assigned to or consented for the Karm. ATS application.",
       suggestedFix: "Assign the QA user to the Enterprise Application and grant tenant-wide admin consent before running live QA.",
@@ -205,6 +247,8 @@ function classifyFailure(row) {
   }
   if (normalized.includes("login") || normalized.includes("aadsts") || normalized.includes("microsoft")) {
     return {
+      category: "environment/auth setup issue",
+      module: "Microsoft login",
       severity: "Critical",
       bug: "Microsoft login or authenticated ATS shell did not load successfully.",
       suggestedFix: "Verify Azure AD redirect URI, test account access, admin consent, and that the test waits for the authenticated ATS shell instead of the login card.",
@@ -213,6 +257,8 @@ function classifyFailure(row) {
   }
   if (normalized.includes("backend api") || normalized.includes("api is not reachable") || normalized.includes("load failed")) {
     return {
+      category: "environment/auth setup issue",
+      module: "Backend/API",
       severity: "Critical",
       bug: "Frontend could not reach the live backend API.",
       suggestedFix: "Check VITE_API_BASE_URL, backend App Service health, CORS_ORIGINS, and Azure App Service environment variables.",
@@ -221,6 +267,8 @@ function classifyFailure(row) {
   }
   if (normalized.includes("candidate create api request was not observed")) {
     return {
+      category: "real product bug",
+      module: "Candidates",
       severity: "High",
       bug: "Add Candidate UI did not send a candidate-create API request.",
       suggestedFix: "Check the Add Candidate button handler, required field validation, modal state, and API base configuration. The QA test now waits for POST /candidates so UI-only failures are isolated.",
@@ -229,6 +277,8 @@ function classifyFailure(row) {
   }
   if (normalized.includes("strict mode violation")) {
     return {
+      category: "test automation issue",
+      module: inferModule(row),
       severity: "Medium",
       bug: "The QA test matched more than one UI element, so it could not prove the product flow succeeded.",
       suggestedFix: "Use stable data-testid selectors or scope locators to the relevant page/modal before treating the result as an ATS product bug.",
@@ -237,6 +287,8 @@ function classifyFailure(row) {
   }
   if (normalized.includes("candidate create api failed") || normalized.includes("candidate-create-response")) {
     return {
+      category: "real product bug",
+      module: "Candidates",
       severity: "High",
       bug: "TEST_ candidate creation API failed.",
       suggestedFix: "Inspect candidate-create-response.json for the exact HTTP status and backend validation message. Check QA user write permissions, required candidate fields, duplicate email handling, and candidate API response handling.",
@@ -245,6 +297,8 @@ function classifyFailure(row) {
   }
   if (normalized.includes("after reloading to prove test_ candidate persistence") || normalized.includes("candidate-persistence")) {
     return {
+      category: "real product bug",
+      module: "Candidates",
       severity: "High",
       bug: "TEST_ candidate was created but did not persist or reload into Candidate Database.",
       suggestedFix: "Verify the candidate was written to the production database, fetchAtsData reloads candidates after save, and the Candidate Database search includes newly created records after refresh.",
@@ -253,6 +307,8 @@ function classifyFailure(row) {
   }
   if (titleIncludes(row, "creates only a test_ candidate") || normalized.includes("candidate")) {
     return {
+      category: "real product bug",
+      module: "Candidates",
       severity: "High",
       bug: "TEST_ candidate creation flow failed or did not prove persistence in Candidate Database.",
       suggestedFix: "Validate Add Candidate form submission, backend candidate API response handling, permissions for the QA user, and post-save reload behavior.",
@@ -261,6 +317,8 @@ function classifyFailure(row) {
   }
   if (titleIncludes(row, "opens key operational pages") || normalized.includes("navigation") || normalized.includes("page title")) {
     return {
+      category: "real product bug",
+      module: "Navigation/RBAC",
       severity: "Medium",
       bug: "One or more operational pages did not open or expose the expected page title for the QA user.",
       suggestedFix: "Confirm RBAC visibility, page routing, and that each permitted page renders a stable title and empty/loading/error state.",
@@ -268,6 +326,8 @@ function classifyFailure(row) {
     };
   }
   return {
+    category: "test automation issue",
+    module: inferModule(row),
     severity: "Medium",
     bug: "Playwright detected an ATS workflow failure.",
     suggestedFix: "Inspect the screenshot, trace, browser events, and error context to identify the broken selector, validation, API, or permission issue.",
@@ -296,6 +356,8 @@ function makeBug(row, index) {
     durationMs: row.duration,
     bug: classification.bug,
     severity: classification.severity,
+    category: classification.category,
+    module: classification.module || inferModule(row),
     reproductionSteps: [
       `Open the live ATS at ${process.env.ATS_BASE_URL || "the configured ATS_BASE_URL"}.`,
       authConfig.authMode === "qa-login"
@@ -310,6 +372,52 @@ function makeBug(row, index) {
       errorMessage,
       attachmentText: row.attachmentText || "",
       attachments,
+    },
+  };
+}
+
+function getFullAuditReport(row) {
+  const reportAttachment = row.attachments.find(attachment =>
+    /qa-full-audit-report\.json/i.test(attachment.name || attachment.path || ""),
+  );
+  if (!reportAttachment) return null;
+  const report = parseJsonAttachment(reportAttachment);
+  if (!report || !Array.isArray(report.bugs)) return null;
+  return report;
+}
+
+function makeBugFromAuditReport(row, auditBug, index) {
+  const title = row.titlePath.join(" > ");
+  return {
+    id: auditBug.id || `ATS-QA-${String(index + 1).padStart(3, "0")}`,
+    title,
+    project: row.projectName || "unknown",
+    location: row.location,
+    status: row.status,
+    retry: row.retry,
+    durationMs: row.duration,
+    bug: auditBug.bug || "Full ATS audit recorded a finding.",
+    severity: auditBug.severity || "Medium",
+    category: auditBug.category || "real product bug",
+    module: auditBug.module || inferModule(row),
+    reproductionSteps: Array.isArray(auditBug.reproductionSteps) && auditBug.reproductionSteps.length > 0
+      ? auditBug.reproductionSteps
+      : [
+          `Open the live ATS at ${process.env.ATS_BASE_URL || "the configured ATS_BASE_URL"}.`,
+          "Run the full ATS QA audit.",
+          `Review the audit finding from scenario: ${title}.`,
+        ],
+    suggestedFix: auditBug.suggestedFix || "Inspect the attached screenshot, trace, and API evidence for this audit finding.",
+    uxRecommendation: auditBug.uxRecommendation || "Make the failed state visible and actionable for ATS users.",
+    evidence: {
+      errorMessage: auditBug.evidence?.errorMessage || "See qa-full-audit-report.json for details.",
+      attachmentText: "",
+      attachments: row.attachments.map(attachment => ({
+        name: attachment.name,
+        contentType: attachment.contentType,
+        path: attachment.path,
+      })),
+      auditEvidence: auditBug.evidence || null,
     },
   };
 }
@@ -339,22 +447,37 @@ function writeReports(summary) {
     "",
   ];
 
+  if (summary.flows?.length > 0) {
+    lines.push(
+      "## Flow Results",
+      "",
+      "| Flow | Module | Status | Duration |",
+      "| --- | --- | --- | --- |",
+    );
+    for (const flow of summary.flows) {
+      lines.push(`| ${escapeMd(flow.name)} | ${escapeMd(flow.module)} | ${escapeMd(flow.status)} | ${flow.durationMs ?? "unknown"}ms |`);
+    }
+    lines.push("");
+  }
+
   if (summary.bugs.length === 0) {
     lines.push("## Result", "", "No bugs found in this run.", "");
   } else {
     lines.push(
       "## Bugs",
       "",
-      "| ID | Severity | Bug | Suggested Fix | UX Recommendation |",
-      "| --- | --- | --- | --- | --- |",
+      "| ID | Severity | Category | Module | Bug | Suggested Fix | UX Recommendation |",
+      "| --- | --- | --- | --- | --- | --- | --- |",
     );
     for (const bug of summary.bugs) {
-      lines.push(`| ${bug.id} | ${bug.severity} | ${escapeMd(bug.bug)} | ${escapeMd(bug.suggestedFix)} | ${escapeMd(bug.uxRecommendation)} |`);
+      lines.push(`| ${bug.id} | ${bug.severity} | ${escapeMd(bug.category)} | ${escapeMd(bug.module)} | ${escapeMd(bug.bug)} | ${escapeMd(bug.suggestedFix)} | ${escapeMd(bug.uxRecommendation)} |`);
     }
     lines.push("");
     for (const bug of summary.bugs) {
       lines.push(
-        `## ${bug.id}: ${bug.severity}`,
+        `## ${bug.id}: ${bug.severity} - ${bug.module || "General ATS"}`,
+        "",
+        `**Category:** ${bug.category || "Unclassified"}`,
         "",
         `**Scenario:** ${bug.title}`,
         "",
@@ -383,6 +506,15 @@ function writeReports(summary) {
     }
   }
 
+  if (summary.recommendations?.length > 0) {
+    lines.push(
+      "## UX Recommendations",
+      "",
+      ...summary.recommendations.map(item => `- **${escapeMd(item.module)}:** ${escapeMd(item.recommendation)}`),
+      "",
+    );
+  }
+
   fs.writeFileSync(markdownPath, `${lines.join("\n")}\n`);
 }
 
@@ -406,6 +538,8 @@ if (!results) {
       durationMs: 0,
       bug: "Playwright did not produce test-results/results.json.",
       severity: "High",
+      category: "test automation issue",
+      module: "QA infrastructure",
       reproductionSteps: [
         "Run the ATS QA Product Agent workflow.",
         "Open the uploaded artifacts.",
@@ -422,7 +556,13 @@ if (!results) {
 
 const rows = (results.suites || []).flatMap(suite => flattenSpecs(suite));
 const failedRows = rows.filter(row => row.outcome === "unexpected" || ["failed", "timedOut", "interrupted"].includes(row.status));
-const bugs = failedRows.map(makeBug);
+const auditReports = failedRows.map(row => ({ row, report: getFullAuditReport(row) })).filter(item => item.report);
+const auditBugs = auditReports.flatMap(({ row, report }) => report.bugs.map(bug => ({ row, bug })));
+const bugs = auditReports.length > 0
+  ? auditBugs.map(({ row, bug }, index) => makeBugFromAuditReport(row, bug, index))
+  : failedRows.map(makeBug);
+const flows = auditReports.flatMap(({ report }) => report.flows || []);
+const recommendations = auditReports.flatMap(({ report }) => report.recommendations || []);
 
 writeReports({
   generatedAt: new Date().toISOString(),
@@ -435,6 +575,8 @@ writeReports({
     failed: failedRows.length,
     skipped: rows.filter(row => row.status === "skipped").length,
   },
+  flows,
+  recommendations,
   bugs,
 });
 
