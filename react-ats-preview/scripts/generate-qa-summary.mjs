@@ -31,7 +31,7 @@ function resolveAttachmentPath(attachmentPath) {
 
 function readAttachmentText(attachments = []) {
   const usefulAttachments = attachments.filter(attachment =>
-    /browser-events|current-page-state|error-context/i.test(attachment.name || attachment.path || ""),
+    /browser-events|current-page-state|error-context|qa-login-response|qa-login-session|candidate-create-response|candidate-persistence/i.test(attachment.name || attachment.path || ""),
   );
 
   return usefulAttachments.map(attachment => {
@@ -46,7 +46,7 @@ function readAttachmentText(attachments = []) {
     }
 
     if (!text.trim()) return "";
-    return `Attachment ${attachment.name || path.basename(attachment.path)}:\n${text.trim().slice(0, 4_000)}`;
+    return `Attachment ${attachment.name || path.basename(attachment.path)}:\n${text.trim().slice(0, 6_000)}`;
   }).filter(Boolean).join("\n\n");
 }
 
@@ -108,6 +108,22 @@ function classifyFailure(row) {
       uxRecommendation: "Keep QA login failures separate from Microsoft login failures in the report so product bugs are not mixed with test-environment setup issues.",
     };
   }
+  if (normalized.includes("/auth/me rejected") || normalized.includes("qa test login returned tokens, but /auth/me rejected")) {
+    return {
+      severity: "Critical",
+      bug: "Temporary QA login returned tokens, but the ATS backend rejected the authenticated session.",
+      suggestedFix: "Check JWT_SECRET consistency on the backend, confirm the QA login endpoint and /auth/me are served by the same deployed backend, and verify the workflow ATS_API_BASE_URL points to the live /api/v1 backend.",
+      uxRecommendation: "Report QA login token failures separately from product-flow bugs so recruiters are not asked to retest candidate workflows until the test session is valid.",
+    };
+  }
+  if (normalized.includes("qa test login returned an admin user")) {
+    return {
+      severity: "Critical",
+      bug: "Temporary QA login is using an admin account instead of a limited test user.",
+      suggestedFix: "Update the QA login endpoint to always create/use a limited recruiter-style QA user and reject admin roles for automated testing.",
+      uxRecommendation: "Keep automated test users visibly marked as QA-only and non-admin in Settings to avoid accidental broad access.",
+    };
+  }
   if (normalized.includes("enter your email, phone, or skype") || normalized.includes("email entry screen")) {
     return {
       severity: "Critical",
@@ -154,6 +170,30 @@ function classifyFailure(row) {
       bug: "Frontend could not reach the live backend API.",
       suggestedFix: "Check VITE_API_BASE_URL, backend App Service health, CORS_ORIGINS, and Azure App Service environment variables.",
       uxRecommendation: "Display backend connectivity status with the API URL and a retry action before allowing users to continue.",
+    };
+  }
+  if (normalized.includes("candidate create api request was not observed")) {
+    return {
+      severity: "High",
+      bug: "Add Candidate UI did not send a candidate-create API request.",
+      suggestedFix: "Check the Add Candidate button handler, required field validation, modal state, and API base configuration. The QA test now waits for POST /candidates so UI-only failures are isolated.",
+      uxRecommendation: "Show inline validation beside the blocked field instead of silently leaving the modal open.",
+    };
+  }
+  if (normalized.includes("candidate create api failed") || normalized.includes("candidate-create-response")) {
+    return {
+      severity: "High",
+      bug: "TEST_ candidate creation API failed.",
+      suggestedFix: "Inspect candidate-create-response.json for the exact HTTP status and backend validation message. Check QA user write permissions, required candidate fields, duplicate email handling, and candidate API response handling.",
+      uxRecommendation: "After a failed save, show the backend validation message directly in the Add Candidate modal.",
+    };
+  }
+  if (normalized.includes("after reloading to prove test_ candidate persistence") || normalized.includes("candidate-persistence")) {
+    return {
+      severity: "High",
+      bug: "TEST_ candidate was created but did not persist or reload into Candidate Database.",
+      suggestedFix: "Verify the candidate was written to the production database, fetchAtsData reloads candidates after save, and the Candidate Database search includes newly created records after refresh.",
+      uxRecommendation: "Show a post-save success toast and keep the new candidate visible immediately after save and refresh.",
     };
   }
   if (titleIncludes(row, "creates only a test_ candidate") || normalized.includes("candidate")) {
