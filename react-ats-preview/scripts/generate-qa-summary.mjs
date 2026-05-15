@@ -54,7 +54,7 @@ function resolveAttachmentPath(attachmentPath) {
 
 function readAttachmentText(attachments = []) {
   const usefulAttachments = attachments.filter(attachment =>
-    /auth-mode|browser-events|current-page-state|error-context|qa-login-response|qa-login-session|candidate-create-response|candidate-persistence/i.test(attachment.name || attachment.path || ""),
+    /auth-mode|browser-events|current-page-state|error-context|qa-login-response|qa-login-session|http-403-responses|candidate-create-response|candidate-persistence/i.test(attachment.name || attachment.path || ""),
   );
 
   return usefulAttachments.map(attachment => {
@@ -147,12 +147,12 @@ function classifyFailure(row) {
       uxRecommendation: "Report QA login token failures separately from product-flow bugs so recruiters are not asked to retest candidate workflows until the test session is valid.",
     };
   }
-  if (normalized.includes("qa test login returned an admin user")) {
+  if (normalized.includes("unexpected 403 api responses observed") || normalized.includes("http-403-responses")) {
     return {
-      severity: "Critical",
-      bug: "Temporary QA login is using an admin account instead of a limited test user.",
-      suggestedFix: "Update the QA login endpoint to always create/use a limited recruiter-style QA user and reject admin roles for automated testing.",
-      uxRecommendation: "Keep automated test users visibly marked as QA-only and non-admin in Settings to avoid accidental broad access.",
+      severity: "High",
+      bug: "The authenticated ATS session received one or more 403 Forbidden responses from the live backend API.",
+      suggestedFix: "Open http-403-responses.json in the Playwright artifacts to review the exact method, endpoint, and response body. Confirm whether the route should allow the QA admin account, or update the frontend to avoid unauthorized calls and handle expected 403 responses gracefully.",
+      uxRecommendation: "Show role/access errors inline with the blocked action instead of only logging 403 responses in the browser console.",
     };
   }
   if (normalized.includes("enter your email, phone, or skype") || normalized.includes("email entry screen")) {
