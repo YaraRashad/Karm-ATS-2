@@ -329,6 +329,10 @@ async function completeQaLogin(page, testInfo) {
     throw new Error(`QA test login /auth/me response did not include a usable user.\n${meResult.raw || "No response body"}`);
   }
 
+  if (meUser.role !== "admin") {
+    throw new Error(`QA test login is enabled but returned role "${meUser.role}" for ${meUser.email}. Expected the isolated QA account to be admin so Playwright can test the full ATS without RBAC blocking. This usually means the backend App Service has not deployed the latest QA-login code.`);
+  }
+
   await page.evaluate(({ accessToken, refreshToken }) => {
     sessionStorage.setItem("karm_ats_access_token", accessToken);
     sessionStorage.setItem("karm_ats_refresh_token", refreshToken);
@@ -461,7 +465,7 @@ test.describe("Karm ATS live QA smoke", () => {
     expect(unique.startsWith(TEST_PREFIX), "QA-created records must use the configured TEST_ prefix").toBeTruthy();
 
     await openNav(page, "candidates", "Candidate Database");
-    await page.getByRole("button", { name: /add candidate/i }).click();
+    await page.getByTestId("open-add-candidate").click();
     await expect(page.locator(".modal-title"), "Add Candidate modal should open").toContainText("Add Candidate");
 
     await page.getByTestId("candidate-name-input").fill(unique);
@@ -477,7 +481,7 @@ test.describe("Karm ATS live QA smoke", () => {
       throw new Error(`Candidate create API request was not observed after clicking Add Candidate. The UI may not be submitting, may be blocked by validation, or may be using the wrong API base URL.\n${error.message}`);
     });
 
-    await page.getByRole("button", { name: /^add candidate$/i }).click();
+    await page.getByTestId("submit-add-candidate").click();
     const createResponse = await createResponsePromise;
     const createResult = await readApiResponse(createResponse);
     await attachJson(testInfo, "candidate-create-response.json", createResult);
