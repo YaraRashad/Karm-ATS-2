@@ -363,6 +363,75 @@ async function openNav(page, id, expectedTitle) {
   await expect(page.locator(".page-title"), `Page title should confirm "${expectedTitle}" opened`).toContainText(expectedTitle, { timeout: 20_000 });
 }
 
+function modal(page) {
+  return page.locator(".modal").last();
+}
+
+async function waitForOptionalDownload(page, clickAction, timeout = 5_000) {
+  const downloadPromise = page.waitForEvent("download", { timeout })
+    .then(download => ({ downloaded: true, suggestedFilename: download.suggestedFilename() }))
+    .catch(error => ({ downloaded: false, error: error.message }));
+  await clickAction();
+  return downloadPromise;
+}
+
+async function waitForOptionalResponse(page, predicate, timeout = 10_000) {
+  return page.waitForResponse(predicate, { timeout }).catch(() => null);
+}
+
+async function selectFirstUsableOption(selectLocator) {
+  const options = await selectLocator.locator("option").evaluateAll(options =>
+    options.map(option => ({
+      value: option.value,
+      label: option.label || option.textContent || "",
+      disabled: option.disabled,
+    })),
+  ).catch(() => []);
+  const option = options.find(item => !item.disabled && item.value !== "" && !/^all$/i.test(item.value) && !/^all\b/i.test(item.label));
+  if (!option) return null;
+  await selectLocator.selectOption(option.value ? { value: option.value } : { label: option.label });
+  return option;
+}
+
+async function findFirstRowContaining(page, text) {
+  const rows = page.locator("tbody tr");
+  const rowCount = await rows.count().catch(() => 0);
+  for (let index = 0; index < rowCount; index += 1) {
+    const row = rows.nth(index);
+    const rowText = await row.innerText().catch(() => "");
+    if (rowText.includes(text)) return row;
+  }
+  return null;
+}
+
+async function findFirstTestRow(page) {
+  return findFirstRowContaining(page, TEST_PREFIX);
+}
+
+async function clickAndExpectModal(page, buttonLocator, titlePattern, timeout = 10_000) {
+  await buttonLocator.click();
+  const currentModal = modal(page);
+  await expect(currentModal.locator(".modal-title"), "Expected modal did not open").toContainText(titlePattern, { timeout });
+  return currentModal;
+}
+
+async function closeModalIfVisible(page) {
+  const currentModal = modal(page);
+  if (await currentModal.isVisible().catch(() => false)) {
+    const closeButton = currentModal.locator(".modal-close").first();
+    if (await closeButton.isVisible().catch(() => false)) {
+      await closeButton.click();
+      await expect(currentModal).toHaveCount(0, { timeout: 10_000 }).catch(() => {});
+      return;
+    }
+    const cancelButton = currentModal.getByRole("button", { name: /cancel|close/i }).first();
+    if (await cancelButton.isVisible().catch(() => false)) {
+      await cancelButton.click();
+      await expect(currentModal).toHaveCount(0, { timeout: 10_000 }).catch(() => {});
+    }
+  }
+}
+
 function slugify(value) {
   return String(value || "item")
     .toLowerCase()
@@ -378,6 +447,33 @@ function formatError(error) {
 
 function escapeMd(value) {
   return String(value || "").replace(/\|/g, "\\|").replace(/\n/g, "<br>");
+}
+
+function normalizeText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function buildReadinessSummary(bugs) {
+  const bySeverity = bugs.reduce((acc, bug) => {
+    acc[bug.severity] = (acc[bug.severity] || 0) + 1;
+    return acc;
+  }, {});
+  const blocking = (bySeverity.Critical || 0) > 0 || (bySeverity.High || 0) > 0;
+  const status = blocking
+    ? "Not ready for wider rollout"
+    : bugs.length > 0
+      ? "Pilot-ready with fixes recommended"
+      : "No blocking findings in this QA run";
+
+  return {
+    status,
+    bySeverity,
+    recommendation: blocking
+      ? "Fix Critical/High findings before inviting a wider recruiter or hiring-manager audience."
+      : bugs.length > 0
+        ? "Review Medium/Low findings and UX recommendations before expanding beyond controlled pilot users."
+        : "Continue pilot testing with real role accounts and monitor audit logs after deployment.",
+  };
 }
 
 function classifyAuditIssue(flow, error) {
@@ -439,6 +535,14 @@ function makeReportMarkdown(report) {
     `- Production database reset: ${report.safety.databaseReset}`,
     `- Demo seed: ${report.safety.demoSeed}`,
     `- Non-TEST records touched: ${report.safety.nonTestRecordsTouched}`,
+    `- Readiness: ${report.readiness.status}`,
+    `- Readiness recommendation: ${report.readiness.recommendation}`,
+    "",
+    "## Actions Tested",
+    "",
+    "| Module | Action | Status | Details |",
+    "| --- | --- | --- | --- |",
+    ...report.actionsTested.map(action => `| ${escapeMd(action.module)} | ${escapeMd(action.action)} | ${escapeMd(action.status)} | ${escapeMd(action.details)} |`),
     "",
     "## Flow Results",
     "",
@@ -501,6 +605,17 @@ function createAudit(testInfo) {
   const bugs = [];
   const flows = [];
   const recommendations = [];
+  const actionsTested = [];
+
+  const recordAction = (module, action, status = "tested", details = "") => {
+    actionsTested.push({
+      module,
+      action,
+      status,
+      details,
+      timestamp: new Date().toISOString(),
+    });
+  };
 
   const addBug = async (page, flow, error, overrides = {}) => {
     const classification = { ...classifyAuditIssue(flow, error), ...overrides };
@@ -582,6 +697,8 @@ function createAudit(testInfo) {
         demoSeed: "not performed",
         nonTestRecordsTouched: "no intentional writes outside TEST_ records",
       },
+      readiness: buildReadinessSummary(bugs),
+      actionsTested,
       flows,
       bugs,
       recommendations,
@@ -594,7 +711,7 @@ function createAudit(testInfo) {
     return report;
   };
 
-  return { bugs, flows, recommendations, addBug, runFlow, check, addRecommendation, attachReport };
+  return { bugs, flows, recommendations, actionsTested, addBug, runFlow, check, addRecommendation, recordAction, attachReport };
 }
 
 const FLOW = {
@@ -605,12 +722,33 @@ const FLOW = {
     suggestedFix: "Confirm QA auth, backend health, app shell rendering, and initial dashboard data loading.",
     uxRecommendation: "Show a clear authenticated loading state and a specific backend/auth error when the dashboard cannot load.",
   },
+  navigation: {
+    name: "Navigation links open every main module",
+    module: "Navigation",
+    reproductionSteps: ["Log in to ATS.", "Click each sidebar navigation link.", "Verify the expected page title appears."],
+    suggestedFix: "Check route/page mapping, RBAC navigation visibility, and page-load error handling for every main ATS module.",
+    uxRecommendation: "Keep navigation labels stable and show a clear restricted-access state when a role cannot access a page.",
+  },
+  hiringRequests: {
+    name: "Hiring Requests workflow audit",
+    module: "Hiring Requests",
+    reproductionSteps: ["Open Hiring Requests.", "Inspect the approval flow.", "Open Request New Hire and validate required fields without submitting production data."],
+    suggestedFix: "Check hiring request modal validation, approval-step visibility, and TEST_ safe request creation.",
+    uxRecommendation: "Make request status and approval owner clear so managers understand what is pending.",
+  },
   jobs: {
     name: "Job requisitions open",
     module: "Job Requisitions",
     reproductionSteps: ["Log in to ATS.", "Open Job Requisitions from the sidebar.", "Verify filters and actions render."],
     suggestedFix: "Check job requisition page routing, RBAC visibility, and position list API responses.",
     uxRecommendation: "Keep job filters and action buttons aligned and explain empty/error states.",
+  },
+  jobActions: {
+    name: "Job Requisitions buttons and TEST_ record actions",
+    module: "Job Requisitions",
+    reproductionSteps: ["Open Job Requisitions.", "Test export/import/new/edit/save/assign recruiter controls.", "Only close/delete positions created with TEST_ prefix."],
+    suggestedFix: "Check position create/update/delete/assign recruiter API wiring and frontend save-state handling.",
+    uxRecommendation: "Group row actions consistently and show success/error messages after every saved change.",
   },
   candidateCreate: {
     name: "Candidate creation",
@@ -626,12 +764,19 @@ const FLOW = {
     suggestedFix: "Verify the candidate is written to the production database and refetched after reload.",
     uxRecommendation: "Make saved records immediately visible and searchable after refresh.",
   },
+  candidateActions: {
+    name: "Candidate buttons, validation, profile, and TEST_ safety",
+    module: "Candidates",
+    reproductionSteps: ["Open Candidate Database.", "Test export, filters, Add Candidate validation, Referral validation, View Profile, and TEST_ delete availability."],
+    suggestedFix: "Check candidate form validation, profile behavior, delete action availability, and CV download behavior.",
+    uxRecommendation: "Keep CV preview separate from manual download and give admins a safe TEST_ delete path for bad uploads.",
+  },
   pipeline: {
-    name: "Pipeline page opens",
+    name: "Pipeline page and card actions audit",
     module: "Pipeline",
-    reproductionSteps: ["Open Candidate Pipeline.", "Verify the pipeline page renders without writing to non-TEST records."],
-    suggestedFix: "Check pipeline page routing, stage rendering, and candidate API loading.",
-    uxRecommendation: "Show a useful empty state when no active applications are visible.",
+    reproductionSteps: ["Open Candidate Pipeline.", "Verify search/filters, kanban, upload modal, card quick actions, and bulk actions without moving non-TEST records."],
+    suggestedFix: "Check pipeline page routing, stage rendering, CV upload entry points, TEST_ card action safety, and empty states.",
+    uxRecommendation: "Show delayed/empty pipeline states clearly and disable dangerous actions for non-TEST records during QA.",
   },
   interviews: {
     name: "Interview scheduling flow",
@@ -641,31 +786,27 @@ const FLOW = {
     uxRecommendation: "Disable scheduling or show a clear message when no eligible candidate is available.",
   },
   offers: {
-    name: "Offer page access",
+    name: "Offer page and actions audit",
     module: "Offers",
-    reproductionSteps: ["Open Offer Approvals.", "Verify the page renders without unauthorized salary/offer data calls."],
+    reproductionSteps: ["Open Offer Approvals.", "Verify the page renders, create-offer modal can open if allowed, and unauthorized salary/offer data calls are not made."],
     suggestedFix: "Check offer page RBAC, salary visibility logic, and backend offer list routes.",
     uxRecommendation: "Show masked salary/offer details unless the user has permission.",
   },
   permissions: {
-    name: "Role and permission checks",
+    name: "Settings, role, and permission checks",
     module: "Settings/RBAC",
-    reproductionSteps: ["Open Settings as the QA admin user.", "Verify user/permission controls are visible.", "Review captured 403 responses."],
+    reproductionSteps: ["Open Settings as the QA admin user.", "Verify user, permission, approval, audit, stages, and entities areas are available.", "Review captured 403 responses."],
     suggestedFix: "Check admin RBAC, settings page API calls, and frontend handling of forbidden routes.",
     uxRecommendation: "Make restricted actions explicit by role instead of failing silently.",
   },
+  mobile: {
+    name: "Mobile responsive basic audit",
+    module: "Responsive UX",
+    reproductionSteps: ["Resize the browser to a mobile viewport.", "Reload the authenticated ATS shell.", "Verify navigation and core dashboard still render."],
+    suggestedFix: "Check sidebar/content responsive layout, overflow, and hidden action buttons on narrow screens.",
+    uxRecommendation: "Provide a usable mobile or tablet layout for managers approving requests away from a desktop.",
+  },
 };
-
-async function closeModalIfVisible(page) {
-  const modal = page.locator(".modal").last();
-  if (await modal.isVisible().catch(() => false)) {
-    const closeButton = modal.locator(".modal-close").first();
-    if (await closeButton.isVisible().catch(() => false)) {
-      await closeButton.click();
-      await expect(modal).toHaveCount(0, { timeout: 10_000 }).catch(() => {});
-    }
-  }
-}
 
 async function requireAuthenticated(isAuthenticated) {
   if (!isAuthenticated()) {
@@ -755,29 +896,283 @@ test.describe("Karm ATS live QA full audit", () => {
     const audit = createAudit(testInfo);
     let authenticated = false;
     let createdCandidate = null;
+    let createdJob = null;
 
     await audit.runFlow(page, FLOW.dashboard, async () => {
       await openAts(page, testInfo);
       authenticated = true;
+      audit.recordAction("Dashboard", "QA login/authenticated shell", "tested", `Auth mode: ${AUTH_MODE}`);
       await audit.check(page, FLOW.dashboard, "Dashboard title did not prove the authenticated app loaded.", async () => {
         await expect(page.locator(".page-title")).toContainText(/Karm\. ATS Dashboard|Dashboard/i, { timeout: 20_000 });
       });
-      for (const navId of ["jobs", "candidates", "pipeline"]) {
+      for (const navId of ["dashboard", "requests", "jobs", "candidates", "pipeline", "interviews", "offers", "settings"]) {
         await audit.check(page, FLOW.dashboard, `Dashboard shell is missing required navigation item: ${navId}.`, async () => {
           await expect(page.getByTestId(`nav-${navId}`)).toBeVisible({ timeout: 10_000 });
         });
       }
     });
 
+    await audit.runFlow(page, FLOW.navigation, async () => {
+      await requireAuthenticated(() => authenticated);
+      const navTargets = [
+        ["dashboard", "Karm. ATS Dashboard"],
+        ["requests", "Hiring Requests"],
+        ["jobs", "Job Requisitions"],
+        ["candidates", "Candidate Database"],
+        ["pipeline", "Candidate Pipeline"],
+        ["interviews", "Interviews & Scorecards"],
+        ["offers", "Offer Approvals"],
+        ["settings", "Settings"],
+      ];
+      for (const [id, title] of navTargets) {
+        await audit.check(page, FLOW.navigation, `Navigation link "${id}" did not open ${title}.`, async () => {
+          await openNav(page, id, title);
+          audit.recordAction("Navigation", `Open ${title}`, "tested", `nav-${id}`);
+        }, {
+          category: "real product bug",
+          severity: "High",
+        });
+      }
+    });
+
+    await audit.runFlow(page, FLOW.hiringRequests, async () => {
+      await requireAuthenticated(() => authenticated);
+      await openNav(page, "requests", "Hiring Requests");
+      audit.recordAction("Hiring Requests", "Open page", "tested");
+      await audit.check(page, FLOW.hiringRequests, "Hiring Requests approval flow did not render.", async () => {
+        await expect(page.getByText(/Approval flow|Manager submits|HR reviews/i).first()).toBeVisible({ timeout: 15_000 });
+      });
+
+      const requestButton = page.getByRole("button", { name: /request new hire/i }).first();
+      if (await requestButton.isVisible().catch(() => false)) {
+        await audit.check(page, FLOW.hiringRequests, "Request New Hire modal did not open.", async () => {
+          await clickAndExpectModal(page, requestButton, /Request New Hire/i);
+          audit.recordAction("Hiring Requests", "Request New Hire button", "tested", "Opened modal without submitting production data");
+          const currentModal = modal(page);
+          await expect(currentModal.getByText(/Role title|Business reason/i).first()).toBeVisible({ timeout: 10_000 });
+          await closeModalIfVisible(page);
+        });
+      } else {
+        audit.addRecommendation("Hiring Requests", "Request New Hire is not visible for this QA account. Keep this intentional if only hiring managers should create requests, and document the role behavior in the report.");
+      }
+    });
+
     await audit.runFlow(page, FLOW.jobs, async () => {
       await requireAuthenticated(() => authenticated);
       await openNav(page, "jobs", "Job Requisitions");
+      audit.recordAction("Job Requisitions", "Open page", "tested");
       await audit.check(page, FLOW.jobs, "Job Requisitions search input is missing.", async () => {
         await expect(page.locator(".search-input").first()).toBeVisible({ timeout: 10_000 });
       });
       await audit.check(page, FLOW.jobs, "Job Requisitions table did not render.", async () => {
         await expect(page.locator(".table-wrap table").first()).toBeVisible({ timeout: 15_000 });
       });
+      for (const label of ["Status", "Entity", "Department"]) {
+        await audit.check(page, FLOW.jobs, `Job Requisitions ${label} filter is missing.`, async () => {
+          await expect(page.getByText(new RegExp(`^${label}$`, "i")).first()).toBeVisible({ timeout: 10_000 });
+          audit.recordAction("Job Requisitions", `${label} filter`, "tested");
+        });
+      }
+      const recruiterFilterVisible = await page.getByText(/^Recruiter$/i).first().isVisible().catch(() => false);
+      if (!recruiterFilterVisible) {
+        audit.addRecommendation("Job Requisitions", "Add a Recruiter filter next to Status, Entity, and Department so admins can review workload by recruiter.");
+      }
+    });
+
+    await audit.runFlow(page, FLOW.jobActions, async () => {
+      await requireAuthenticated(() => authenticated);
+      await openNav(page, "jobs", "Job Requisitions");
+
+      await audit.check(page, FLOW.jobActions, "Export Excel button did not trigger a download or remain usable.", async () => {
+        const exportButton = page.getByRole("button", { name: /export excel/i }).first();
+        await expect(exportButton).toBeVisible({ timeout: 10_000 });
+        const download = await waitForOptionalDownload(page, () => exportButton.click(), 8_000);
+        audit.recordAction("Job Requisitions", "Export Excel", download.downloaded ? "downloaded" : "clicked", download.suggestedFilename || download.error || "No browser download observed");
+      }, {
+        severity: "Medium",
+      });
+
+      await audit.check(page, FLOW.jobActions, "Import Manpower Plan did not open the import workflow.", async () => {
+        const importButton = page.getByRole("button", { name: /import manpower plan/i }).first();
+        await expect(importButton).toBeVisible({ timeout: 10_000 });
+        await importButton.click();
+        audit.recordAction("Job Requisitions", "Import Manpower Plan", "tested", "Opened upload/review workflow");
+        await expect(page.locator(".modal, input[type='file']").first()).toBeVisible({ timeout: 10_000 });
+        await closeModalIfVisible(page);
+      }, {
+        severity: "Medium",
+      });
+
+      await audit.check(page, FLOW.jobActions, "New Requisition could not create a TEST_ job safely.", async () => {
+        const uniqueTitle = `${TEST_PREFIX}QA Requisition ${Date.now()}`;
+        await page.getByRole("button", { name: /new requisition/i }).first().click();
+        const currentModal = modal(page);
+        await expect(currentModal.locator(".modal-title")).toContainText(/New Job Requisition/i, { timeout: 10_000 });
+        await currentModal.locator("input.form-input").first().fill(uniqueTitle);
+        const numberInputs = currentModal.locator('input[type="number"]');
+        const numberCount = await numberInputs.count().catch(() => 0);
+        if (numberCount > 0) await numberInputs.nth(0).fill("1");
+        if (numberCount > 1) await numberInputs.nth(1).fill("1");
+        if (numberCount > 2) await numberInputs.nth(2).fill("2");
+        const description = currentModal.locator("textarea.form-textarea").first();
+        if (await description.isVisible().catch(() => false)) {
+          await description.fill("TEST_ QA audit requisition created by automated Playwright audit.");
+        }
+        const createResponsePromise = page.waitForResponse(response =>
+          response.url().startsWith(`${API_BASE}/positions`) &&
+          response.request().method() === "POST",
+          { timeout: 30_000 },
+        );
+        await currentModal.getByRole("button", { name: /create requisition/i }).click();
+        const response = await createResponsePromise;
+        const result = await readApiResponse(response);
+        await attachJson(testInfo, "job-create-response.json", result);
+        if (!response.ok()) {
+          throw new Error(`TEST_ position create API failed (${response.status()}) at ${response.url()}.\n${result.raw || "No response body"}`);
+        }
+        createdJob = { title: uniqueTitle, apiStatus: response.status() };
+        audit.recordAction("Job Requisitions", "New Requisition", "tested", uniqueTitle);
+        await expect(page.locator(".modal")).toHaveCount(0, { timeout: 30_000 });
+      }, {
+        category: "real product bug",
+        severity: "High",
+      });
+
+      await openNav(page, "jobs", "Job Requisitions");
+      const safeJobTitle = createdJob?.title;
+      if (safeJobTitle) {
+        await page.locator(".search-input").first().fill(safeJobTitle);
+      }
+      const safeJobRow = safeJobTitle ? await findFirstRowContaining(page, safeJobTitle) : await findFirstTestRow(page);
+      if (!safeJobRow) {
+        audit.addRecommendation("Job Requisitions", "No TEST_ requisition row was available, so edit/save, assign recruiter, close, and delete row actions were skipped to protect production records.");
+      } else {
+        const safeJobText = await safeJobRow.innerText().catch(() => "");
+        if (!safeJobText.includes(TEST_PREFIX)) {
+          audit.addRecommendation("Job Requisitions", "A job row was visible but did not start with TEST_, so destructive actions were skipped.");
+        } else {
+          await audit.check(page, FLOW.jobActions, "Edit Job / Save changes did not persist a TEST_ job update.", async () => {
+            await safeJobRow.locator("td").first().click();
+            const detailModal = modal(page);
+            await expect(detailModal).toBeVisible({ timeout: 10_000 });
+            const editButton = detailModal.getByRole("button", { name: /edit/i }).first();
+            await expect(editButton).toBeVisible({ timeout: 10_000 });
+            await editButton.click();
+            await expect(detailModal.locator(".modal-title")).toContainText(/Edit Job/i, { timeout: 10_000 });
+            const editDescription = detailModal.locator("textarea.form-textarea").first();
+            if (await editDescription.isVisible().catch(() => false)) {
+              await editDescription.fill(`TEST_ QA audit updated description ${Date.now()}`);
+            }
+            const updateResponsePromise = waitForOptionalResponse(page, response =>
+              response.url().startsWith(`${API_BASE}/positions`) &&
+              ["PUT", "PATCH"].includes(response.request().method()),
+              30_000,
+            );
+            await detailModal.getByRole("button", { name: /save changes/i }).click();
+            const response = await updateResponsePromise;
+            if (response) {
+              const result = await readApiResponse(response);
+              await attachJson(testInfo, "job-update-response.json", result);
+              if (!response.ok()) {
+                throw new Error(`TEST_ position update API failed (${response.status()}) at ${response.url()}.\n${result.raw || "No response body"}`);
+              }
+            }
+            audit.recordAction("Job Requisitions", "Edit / Save changes", "tested", "TEST_ row only");
+            await closeModalIfVisible(page);
+          }, {
+            category: "real product bug",
+            severity: "High",
+          });
+
+          await openNav(page, "jobs", "Job Requisitions");
+          if (safeJobTitle) await page.locator(".search-input").first().fill(safeJobTitle);
+          const assignRow = safeJobTitle ? await findFirstRowContaining(page, safeJobTitle) : await findFirstTestRow(page);
+          await audit.check(page, FLOW.jobActions, "Assign recruiter did not complete successfully on a TEST_ requisition.", async () => {
+            if (!assignRow) throw new Error("No TEST_ row available for Assign recruiter.");
+            const assignButton = assignRow.getByRole("button", { name: /assign recruiter/i }).first();
+            await expect(assignButton).toBeVisible({ timeout: 10_000 });
+            await assignButton.click();
+            const assignModal = modal(page);
+            await expect(assignModal.locator(".modal-title")).toContainText(/Assign Recruiter/i, { timeout: 10_000 });
+            const recruiterSelect = assignModal.locator("select.form-select").first();
+            const selected = await selectFirstUsableOption(recruiterSelect);
+            if (!selected) throw new Error("Assign Recruiter modal did not provide a selectable recruiter.");
+            const assignResponsePromise = waitForOptionalResponse(page, response =>
+              response.url().startsWith(`${API_BASE}/positions`) &&
+              ["PUT", "PATCH"].includes(response.request().method()),
+              30_000,
+            );
+            await assignModal.getByRole("button", { name: /^assign recruiter$/i }).click();
+            const response = await assignResponsePromise;
+            if (response) {
+              const result = await readApiResponse(response);
+              await attachJson(testInfo, "job-assign-recruiter-response.json", result);
+              if (!response.ok()) {
+                throw new Error(`Assign recruiter API failed (${response.status()}) at ${response.url()}.\n${result.raw || "No response body"}`);
+              }
+            }
+            audit.recordAction("Job Requisitions", "Assign recruiter", "tested", `Selected ${selected.label}`);
+            await closeModalIfVisible(page);
+          }, {
+            category: "real product bug",
+            severity: "High",
+          });
+
+          await openNav(page, "jobs", "Job Requisitions");
+          if (safeJobTitle) await page.locator(".search-input").first().fill(safeJobTitle);
+          const deleteRow = safeJobTitle ? await findFirstRowContaining(page, safeJobTitle) : await findFirstTestRow(page);
+          if (deleteRow) {
+            await audit.check(page, FLOW.jobActions, "Close/Reopen TEST_ requisition action did not respond.", async () => {
+              const closeButton = deleteRow.getByRole("button", { name: /close|reopen/i }).first();
+              await expect(closeButton).toBeVisible({ timeout: 10_000 });
+              const responsePromise = waitForOptionalResponse(page, response =>
+                response.url().startsWith(`${API_BASE}/positions`) &&
+                ["PUT", "PATCH"].includes(response.request().method()),
+                20_000,
+              );
+              await closeButton.click();
+              const response = await responsePromise;
+              if (response) {
+                const result = await readApiResponse(response);
+                await attachJson(testInfo, "job-close-reopen-response.json", result);
+                if (!response.ok()) {
+                  throw new Error(`Close/Reopen API failed (${response.status()}) at ${response.url()}.\n${result.raw || "No response body"}`);
+                }
+              }
+              audit.recordAction("Job Requisitions", "Close/Reopen", "tested", "TEST_ row only");
+            }, {
+              severity: "Medium",
+            });
+
+            await openNav(page, "jobs", "Job Requisitions");
+            if (safeJobTitle) await page.locator(".search-input").first().fill(safeJobTitle);
+            const destructiveRow = safeJobTitle ? await findFirstRowContaining(page, safeJobTitle) : await findFirstTestRow(page);
+            await audit.check(page, FLOW.jobActions, "Delete TEST_ requisition action did not respond safely.", async () => {
+              if (!destructiveRow) throw new Error("No TEST_ row available for Delete.");
+              const deleteButton = destructiveRow.getByRole("button", { name: /^delete$/i }).first();
+              await expect(deleteButton).toBeVisible({ timeout: 10_000 });
+              page.once("dialog", dialog => dialog.accept());
+              const responsePromise = waitForOptionalResponse(page, response =>
+                response.url().startsWith(`${API_BASE}/positions`) &&
+                response.request().method() === "DELETE",
+                20_000,
+              );
+              await deleteButton.click();
+              const response = await responsePromise;
+              if (response) {
+                const result = await readApiResponse(response);
+                await attachJson(testInfo, "job-delete-response.json", result);
+                if (!response.ok()) {
+                  throw new Error(`Delete TEST_ position API failed (${response.status()}) at ${response.url()}.\n${result.raw || "No response body"}`);
+                }
+              }
+              audit.recordAction("Job Requisitions", "Delete", "tested", "TEST_ row only");
+            }, {
+              severity: "Medium",
+            });
+          }
+        }
+      }
     });
 
     await audit.runFlow(page, FLOW.candidateCreate, async () => {
@@ -790,6 +1185,7 @@ test.describe("Karm ATS live QA full audit", () => {
 
       await openNav(page, "candidates", "Candidate Database");
       await page.getByTestId("open-add-candidate").click();
+      audit.recordAction("Candidates", "Add Candidate button", "tested");
       await expect(page.locator(".modal-title"), "Add Candidate modal should open").toContainText("Add Candidate", { timeout: 10_000 });
 
       await page.getByTestId("candidate-name-input").fill(unique);
@@ -815,6 +1211,7 @@ test.describe("Karm ATS live QA full audit", () => {
       }
 
       createdCandidate = { name: unique, email, apiStatus: createResponse.status() };
+      audit.recordAction("Candidates", "Create TEST_ candidate", "tested", unique);
       await audit.check(page, FLOW.candidateCreate, "Candidate modal did not close after successful creation.", async () => {
         await expect(page.locator(".modal")).toHaveCount(0, { timeout: 30_000 });
       });
@@ -853,22 +1250,145 @@ test.describe("Karm ATS live QA full audit", () => {
         body: `Created and reloaded TEST_ candidate:\nname=${createdCandidate.name}\nemail=${createdCandidate.email}\napiStatus=${createdCandidate.apiStatus}\n`,
         contentType: "text/plain",
       });
+      audit.recordAction("Candidates", "Search/reload persistence", "tested", createdCandidate.name);
+    });
+
+    await audit.runFlow(page, FLOW.candidateActions, async () => {
+      await requireAuthenticated(() => authenticated);
+      await openNav(page, "candidates", "Candidate Database");
+
+      await audit.check(page, FLOW.candidateActions, "Candidate Export Excel button did not trigger a download or remain usable.", async () => {
+        const exportButton = page.getByRole("button", { name: /export excel/i }).first();
+        await expect(exportButton).toBeVisible({ timeout: 10_000 });
+        const download = await waitForOptionalDownload(page, () => exportButton.click(), 8_000);
+        audit.recordAction("Candidates", "Export Excel", download.downloaded ? "downloaded" : "clicked", download.suggestedFilename || download.error || "No browser download observed");
+      }, {
+        severity: "Medium",
+      });
+
+      for (const label of ["Position", "Department", "Source", "Stage"]) {
+        await audit.check(page, FLOW.candidateActions, `Candidate ${label} filter is missing.`, async () => {
+          await expect(page.getByText(new RegExp(`^${label}$`, "i")).first()).toBeVisible({ timeout: 10_000 });
+          audit.recordAction("Candidates", `${label} filter`, "tested");
+        });
+      }
+
+      await audit.check(page, FLOW.candidateActions, "Add Candidate validation did not keep an empty required form open.", async () => {
+        await page.getByTestId("open-add-candidate").click();
+        const currentModal = modal(page);
+        await expect(currentModal.locator(".modal-title")).toContainText(/Add Candidate/i, { timeout: 10_000 });
+        await page.getByTestId("submit-add-candidate").click();
+        await expect(currentModal, "Add Candidate modal should remain open when required name/email are empty").toBeVisible({ timeout: 5_000 });
+        audit.recordAction("Candidates", "Required-field validation", "tested", "Empty Add Candidate form stayed open");
+        await closeModalIfVisible(page);
+      }, {
+        severity: "Medium",
+      });
+
+      await audit.check(page, FLOW.candidateActions, "Referral source did not require a referred-by field.", async () => {
+        await page.getByTestId("open-add-candidate").click();
+        const currentModal = modal(page);
+        await page.getByTestId("candidate-source-select").selectOption({ label: "Referral" });
+        await expect(currentModal.getByText(/Referred by/i)).toBeVisible({ timeout: 10_000 });
+        const submitButton = page.getByTestId("submit-add-candidate");
+        await expect(submitButton).toBeDisabled();
+        audit.recordAction("Candidates", "Referral referred-by validation", "tested");
+        await closeModalIfVisible(page);
+      }, {
+        severity: "Medium",
+      });
+
+      await openNav(page, "candidates", "Candidate Database");
+      const profileCandidate = createdCandidate?.name || TEST_PREFIX;
+      await page.locator(".search-input").first().fill(profileCandidate);
+      const profileRow = createdCandidate ? await findFirstRowContaining(page, createdCandidate.name) : await findFirstTestRow(page);
+      if (profileRow) {
+        await audit.check(page, FLOW.candidateActions, "Candidate profile opened with an automatic CV download.", async () => {
+          const downloadPromise = page.waitForEvent("download", { timeout: 5_000 }).then(download => download.suggestedFilename()).catch(() => null);
+          await profileRow.getByRole("button", { name: /view/i }).first().click();
+          await expect(modal(page)).toBeVisible({ timeout: 10_000 });
+          const downloadedFile = await downloadPromise;
+          if (downloadedFile) {
+            throw new Error(`Opening candidate profile automatically downloaded ${downloadedFile}. Users should choose View CV or Download CV manually.`);
+          }
+          audit.recordAction("Candidates", "View candidate profile", "tested", "No automatic CV download observed");
+          await closeModalIfVisible(page);
+        }, {
+          category: "real product bug",
+          severity: "High",
+          suggestedFix: "Ensure candidate profile rendering never points an iframe/link at a direct-download URL until the user explicitly clicks Download CV.",
+          uxRecommendation: "Show View CV and Download CV as separate user-controlled actions.",
+        });
+      } else {
+        audit.addRecommendation("Candidates", "No TEST_ candidate row was available for profile/open/delete checks. Keep test data creation healthy so QA can inspect candidate profiles without touching real records.");
+      }
+
+      await openNav(page, "candidates", "Candidate Database");
+      const deleteCandidateRow = createdCandidate ? await findFirstRowContaining(page, createdCandidate.name) : await findFirstTestRow(page);
+      if (deleteCandidateRow) {
+        const deleteButton = deleteCandidateRow.getByRole("button", { name: /^delete$/i }).first();
+        if (await deleteButton.isVisible().catch(() => false)) {
+          audit.recordAction("Candidates", "Candidate delete button", "available", "Delete action exists on TEST_ row; not executed so later QA flows can reuse the record");
+        } else {
+          audit.addRecommendation("Candidates", "Admins need a small Delete action for bad TEST_ candidate uploads and mistaken records, with confirmation and audit logging.");
+        }
+      }
     });
 
     await audit.runFlow(page, FLOW.pipeline, async () => {
       await requireAuthenticated(() => authenticated);
       await openNav(page, "pipeline", "Candidate Pipeline");
+      audit.recordAction("Pipeline", "Open page", "tested");
       await audit.check(page, FLOW.pipeline, "Pipeline kanban board did not render.", async () => {
         await expect(page.locator(".kanban")).toBeVisible({ timeout: 15_000 });
       });
       await audit.check(page, FLOW.pipeline, "Pipeline search input is missing.", async () => {
         await expect(page.locator(".search-input").first()).toBeVisible({ timeout: 10_000 });
       });
+      const delayedSummary = page.getByText(/candidates delayed|delayed/i).first();
+      if (await delayedSummary.isVisible().catch(() => false)) {
+        audit.recordAction("Pipeline", "Stuck candidates summary", "tested", normalizeText(await delayedSummary.innerText().catch(() => "")));
+      } else {
+        audit.addRecommendation("Pipeline", "Add or keep a visible stuck-candidates summary so recruiters can immediately focus on delayed applications.");
+      }
+      await audit.check(page, FLOW.pipeline, "Upload CVs button did not open the CV upload workflow.", async () => {
+        const uploadButton = page.getByRole("button", { name: /upload cvs/i }).first();
+        await expect(uploadButton).toBeVisible({ timeout: 10_000 });
+        await uploadButton.click();
+        audit.recordAction("Pipeline", "Upload CVs", "tested", "Opened upload workflow");
+        await expect(page.locator(".modal, input[type='file']").first()).toBeVisible({ timeout: 10_000 });
+        await closeModalIfVisible(page);
+      }, {
+        severity: "Medium",
+      });
+
+      const testCard = page.locator(".kanban-card", { hasText: TEST_PREFIX }).first();
+      if (await testCard.isVisible().catch(() => false)) {
+        for (const action of ["View Candidate", "Move", "Shortlist", "Reject"]) {
+          await audit.check(page, FLOW.pipeline, `Pipeline TEST_ card is missing quick action: ${action}.`, async () => {
+            await expect(testCard.getByRole("button", { name: new RegExp(action, "i") }).first()).toBeVisible({ timeout: 10_000 });
+            audit.recordAction("Pipeline", `${action} quick action`, "tested", "TEST_ card only");
+          }, {
+            severity: "Medium",
+          });
+        }
+      } else {
+        audit.addRecommendation("Pipeline", "No TEST_ pipeline card was available, so card quick actions and bulk actions were inspected only at page level. Add a dedicated TEST_ application fixture for richer pipeline QA.");
+      }
     });
 
     await audit.runFlow(page, FLOW.interviews, async () => {
       await requireAuthenticated(() => authenticated);
       await openNav(page, "interviews", "Interviews & Scorecards");
+      audit.recordAction("Interviews", "Open page", "tested");
+      for (const tab of ["Scheduled", "Completed"]) {
+        await audit.check(page, FLOW.interviews, `Interview ${tab} tab is missing.`, async () => {
+          await expect(page.getByText(new RegExp(tab, "i")).first()).toBeVisible({ timeout: 10_000 });
+          audit.recordAction("Interviews", `${tab} tab`, "tested");
+        }, {
+          severity: "Medium",
+        });
+      }
       const scheduleButton = page.getByRole("button", { name: /schedule interview/i });
       await expect(scheduleButton, "Schedule Interview action should be visible for QA admin").toBeVisible({ timeout: 10_000 });
       await scheduleButton.click();
@@ -907,22 +1427,88 @@ test.describe("Karm ATS live QA full audit", () => {
       if (!interviewResponse.ok()) {
         throw new Error(`Interview schedule API failed (${interviewResponse.status()}) at ${interviewResponse.url()}.\n${interviewResult.raw || "No response body"}`);
       }
+      audit.recordAction("Interviews", "Schedule Interview", "tested", testOption);
     });
 
     await audit.runFlow(page, FLOW.offers, async () => {
       await requireAuthenticated(() => authenticated);
       await openNav(page, "offers", "Offer Approvals");
+      audit.recordAction("Offers", "Open page", "tested");
       await audit.check(page, FLOW.offers, "Offer table or empty state did not render.", async () => {
         await expect(page.locator(".card").first()).toBeVisible({ timeout: 15_000 });
       });
+      const createOfferButton = page.getByRole("button", { name: /create offer/i }).first();
+      if (await createOfferButton.isVisible().catch(() => false)) {
+        await audit.check(page, FLOW.offers, "Create Offer modal did not open.", async () => {
+          await createOfferButton.click();
+          await expect(modal(page).locator(".modal-title")).toContainText(/Create Offer/i, { timeout: 10_000 });
+          audit.recordAction("Offers", "Create Offer button", "tested", "Opened modal without submitting offer");
+          await closeModalIfVisible(page);
+        }, {
+          severity: "Medium",
+        });
+      } else {
+        audit.addRecommendation("Offers", "Create Offer was not visible to the QA account. If admin can approve but not create offers by policy, keep this intentional and document the role behavior.");
+      }
     });
 
     await audit.runFlow(page, FLOW.permissions, async () => {
       await requireAuthenticated(() => authenticated);
       await openNav(page, "settings", "Settings");
+      audit.recordAction("Settings", "Open page", "tested");
       await audit.check(page, FLOW.permissions, "Settings users area did not render for QA admin.", async () => {
         await expect(page.getByText(/All team members|Role assignments/i).first()).toBeVisible({ timeout: 15_000 });
       });
+      for (const tab of ["Users", "Permissions", "Approvals", "Audit", "Stages", "Entities"]) {
+        await audit.check(page, FLOW.permissions, `Settings ${tab} tab did not open.`, async () => {
+          const tabLocator = page.getByText(new RegExp(`^${tab}$`, "i")).first();
+          await expect(tabLocator).toBeVisible({ timeout: 10_000 });
+          await tabLocator.click();
+          audit.recordAction("Settings", `${tab} tab`, "tested");
+        }, {
+          severity: "Medium",
+        });
+      }
+      await page.getByText(/^Users$/i).first().click().catch(() => {});
+      const addUserButton = page.getByRole("button", { name: /add user/i }).first();
+      if (await addUserButton.isVisible().catch(() => false)) {
+        await audit.check(page, FLOW.permissions, "Add User modal did not open.", async () => {
+          await addUserButton.click();
+          await expect(modal(page).locator(".modal-title")).toContainText(/Add User/i, { timeout: 10_000 });
+          audit.recordAction("Settings", "Add User button", "tested", "Opened modal without saving");
+          await closeModalIfVisible(page);
+        }, {
+          severity: "Medium",
+        });
+      }
+      const userRow = page.locator("tbody tr").first();
+      if (await userRow.isVisible().catch(() => false)) {
+        const editable = await userRow.locator("button, select").count().catch(() => 0);
+        if (editable === 0) {
+          audit.addRecommendation("Settings/RBAC", "All team members rows show roles and permissions but do not expose an obvious Edit action. Add an Edit User control so admins can change role, access scope, department, salary, offers, and requisition permissions.");
+        } else {
+          audit.recordAction("Settings", "User row edit controls", "available", `${editable} controls found in first user row`);
+        }
+      }
+    });
+
+    await audit.runFlow(page, FLOW.mobile, async () => {
+      await requireAuthenticated(() => authenticated);
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await waitForAtsShell(page, "after mobile viewport reload");
+      await audit.check(page, FLOW.mobile, "Mobile viewport did not show the authenticated dashboard title.", async () => {
+        await expect(page.locator(".page-title")).toBeVisible({ timeout: 20_000 });
+      }, {
+        severity: "Medium",
+      });
+      await audit.check(page, FLOW.mobile, "Mobile viewport did not keep navigation or logout accessible.", async () => {
+        await expect(page.locator(".sidebar-nav, .sidebar-user").first()).toBeVisible({ timeout: 10_000 });
+      }, {
+        severity: "Medium",
+      });
+      audit.recordAction("Responsive UX", "Mobile viewport reload", "tested", "390x844");
+      await page.setViewportSize({ width: 1280, height: 900 });
     });
 
     const forbiddenResponses = forbiddenResponsesByTest.get(testInfo) || [];
