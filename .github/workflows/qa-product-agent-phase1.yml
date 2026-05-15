@@ -48,8 +48,15 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run live ATS QA tests
+        id: qa-tests
+        continue-on-error: true
         working-directory: react-ats-preview
         run: npm run qa:e2e
+
+      - name: Generate structured QA bug summary
+        if: always()
+        working-directory: react-ats-preview
+        run: npm run qa:e2e:summary
 
       - name: Publish QA summary
         if: always()
@@ -62,7 +69,13 @@ jobs:
             echo "- Database reset: not performed"
             echo "- Demo seed: not performed"
             echo "- Artifacts: Playwright HTML report, screenshots, videos, traces, JSON, and JUnit are uploaded below."
+            echo ""
           } >> "$GITHUB_STEP_SUMMARY"
+          if [ -f react-ats-preview/test-results/qa-bug-summary.md ]; then
+            cat react-ats-preview/test-results/qa-bug-summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Structured QA bug summary was not generated." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload Playwright report
         if: always()
@@ -79,3 +92,7 @@ jobs:
           name: ats-playwright-test-results
           path: react-ats-preview/test-results
           if-no-files-found: ignore
+
+      - name: Fail workflow if live QA failed
+        if: always() && steps.qa-tests.outcome == 'failure'
+        run: exit 1

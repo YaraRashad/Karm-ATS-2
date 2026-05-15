@@ -566,7 +566,7 @@ function LoginScreen({ onLogin, loading, error }) {
   return (
     <>
       <style>{css}</style>
-      <div className="app" style={{ alignItems: "center", justifyContent: "center", background: "var(--bg)" }}>
+      <div data-testid="login-screen" className="app" style={{ alignItems: "center", justifyContent: "center", background: "var(--bg)" }}>
         <div className="card" style={{ width: "min(440px, calc(100vw - 32px))" }}>
           <div className="card-header"><div className="card-title">Karm. ATS Secure Login</div></div>
           <div className="card-body">
@@ -576,7 +576,7 @@ function LoginScreen({ onLogin, loading, error }) {
                 Microsoft login is not configured yet. Add VITE_AZURE_AD_TENANT_ID and VITE_AZURE_AD_CLIENT_ID.
               </div>
             )}
-            {error && <div className="alert alert-amber" style={{ marginBottom: 16 }}><Icon name="alert" size={14} />{error}</div>}
+            {error && <div data-testid="login-error" className="alert alert-amber" style={{ marginBottom: 16 }}><Icon name="alert" size={14} />{error}</div>}
             <button className="btn btn-primary" onClick={onLogin} disabled={!authConfigReady || loading} style={{ width: "100%", justifyContent: "center", opacity: !authConfigReady || loading ? 0.6 : 1 }}>
               {loading ? "Signing in..." : "Sign in with Microsoft 365"}
             </button>
@@ -836,7 +836,7 @@ function LegacyAtsApp({ sessionUser, backendData, dataError, reloadData, logout:
   return (
     <>
       <style>{css}</style>
-      <div className="app">
+      <div data-testid="ats-shell" className="app">
         {/* SIDEBAR */}
         <aside className="sidebar">
           <div className="sidebar-logo">
@@ -848,7 +848,7 @@ function LegacyAtsApp({ sessionUser, backendData, dataError, reloadData, logout:
           <nav className="sidebar-nav">
             <div className="nav-section-label">Navigation</div>
             {nav.map(item => (
-              <div key={item.id} className={`nav-item ${activePage === item.id ? "active" : ""}`} onClick={() => setPage(item.id)}>
+              <div key={item.id} data-testid={`nav-${item.id}`} className={`nav-item ${activePage === item.id ? "active" : ""}`} onClick={() => setPage(item.id)}>
                 <Icon name={item.icon} />
                 {item.label}
                 {item.badge > 0 && <span className={`nav-badge ${item.badgeColor || ""}`}>{item.badge}</span>}
@@ -867,7 +867,7 @@ function LegacyAtsApp({ sessionUser, backendData, dataError, reloadData, logout:
 
         {/* MAIN CONTENT */}
         <main className="main">
-          {dataError && <div className="alert alert-amber" style={{ margin: 20 }}><Icon name="alert" size={14} />{dataError}</div>}
+          {dataError && <div data-testid="backend-error" className="alert alert-amber" style={{ margin: 20 }}><Icon name="alert" size={14} />{dataError}</div>}
           <PageComponent {...ctx} />
         </main>
 
@@ -4356,14 +4356,14 @@ function AddCandidateModal({ data, closeModal, ctx }) {
           <button className="modal-close" onClick={closeModal}>×</button>
         </div>
         <div className="modal-body">
-          <div className="form-group"><label className="form-label">Full name *</label><input className="form-input" value={form.name} onChange={e => set("name", e.target.value)} placeholder="e.g. Ahmed Kamel" /></div>
+          <div className="form-group"><label className="form-label">Full name *</label><input data-testid="candidate-name-input" className="form-input" value={form.name} onChange={e => set("name", e.target.value)} placeholder="e.g. Ahmed Kamel" /></div>
           <div className="form-row">
-            <div className="form-group"><label className="form-label">Email *</label><input className="form-input" type="email" value={form.email} onChange={e => set("email", e.target.value)} placeholder="candidate@email.com" /></div>
+            <div className="form-group"><label className="form-label">Email *</label><input data-testid="candidate-email-input" className="form-input" type="email" value={form.email} onChange={e => set("email", e.target.value)} placeholder="candidate@email.com" /></div>
             <div className="form-group"><label className="form-label">Phone</label><input className="form-input" value={form.phone} onChange={e => set("phone", e.target.value)} placeholder="+20 1xx xxx xxxx" /></div>
           </div>
           <div className="form-row">
             <div className="form-group"><label className="form-label">Nationality</label><input className="form-input" value={form.nationality} onChange={e => set("nationality", e.target.value)} /></div>
-            <div className="form-group"><label className="form-label">Source</label><select className="form-select" value={form.source} onChange={e => set("source", e.target.value)}>{SOURCES.map(s => <option key={s}>{s}</option>)}</select></div>
+            <div className="form-group"><label className="form-label">Source</label><select data-testid="candidate-source-select" className="form-select" value={form.source} onChange={e => set("source", e.target.value)}>{SOURCES.map(s => <option key={s}>{s}</option>)}</select></div>
           </div>
           {form.source === "Referral" && (
             <div className="form-group">
@@ -4378,7 +4378,7 @@ function AddCandidateModal({ data, closeModal, ctx }) {
             </div>
           )}
           <div className="form-group"><label className="form-label">Apply to job (optional)</label>
-            <select className="form-select" value={form.jobId} onChange={e => set("jobId", e.target.value)}>
+            <select data-testid="candidate-job-select" className="form-select" value={form.jobId} onChange={e => set("jobId", e.target.value)}>
               <option value="">— No job yet —</option>
               {ctx.jobs.filter(j => j.status === "Open").map(j => <option key={j.id} value={j.id}>{j.title} ({j.entity})</option>)}
             </select>

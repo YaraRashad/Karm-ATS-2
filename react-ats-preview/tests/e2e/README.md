@@ -23,7 +23,9 @@ Inputs:
 ## Safety Rules
 
 - The suite only creates records whose names start with `TEST_`.
+- TEST_ candidates are created without assigning them to live requisitions, so production job counts are not intentionally changed.
 - It does not reset the database.
 - It does not run demo seed scripts.
 - It does not change production environment variables.
 - Screenshots, videos, traces, HTML report, JSON report, and JUnit report are uploaded as GitHub Actions artifacts after every run.
+- `test-results/qa-bug-summary.md` and `test-results/qa-bug-summary.json` are generated after every run with bug, severity, reproduction steps, suggested fix, and UX recommendation.

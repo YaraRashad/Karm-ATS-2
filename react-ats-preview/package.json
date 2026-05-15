@@ -10,7 +10,8 @@
     "start": "node server.js",
     "qa:e2e": "playwright test",
     "qa:e2e:headed": "playwright test --headed",
-    "qa:e2e:report": "playwright show-report playwright-report"
+    "qa:e2e:report": "playwright show-report playwright-report",
+    "qa:e2e:summary": "node scripts/generate-qa-summary.mjs"
   },
   "dependencies": {
     "@azure/msal-browser": "^5.10.1",
