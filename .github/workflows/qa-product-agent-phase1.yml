@@ -25,8 +25,9 @@ jobs:
     env:
       ATS_BASE_URL: ${{ inputs.base_url }}
       ATS_TEST_PREFIX: ${{ inputs.test_prefix }}
-      ATS_API_BASE_URL: ${{ secrets.ATS_API_BASE_URL }}
-      ATS_QA_LOGIN_ENABLED: ${{ secrets.ATS_QA_LOGIN_ENABLED }}
+      ATS_AUTH_MODE: ${{ vars.ATS_AUTH_MODE || 'qa-login' }}
+      ATS_API_BASE_URL: ${{ vars.ATS_API_BASE_URL || secrets.ATS_API_BASE_URL }}
+      ATS_QA_LOGIN_ENABLED: ${{ vars.ATS_QA_LOGIN_ENABLED || secrets.ATS_QA_LOGIN_ENABLED || 'true' }}
       ATS_QA_LOGIN_SECRET: ${{ secrets.ATS_QA_LOGIN_SECRET }}
       ATS_TEST_EMAIL: ${{ secrets.ATS_TEST_EMAIL }}
       ATS_TEST_PASSWORD: ${{ secrets.ATS_TEST_PASSWORD }}
@@ -64,12 +65,21 @@ jobs:
       - name: Publish QA summary
         if: always()
         run: |
+          if [ -n "$ATS_API_BASE_URL" ]; then api_configured="yes"; else api_configured="no"; fi
+          if [ -n "$ATS_QA_LOGIN_SECRET" ]; then qa_secret_configured="yes"; else qa_secret_configured="no"; fi
+          if [ -n "$ATS_TEST_EMAIL" ]; then ms_email_configured="yes"; else ms_email_configured="no"; fi
+          if [ -n "$ATS_TEST_PASSWORD" ]; then ms_password_configured="yes"; else ms_password_configured="no"; fi
           {
             echo "## ATS QA Product Agent - Phase 1"
             echo ""
             echo "- Target: $ATS_BASE_URL"
             echo "- Test record prefix: $ATS_TEST_PREFIX"
+            echo "- Auth mode requested: ${ATS_AUTH_MODE:-not set}"
             echo "- Temporary QA login enabled: ${ATS_QA_LOGIN_ENABLED:-false}"
+            echo "- API base configured: $api_configured"
+            echo "- QA login secret configured: $qa_secret_configured"
+            echo "- Microsoft test email configured: $ms_email_configured"
+            echo "- Microsoft test password configured: $ms_password_configured"
             echo "- Database reset: not performed"
             echo "- Demo seed: not performed"
             echo "- Artifacts: Playwright HTML report, screenshots, videos, traces, JSON, and JUnit are uploaded below."
