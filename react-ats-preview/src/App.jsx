@@ -2277,7 +2277,7 @@ function CVParserModal({ jobs, setJobs, candidates, setCandidates, applications,
   const [currentIdx, setCurrentIdx] = useState(0);
   const [error, setError] = useState("");
   const [initialFilesHandled, setInitialFilesHandled] = useState(false);
-  const fileInputRef = useState(null);
+  const fileInputRef = useRef(null);
 
   const COLORS = ["#4f8ef7","#2dd4b4","#a78bfa","#f59e0b","#fb923c","#f87171","#4ade80","#38bdf8","#e879f9","#34d399"];
 
@@ -2363,7 +2363,7 @@ function CVParserModal({ jobs, setJobs, candidates, setCandidates, applications,
           letters.push(words[j]);
           j += 1;
         }
-        if (letters.length >= 3) {
+        if (letters.length >= 2) {
           rebuilt.push(letters.join(""));
           i = j - 1;
         } else {
@@ -2384,33 +2384,84 @@ function CVParserModal({ jobs, setJobs, candidates, setCandidates, applications,
 
   const cleanLine = (line) => line.replace(/[•●▪◦|]+/g, " ").replace(/\s+/g, " ").trim();
 
-  const isLikelyPersonName = (line) => {
-    const words = line.split(/\s+/).filter(Boolean);
-    if (words.length < 2 || words.length > 5) return false;
-    if (!/^[A-Za-zÀ-ÖØ-öø-ÿ' .-]+$/.test(line)) return false;
-    if (/\b(cv|resume|curriculum|vitae|profile|summary|experience|education|skills|certification|email|phone|mobile|address|linkedin|portfolio|manager|engineer|specialist|analyst|director|officer|accountant|technician|developer|consultant|coordinator|supervisor|lead|intern|assistant)\b/i.test(line)) return false;
-    return words.every(word => word.length > 1 || /^[A-Z]\.?$/.test(word));
-  };
+const isLikelyPersonName = (line) => {
+  if (!line) return false;
 
-  const extractCandidateName = (text) => {
-    const labeled = text.match(/(?:candidate\s*)?name\s*[:\-]\s*([^\n\r]{3,70})/i)?.[1];
-    if (labeled) {
-      const cleaned = cleanLine(labeled);
-      if (isLikelyPersonName(cleaned)) return cleaned;
+  const cleaned = cleanLine(line)
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const words = cleaned.split(" ").filter(Boolean);
+
+  // realistic name length
+  if (words.length < 2 || words.length > 6) return false;
+
+  // reject obvious non-name lines
+ if (
+  /\b(cv|resume|curriculum|vitae|profile|summary|experience|education|skills|certification|email|phone|mobile|address|linkedin|portfolio|manager|engineer|specialist|analyst|director|developer|consultant)\b/i.test(cleaned)
+) {
+  return false;
+}
+
+  // allow capitals + arabic + accents
+  if (!/^[A-Za-zÀ-ÖØ-öø-ÿ\u0600-\u06FF' .-]+$/.test(cleaned)) {
+    return false;
+  }
+
+  // every word should look name-like
+  return words.every(word => word.length >= 2);
+};
+
+const extractCandidateName = (text) => {
+  if (!text) return "";
+
+  // normalize spacing
+  const normalized = text
+    .replace(/\r/g, "\n")
+    .replace(/[|•●▪◦]/g, " ")
+    .replace(/\s+/g, " ");
+
+  // 1. explicit labels
+  const labeledMatch = normalized.match(
+    /(?:candidate\s*)?name\s*[:\-]\s*([A-Za-zÀ-ÖØ-öø-ÿ\u0600-\u06FF' .-]{5,80})/i
+  );
+
+  if (labeledMatch) {
+    const candidate = cleanLine(labeledMatch[1]);
+    if (isLikelyPersonName(candidate)) {
+      return candidate;
     }
+  }
 
-    const lines = text.split(/\r?\n/)
-      .map(cleanLine)
-      .filter(line =>
-        line &&
-        line.length >= 3 &&
-        line.length <= 70 &&
-        !/@/.test(line) &&
-        !/\d{5,}/.test(line) &&
-        !/\b(cv|resume|curriculum|linkedin|profile|email|phone|mobile|address|page)\b/i.test(line)
-      );
-    return lines.slice(0, 30).find(isLikelyPersonName) || "";
-  };
+  // 2. scan top lines (most CVs have name first)
+  const lines = text
+    .split(/\r?\n/)
+    .map(line => cleanLine(collapseSpacedLetters(line)))
+    .filter(Boolean)
+    .slice(0, 15);
+
+  for (const line of lines) {
+    if (isLikelyPersonName(line)) {
+      return line;
+    }
+  }
+
+  // 3. fallback: detect ALL CAPS names
+  for (const line of lines) {
+    const cleaned = cleanLine(line);
+
+    if (
+      /^[A-Z\s]{6,60}$/.test(cleaned) &&
+      cleaned.split(" ").length >= 2
+    ) {
+      return cleaned
+        .toLowerCase()
+        .replace(/\b\w/g, c => c.toUpperCase());
+    }
+  }
+
+  return "";
+};
 
   const extractCurrentTitle = (text) => {
     const labeled = text.match(/(?:current\s*(?:title|position|role)|job\s*title|position)\s*[:\-]\s*([^\n\r]{3,80})/i)?.[1];
@@ -2684,7 +2735,7 @@ function CVParserModal({ jobs, setJobs, candidates, setCandidates, applications,
                 onDragOver={e => { e.preventDefault(); setDragOver(true); }}
                 onDragLeave={() => setDragOver(false)}
                 onDrop={e => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
-                onClick={() => document.getElementById("cv-file-input").click()}
+                onClick={() => fileInputRef.current?.click()}
                 style={{
                   border: `2px dashed ${dragOver ? "var(--accent)" : "var(--border2)"}`,
                   borderRadius: "var(--radius-lg)",
@@ -2707,7 +2758,7 @@ function CVParserModal({ jobs, setJobs, candidates, setCandidates, applications,
                 </div>
               </div>
               <input
-                id="cv-file-input"
+               ref={fileInputRef}
                 type="file"
                 accept=".pdf,.docx,.doc,.txt"
                 multiple
