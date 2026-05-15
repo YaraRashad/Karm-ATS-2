@@ -444,8 +444,36 @@ function writeReports(summary) {
     `- Total tests: ${summary.totals.total ?? "unknown"}`,
     `- Passed: ${summary.totals.passed ?? "unknown"}`,
     `- Failed: ${summary.totals.failed ?? summary.bugs.length}`,
+    summary.readiness?.status ? `- Readiness: ${summary.readiness.status}` : null,
+    summary.readiness?.recommendation ? `- Readiness recommendation: ${summary.readiness.recommendation}` : null,
     "",
-  ];
+  ].filter(line => line !== null);
+
+  if (summary.categoryBreakdown && Object.keys(summary.categoryBreakdown).length > 0) {
+    lines.push(
+      "## Issue Category Breakdown",
+      "",
+      "| Category | Count |",
+      "| --- | --- |",
+    );
+    for (const [category, count] of Object.entries(summary.categoryBreakdown)) {
+      lines.push(`| ${escapeMd(category)} | ${count} |`);
+    }
+    lines.push("");
+  }
+
+  if (summary.actionsTested?.length > 0) {
+    lines.push(
+      "## Actions Tested",
+      "",
+      "| Module | Action | Status | Details |",
+      "| --- | --- | --- | --- |",
+    );
+    for (const action of summary.actionsTested) {
+      lines.push(`| ${escapeMd(action.module)} | ${escapeMd(action.action)} | ${escapeMd(action.status)} | ${escapeMd(action.details)} |`);
+    }
+    lines.push("");
+  }
 
   if (summary.flows?.length > 0) {
     lines.push(
@@ -556,13 +584,20 @@ if (!results) {
 
 const rows = (results.suites || []).flatMap(suite => flattenSpecs(suite));
 const failedRows = rows.filter(row => row.outcome === "unexpected" || ["failed", "timedOut", "interrupted"].includes(row.status));
-const auditReports = failedRows.map(row => ({ row, report: getFullAuditReport(row) })).filter(item => item.report);
+const auditReports = rows.map(row => ({ row, report: getFullAuditReport(row) })).filter(item => item.report);
 const auditBugs = auditReports.flatMap(({ row, report }) => report.bugs.map(bug => ({ row, bug })));
 const bugs = auditReports.length > 0
   ? auditBugs.map(({ row, bug }, index) => makeBugFromAuditReport(row, bug, index))
   : failedRows.map(makeBug);
 const flows = auditReports.flatMap(({ report }) => report.flows || []);
 const recommendations = auditReports.flatMap(({ report }) => report.recommendations || []);
+const actionsTested = auditReports.flatMap(({ report }) => report.actionsTested || []);
+const readiness = auditReports.find(({ report }) => report.readiness)?.report.readiness || null;
+const categoryBreakdown = bugs.reduce((acc, bug) => {
+  const category = bug.category || "Unclassified";
+  acc[category] = (acc[category] || 0) + 1;
+  return acc;
+}, {});
 
 writeReports({
   generatedAt: new Date().toISOString(),
@@ -575,6 +610,9 @@ writeReports({
     failed: failedRows.length,
     skipped: rows.filter(row => row.status === "skipped").length,
   },
+  readiness,
+  categoryBreakdown,
+  actionsTested,
   flows,
   recommendations,
   bugs,
