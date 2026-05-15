@@ -155,6 +155,14 @@ function classifyFailure(row) {
       uxRecommendation: "Keep auth setup failures separate from ATS product bugs and show the returned QA user role in every report.",
     };
   }
+  if (normalized.includes("candidate created without assigning to a production job should have zero active apps")) {
+    return {
+      severity: "Medium",
+      bug: "The QA test created a TEST_ candidate successfully but validated the active-app count using concatenated table-row text.",
+      suggestedFix: "Assert the Candidate Database Active Apps table cell directly instead of matching the whole row text, because row text can concatenate values such as source, active-app count, and current stage.",
+      uxRecommendation: "Keep table columns machine-readable with stable cells/test IDs so automated QA can distinguish values that are visually separate to users.",
+    };
+  }
   if (normalized.includes("unexpected 403 api responses observed") || normalized.includes("http-403-responses")) {
     return {
       severity: "High",
