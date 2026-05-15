@@ -4,10 +4,50 @@ const TEST_PREFIX = process.env.ATS_TEST_PREFIX || "TEST_";
 const TEST_EMAIL = process.env.ATS_TEST_EMAIL;
 const TEST_PASSWORD = process.env.ATS_TEST_PASSWORD;
 const API_BASE = (process.env.ATS_API_BASE_URL || "https://karm-ats-api-g4dzhfe3buagc7e2.centralus-01.azurewebsites.net/api/v1").replace(/\/$/, "");
-const QA_LOGIN_ENABLED = process.env.ATS_QA_LOGIN_ENABLED === "true";
+const QA_LOGIN_ENABLED = String(process.env.ATS_QA_LOGIN_ENABLED || "").toLowerCase() === "true";
 const QA_LOGIN_SECRET = process.env.ATS_QA_LOGIN_SECRET;
 const AUTH_TIMEOUT_MS = Number(process.env.ATS_AUTH_TIMEOUT_MS || 120_000);
 const browserEventsByTest = new WeakMap();
+
+async function readApiResponse(response) {
+  const text = await response.text().catch(() => "");
+  let body = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = text || null;
+  }
+  return { status: response.status(), ok: response.ok(), url: response.url(), body, raw: text };
+}
+
+async function attachJson(testInfo, name, value) {
+  if (!testInfo) return;
+  await testInfo.attach(name, {
+    body: `${JSON.stringify(value, null, 2)}\n`,
+    contentType: "application/json",
+  });
+}
+
+function sanitizeQaLoginResult(result) {
+  const body = typeof result.body === "object" && result.body ? result.body : null;
+  const session = body?.data ?? body;
+
+  return {
+    apiBase: API_BASE,
+    status: result.status,
+    ok: result.ok,
+    hasAccessToken: !!session?.accessToken,
+    hasRefreshToken: !!session?.refreshToken,
+    user: session?.user
+      ? {
+          email: session.user.email,
+          role: session.user.role,
+          accessScope: session.user.accessScope,
+        }
+      : null,
+    error: body?.error || body?.message || (typeof result.body === "string" ? result.body : null),
+  };
+}
 
 function requireSecret(name, value) {
   if (!value) {
@@ -202,20 +242,17 @@ async function completeMicrosoftLogin(page) {
   throw new Error(`Microsoft login timed out before the ATS shell loaded.${diagnosisText}\n${await describeCurrentPage(page)}`);
 }
 
-async function completeQaLogin(page) {
+async function completeQaLogin(page, testInfo) {
   requireSecret("ATS_QA_LOGIN_SECRET", QA_LOGIN_SECRET);
 
   const response = await page.request.post(`${API_BASE}/auth/qa-login`, {
     headers: { "x-qa-login-secret": QA_LOGIN_SECRET },
     data: { testPrefix: TEST_PREFIX },
   });
-  const bodyText = await response.text();
-  let body = null;
-  try {
-    body = bodyText ? JSON.parse(bodyText) : null;
-  } catch {
-    body = null;
-  }
+  const loginResult = await readApiResponse(response);
+  const bodyText = loginResult.raw;
+  const body = typeof loginResult.body === "object" ? loginResult.body : null;
+  await attachJson(testInfo, "qa-login-response.json", sanitizeQaLoginResult(loginResult));
 
   if (!response.ok()) {
     throw new Error(`QA test login failed (${response.status()}) at ${API_BASE}/auth/qa-login\n${bodyText || "No response body"}`);
@@ -226,6 +263,39 @@ async function completeQaLogin(page) {
     throw new Error(`QA test login did not return session tokens.\n${bodyText || "No response body"}`);
   }
 
+  const meResponse = await page.request.get(`${API_BASE}/auth/me`, {
+    headers: { Authorization: `Bearer ${session.accessToken}` },
+  });
+  const meResult = await readApiResponse(meResponse);
+  const meUser = meResult.body?.data ?? meResult.body;
+  await attachJson(testInfo, "qa-login-session.json", {
+    apiBase: API_BASE,
+    loginStatus: loginResult.status,
+    meStatus: meResult.status,
+    user: meUser
+      ? {
+          email: meUser.email,
+          role: meUser.role,
+          accessScope: meUser.accessScope,
+          canViewSalary: !!meUser.canViewSalary,
+          canApproveOffers: !!meUser.canApproveOffers,
+          canApproveRequisitions: !!meUser.canApproveRequisitions,
+        }
+      : null,
+  });
+
+  if (!meResponse.ok()) {
+    throw new Error(`QA test login returned tokens, but /auth/me rejected the session (${meResponse.status()}) at ${API_BASE}/auth/me\n${meResult.raw || "No response body"}`);
+  }
+
+  if (!meUser?.email || !meUser?.role) {
+    throw new Error(`QA test login /auth/me response did not include a usable user.\n${meResult.raw || "No response body"}`);
+  }
+
+  if (meUser.role === "admin") {
+    throw new Error("QA test login returned an admin user. QA automation must use a limited non-admin test user.");
+  }
+
   await page.evaluate(({ accessToken, refreshToken }) => {
     sessionStorage.setItem("karm_ats_access_token", accessToken);
     sessionStorage.setItem("karm_ats_refresh_token", refreshToken);
@@ -234,11 +304,11 @@ async function completeQaLogin(page) {
   await waitForAtsShell(page, "after QA test login");
 }
 
-async function openAts(page) {
+async function openAts(page, testInfo) {
   await page.goto("/");
   await test.step(QA_LOGIN_ENABLED ? "complete temporary QA test login and open ATS shell" : "complete Microsoft login and open ATS shell", async () => {
     if (QA_LOGIN_ENABLED) {
-      await completeQaLogin(page);
+      await completeQaLogin(page, testInfo);
       return;
     }
     await completeMicrosoftLogin(page);
@@ -283,8 +353,8 @@ test.describe("Karm ATS live QA smoke", () => {
     }
   });
 
-  test("logs in and opens the live ATS dashboard", async ({ page }) => {
-    await openAts(page);
+  test("logs in and opens the live ATS dashboard", async ({ page }, testInfo) => {
+    await openAts(page, testInfo);
 
     await expect(page.locator(".page-title"), "Dashboard title should prove the authenticated app loaded").toContainText(/Karm\. ATS Dashboard|Dashboard/i);
     await expect(page.getByTestId("nav-jobs"), "QA user should be able to see job requisitions").toBeVisible();
@@ -292,8 +362,8 @@ test.describe("Karm ATS live QA smoke", () => {
     await expect(page.getByTestId("nav-pipeline"), "QA user should be able to see the pipeline").toBeVisible();
   });
 
-  test("creates only a TEST_ candidate through the normal UI", async ({ page }) => {
-    await openAts(page);
+  test("creates only a TEST_ candidate through the normal UI", async ({ page }, testInfo) => {
+    await openAts(page, testInfo);
 
     const unique = `${TEST_PREFIX}QA Candidate ${Date.now()}`;
     const email = `test.qa.${Date.now()}@example.com`;
@@ -309,7 +379,22 @@ test.describe("Karm ATS live QA smoke", () => {
     await page.getByTestId("candidate-source-select").selectOption({ label: "Direct Application" });
     await page.getByTestId("candidate-job-select").selectOption("");
 
+    const createResponsePromise = page.waitForResponse(response =>
+      response.url().startsWith(`${API_BASE}/candidates`) &&
+      response.request().method() === "POST",
+      { timeout: 30_000 },
+    ).catch(error => {
+      throw new Error(`Candidate create API request was not observed after clicking Add Candidate. The UI may not be submitting, may be blocked by validation, or may be using the wrong API base URL.\n${error.message}`);
+    });
+
     await page.getByRole("button", { name: /^add candidate$/i }).click();
+    const createResponse = await createResponsePromise;
+    const createResult = await readApiResponse(createResponse);
+    await attachJson(testInfo, "candidate-create-response.json", createResult);
+
+    if (!createResponse.ok()) {
+      throw new Error(`Candidate create API failed (${createResponse.status()}) at ${createResponse.url()}.\n${createResult.raw || "No response body"}`);
+    }
 
     await expect(page.locator(".modal"), "Candidate modal should close after successful creation").toHaveCount(0, { timeout: 30_000 });
     await page.locator(".search-input").fill(unique);
@@ -317,10 +402,22 @@ test.describe("Karm ATS live QA smoke", () => {
     await expect(testCandidateRow, "New TEST_ candidate should appear in Candidate Database").toBeVisible({ timeout: 30_000 });
     await expect(testCandidateRow, "New TEST_ candidate email should match submitted email").toContainText(email);
     await expect(testCandidateRow, "Candidate created without assigning to a production job should have zero active apps").toContainText(/\b0\b/);
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await waitForAtsShell(page, "after reloading to prove TEST_ candidate persistence");
+    await openNav(page, "candidates", "Candidate Database");
+    await page.locator(".search-input").fill(unique);
+    const persistedCandidateRow = page.locator("tbody tr", { hasText: unique });
+    await expect(persistedCandidateRow, "New TEST_ candidate should still be searchable after page reload").toBeVisible({ timeout: 30_000 });
+    await expect(persistedCandidateRow, "Persisted TEST_ candidate email should still match").toContainText(email);
+    await testInfo.attach("candidate-persistence-check.txt", {
+      body: `Created and reloaded TEST_ candidate:\nname=${unique}\nemail=${email}\napiStatus=${createResponse.status()}\n`,
+      contentType: "text/plain",
+    });
   });
 
-  test("opens key operational pages without touching non-TEST records", async ({ page }) => {
-    await openAts(page);
+  test("opens key operational pages without touching non-TEST records", async ({ page }, testInfo) => {
+    await openAts(page, testInfo);
 
     const pages = [
       ["jobs", "Job Requisitions"],
