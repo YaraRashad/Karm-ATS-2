@@ -606,10 +606,14 @@ export default function App() {
   const [backendData, setBackendData] = useState(null);
   const [dataError, setDataError] = useState("");
 
-  const loadData = async () => {
+  const loadData = async (session = user) => {
     setDataError("");
     try {
-      const data = await fetchAtsData();
+      const includeAdminData = session?.role === "admin";
+      const data = await fetchAtsData({
+        includeAudit: includeAdminData,
+        includeUsers: includeAdminData,
+      });
       setBackendData(data);
       return data;
     } catch (e) {
@@ -636,7 +640,7 @@ export default function App() {
       .then(async u => {
         if (!mounted) return;
         setUser(u);
-        if (u) await loadData();
+        if (u) await loadData(u);
       })
       .catch(e => mounted && setAuthError(e.message))
       .finally(() => mounted && setBooting(false));
@@ -649,7 +653,7 @@ export default function App() {
     try {
       const u = await microsoftLogin();
       setUser(u);
-      await loadData();
+      await loadData(u);
     } catch (e) {
       setAuthError(e.message);
     } finally {

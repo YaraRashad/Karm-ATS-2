@@ -358,7 +358,7 @@ export function mapBackendData({ positions = [], candidates = [], applications =
   };
 }
 
-export async function fetchAtsData() {
+export async function fetchAtsData({ includeAudit = false, includeUsers = false } = {}) {
   const [positions, candidates, applications, interviews, offers, scorecards, audit, users] = await Promise.all([
     api("/positions?pageSize=200"),
     api("/candidates?pageSize=500"),
@@ -366,8 +366,8 @@ export async function fetchAtsData() {
     api("/interviews"),
     api("/offers?pageSize=200"),
     api("/scorecards?pageSize=500"),
-    api("/audit?pageSize=200").catch(() => []),
-    api("/users").catch(() => []),
+    includeAudit ? api("/audit?pageSize=200").catch(() => []) : Promise.resolve([]),
+    includeUsers ? api("/users").catch(() => []) : Promise.resolve([]),
   ]);
 
   return mapBackendData({

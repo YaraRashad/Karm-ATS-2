@@ -329,6 +329,10 @@ async function completeQaLogin(page, testInfo) {
     throw new Error(`QA test login /auth/me response did not include a usable user.\n${meResult.raw || "No response body"}`);
   }
 
+  if (meUser.role !== "admin") {
+    throw new Error(`QA test login is enabled but returned role "${meUser.role}" for ${meUser.email}. Expected the isolated QA account to be admin so Playwright can test the full ATS without RBAC blocking. This usually means the backend App Service has not deployed the latest QA-login code.`);
+  }
+
   await page.evaluate(({ accessToken, refreshToken }) => {
     sessionStorage.setItem("karm_ats_access_token", accessToken);
     sessionStorage.setItem("karm_ats_refresh_token", refreshToken);
