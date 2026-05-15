@@ -495,7 +495,10 @@ test.describe("Karm ATS live QA smoke", () => {
     const testCandidateRow = page.locator("tbody tr", { hasText: unique });
     await expect(testCandidateRow, "New TEST_ candidate should appear in Candidate Database").toBeVisible({ timeout: 30_000 });
     await expect(testCandidateRow, "New TEST_ candidate email should match submitted email").toContainText(email);
-    await expect(testCandidateRow, "Candidate created without assigning to a production job should have zero active apps").toContainText(/\b0\b/);
+    await expect(
+      testCandidateRow.locator("td").nth(4),
+      "Candidate created without assigning to a production job should have zero active apps",
+    ).toHaveText("0");
 
     await page.reload({ waitUntil: "domcontentloaded" });
     await waitForAtsShell(page, "after reloading to prove TEST_ candidate persistence");
@@ -504,6 +507,10 @@ test.describe("Karm ATS live QA smoke", () => {
     const persistedCandidateRow = page.locator("tbody tr", { hasText: unique });
     await expect(persistedCandidateRow, "New TEST_ candidate should still be searchable after page reload").toBeVisible({ timeout: 30_000 });
     await expect(persistedCandidateRow, "Persisted TEST_ candidate email should still match").toContainText(email);
+    await expect(
+      persistedCandidateRow.locator("td").nth(4),
+      "Persisted TEST_ candidate should still have zero active apps after reload",
+    ).toHaveText("0");
     await testInfo.attach("candidate-persistence-check.txt", {
       body: `Created and reloaded TEST_ candidate:\nname=${unique}\nemail=${email}\napiStatus=${createResponse.status()}\n`,
       contentType: "text/plain",
