@@ -7,6 +7,7 @@
 
 import { Router }    from 'express';
 import bcrypt        from 'bcryptjs';
+import crypto        from 'crypto';
 import { prisma }    from '../lib/prisma.js';
 import {
   generateAccessToken,
@@ -14,7 +15,7 @@ import {
   hashToken,
 } from '../lib/jwt.js';
 import {
-  ok, created, unauthorized, badRequest, serverError,
+  ok, created, unauthorized, badRequest, notFound, serverError,
 } from '../lib/response.js';
 import { authenticate } from '../middleware/auth.js';
 import { body, validationResult } from 'express-validator';
@@ -74,7 +75,7 @@ function publicUser(user) {
   };
 }
 
-async function issueSession(user, req, res) {
+async function issueSession(user, req, res, method = user.azureAdObjectId ? 'microsoft' : 'password') {
   const accessToken = generateAccessToken(user);
   const { raw, hash, expiresAt } = generateRefreshToken();
 
@@ -89,7 +90,7 @@ async function issueSession(user, req, res) {
     action: 'login',
     entity: 'users',
     entityId: user.id,
-    after: { method: user.azureAdObjectId ? 'microsoft' : 'password' },
+    after: { method },
   });
 
   return ok(res, {
@@ -98,6 +99,29 @@ async function issueSession(user, req, res) {
     expiresIn: 15 * 60,
     user: publicUser(user),
   });
+}
+
+function safeEquals(a = '', b = '') {
+  const left = Buffer.from(String(a));
+  const right = Buffer.from(String(b));
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
+function qaUserNameParts() {
+  const name = (process.env.QA_TEST_USER_NAME || 'ATS QA').trim();
+  const [firstName, ...rest] = name.split(/\s+/);
+  return {
+    firstName: firstName || 'ATS',
+    lastName: rest.join(' ') || 'QA',
+  };
+}
+
+function qaUserEmail() {
+  return (process.env.QA_TEST_USER_EMAIL || 'ats.qa@karmsolar.com').trim().toLowerCase();
+}
+
+function isDedicatedQaEmail(email) {
+  return /(^|[._+-])(qa|test|testing|playwright)([._+-]|@)/i.test(email);
 }
 
 // ── POST /login ───────────────────────────────────────────────────────
@@ -178,6 +202,62 @@ authRouter.post('/microsoft', [body('idToken').notEmpty()], async (req, res, nex
     return issueSession(user, req, res);
   } catch (err) {
     return unauthorized(res, err.message || 'Microsoft 365 sign-in failed');
+  }
+});
+
+// ── POST /qa-login ───────────────────────────────────────────────────
+// Temporary test-only login for Playwright. Hidden unless explicitly enabled
+// in Azure App Service settings with QA_TEST_LOGIN_ENABLED=true.
+authRouter.post('/qa-login', async (req, res, next) => {
+  if (process.env.QA_TEST_LOGIN_ENABLED !== 'true') {
+    return notFound(res, 'QA login');
+  }
+
+  const expectedSecret = process.env.QA_TEST_LOGIN_SECRET;
+  const providedSecret = req.get('x-qa-login-secret') || req.body?.secret;
+  if (!expectedSecret || !providedSecret || !safeEquals(providedSecret, expectedSecret)) {
+    return unauthorized(res, 'QA login is not available');
+  }
+
+  const email = qaUserEmail();
+  if (!isDedicatedQaEmail(email)) {
+    return badRequest(res, 'QA_TEST_USER_EMAIL must be a dedicated qa/test account, not a real production user');
+  }
+
+  try {
+    const { firstName, lastName } = qaUserNameParts();
+    const user = await prisma.user.upsert({
+      where: { email },
+      update: {
+        firstName,
+        lastName,
+        role: 'recruiter',
+        departmentId: null,
+        accessScope: 'recruitment_data',
+        canViewSalary: false,
+        canApproveOffers: false,
+        canApproveRequisitions: false,
+        entities: ['egypt', 'cyprus', 'uk', 'tunisia'],
+        isActive: true,
+      },
+      create: {
+        email,
+        firstName,
+        lastName,
+        role: 'recruiter',
+        accessScope: 'recruitment_data',
+        canViewSalary: false,
+        canApproveOffers: false,
+        canApproveRequisitions: false,
+        entities: ['egypt', 'cyprus', 'uk', 'tunisia'],
+        isActive: true,
+      },
+      select: userSelect,
+    });
+
+    return issueSession(user, req, res, 'qa_test');
+  } catch (err) {
+    next(err);
   }
 });
 

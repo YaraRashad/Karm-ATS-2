@@ -70,6 +70,7 @@ const authLimiter = rateLimit({
 app.use('/api/v1/auth/login', authLimiter);
 app.use('/api/v1/auth/refresh', authLimiter);
 app.use('/api/v1/auth/microsoft', authLimiter);
+app.use('/api/v1/auth/qa-login', authLimiter);
 
 // ── Body parsing ──────────────────────────────────────────────────────
 app.use(express.json({ limit: '10mb' }));
