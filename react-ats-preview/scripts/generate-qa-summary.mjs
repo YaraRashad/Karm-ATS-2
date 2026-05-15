@@ -6,6 +6,29 @@ const outputDir = path.resolve("test-results");
 const markdownPath = path.join(outputDir, "qa-bug-summary.md");
 const jsonPath = path.join(outputDir, "qa-bug-summary.json");
 
+function parseBooleanFlag(value) {
+  return ["1", "true", "yes", "y", "on"].includes(String(value || "").trim().toLowerCase());
+}
+
+function resolveAuthMode() {
+  const configured = String(process.env.ATS_AUTH_MODE || "").trim().toLowerCase();
+  if (["qa", "qa-login", "test", "test-login"].includes(configured)) return "qa-login";
+  if (["microsoft", "microsoft-login", "msal"].includes(configured)) return "microsoft-login";
+  return parseBooleanFlag(process.env.ATS_QA_LOGIN_ENABLED) ? "qa-login" : "microsoft-login";
+}
+
+function getAuthConfigSummary() {
+  return {
+    authMode: resolveAuthMode(),
+    qaLoginEnabled: parseBooleanFlag(process.env.ATS_QA_LOGIN_ENABLED),
+    qaLoginEnabledRaw: process.env.ATS_QA_LOGIN_ENABLED || "",
+    apiBaseConfigured: !!process.env.ATS_API_BASE_URL,
+    qaLoginSecretConfigured: !!process.env.ATS_QA_LOGIN_SECRET,
+    microsoftEmailConfigured: !!process.env.ATS_TEST_EMAIL,
+    microsoftPasswordConfigured: !!process.env.ATS_TEST_PASSWORD,
+  };
+}
+
 function ensureOutputDir() {
   fs.mkdirSync(outputDir, { recursive: true });
 }
@@ -31,7 +54,7 @@ function resolveAttachmentPath(attachmentPath) {
 
 function readAttachmentText(attachments = []) {
   const usefulAttachments = attachments.filter(attachment =>
-    /browser-events|current-page-state|error-context|qa-login-response|qa-login-session|candidate-create-response|candidate-persistence/i.test(attachment.name || attachment.path || ""),
+    /auth-mode|browser-events|current-page-state|error-context|qa-login-response|qa-login-session|candidate-create-response|candidate-persistence/i.test(attachment.name || attachment.path || ""),
   );
 
   return usefulAttachments.map(attachment => {
@@ -100,6 +123,14 @@ function classifyFailure(row) {
   ].filter(Boolean).join("\n");
   const normalized = `${title}\n${errorText}`.toLowerCase();
 
+  if (normalized.includes("qa login was requested") && normalized.includes("ats_qa_login_secret is missing")) {
+    return {
+      severity: "Critical",
+      bug: "Temporary QA login was requested, but the GitHub Actions QA login secret was missing.",
+      suggestedFix: "Add ATS_QA_LOGIN_SECRET as a GitHub Actions secret, confirm it matches QA_TEST_LOGIN_SECRET in the backend App Service, then rerun the QA workflow.",
+      uxRecommendation: "Fail fast with the configured auth mode and missing secret status so QA setup issues are not reported as Microsoft login product bugs.",
+    };
+  }
   if (normalized.includes("qa test login failed") || normalized.includes("/auth/qa-login")) {
     return {
       severity: "Critical",
@@ -224,6 +255,7 @@ function makeBug(row, index) {
   const classification = classifyFailure(row);
   const title = row.titlePath.join(" > ");
   const errorMessage = row.error?.message || row.errors[0]?.message || "No Playwright error message captured.";
+  const authConfig = getAuthConfigSummary();
   const attachments = row.attachments.map(attachment => ({
     name: attachment.name,
     contentType: attachment.contentType,
@@ -242,7 +274,7 @@ function makeBug(row, index) {
     severity: classification.severity,
     reproductionSteps: [
       `Open the live ATS at ${process.env.ATS_BASE_URL || "the configured ATS_BASE_URL"}.`,
-      process.env.ATS_QA_LOGIN_ENABLED === "true"
+      authConfig.authMode === "qa-login"
         ? "Authenticate with the temporary QA test login endpoint."
         : "Sign in with the Microsoft 365 QA test account.",
       `Run the Playwright scenario: ${title}.`,
@@ -271,6 +303,12 @@ function writeReports(summary) {
     `- Generated: ${summary.generatedAt}`,
     `- Target: ${summary.target}`,
     `- Test prefix: ${summary.testPrefix}`,
+    `- Auth mode used: ${summary.auth.authMode}`,
+    `- QA login enabled flag: ${summary.auth.qaLoginEnabled ? "true" : "false"}${summary.auth.qaLoginEnabledRaw ? ` (raw: ${summary.auth.qaLoginEnabledRaw})` : ""}`,
+    `- API base configured: ${summary.auth.apiBaseConfigured ? "yes" : "no"}`,
+    `- QA login secret configured: ${summary.auth.qaLoginSecretConfigured ? "yes" : "no"}`,
+    `- Microsoft test email configured: ${summary.auth.microsoftEmailConfigured ? "yes" : "no"}`,
+    `- Microsoft test password configured: ${summary.auth.microsoftPasswordConfigured ? "yes" : "no"}`,
     `- Total tests: ${summary.totals.total ?? "unknown"}`,
     `- Passed: ${summary.totals.passed ?? "unknown"}`,
     `- Failed: ${summary.totals.failed ?? summary.bugs.length}`,
@@ -332,6 +370,7 @@ if (!results) {
     generatedAt: new Date().toISOString(),
     target: process.env.ATS_BASE_URL || "unknown",
     testPrefix: process.env.ATS_TEST_PREFIX || "TEST_",
+    auth: getAuthConfigSummary(),
     totals: { total: 0, passed: 0, failed: 1 },
     bugs: [{
       id: "ATS-QA-001",
@@ -365,6 +404,7 @@ writeReports({
   generatedAt: new Date().toISOString(),
   target: process.env.ATS_BASE_URL || "unknown",
   testPrefix: process.env.ATS_TEST_PREFIX || "TEST_",
+  auth: getAuthConfigSummary(),
   totals: {
     total: rows.length,
     passed: rows.filter(row => row.status === "passed").length,

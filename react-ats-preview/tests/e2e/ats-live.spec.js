@@ -4,10 +4,23 @@ const TEST_PREFIX = process.env.ATS_TEST_PREFIX || "TEST_";
 const TEST_EMAIL = process.env.ATS_TEST_EMAIL;
 const TEST_PASSWORD = process.env.ATS_TEST_PASSWORD;
 const API_BASE = (process.env.ATS_API_BASE_URL || "https://karm-ats-api-g4dzhfe3buagc7e2.centralus-01.azurewebsites.net/api/v1").replace(/\/$/, "");
-const QA_LOGIN_ENABLED = String(process.env.ATS_QA_LOGIN_ENABLED || "").toLowerCase() === "true";
+const QA_LOGIN_ENABLED_RAW = String(process.env.ATS_QA_LOGIN_ENABLED || "").trim();
+const QA_LOGIN_ENABLED = parseBooleanFlag(QA_LOGIN_ENABLED_RAW);
 const QA_LOGIN_SECRET = process.env.ATS_QA_LOGIN_SECRET;
+const AUTH_MODE = normalizeAuthMode(process.env.ATS_AUTH_MODE);
 const AUTH_TIMEOUT_MS = Number(process.env.ATS_AUTH_TIMEOUT_MS || 120_000);
 const browserEventsByTest = new WeakMap();
+
+function parseBooleanFlag(value) {
+  return ["1", "true", "yes", "y", "on"].includes(String(value || "").trim().toLowerCase());
+}
+
+function normalizeAuthMode(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["qa", "qa-login", "test", "test-login"].includes(normalized)) return "qa-login";
+  if (["microsoft", "microsoft-login", "msal"].includes(normalized)) return "microsoft-login";
+  return QA_LOGIN_ENABLED ? "qa-login" : "microsoft-login";
+}
 
 async function readApiResponse(response) {
   const text = await response.text().catch(() => "");
@@ -26,6 +39,18 @@ async function attachJson(testInfo, name, value) {
     body: `${JSON.stringify(value, null, 2)}\n`,
     contentType: "application/json",
   });
+}
+
+function getAuthDiagnostics() {
+  return {
+    authMode: AUTH_MODE,
+    qaLoginEnabled: QA_LOGIN_ENABLED,
+    qaLoginEnabledRaw: QA_LOGIN_ENABLED_RAW || "(empty)",
+    apiBase: API_BASE,
+    hasQaLoginSecret: !!QA_LOGIN_SECRET,
+    hasMicrosoftEmail: !!TEST_EMAIL,
+    hasMicrosoftPassword: !!TEST_PASSWORD,
+  };
 }
 
 function sanitizeQaLoginResult(result) {
@@ -243,7 +268,9 @@ async function completeMicrosoftLogin(page) {
 }
 
 async function completeQaLogin(page, testInfo) {
-  requireSecret("ATS_QA_LOGIN_SECRET", QA_LOGIN_SECRET);
+  if (!QA_LOGIN_SECRET) {
+    throw new Error("QA login was requested, but ATS_QA_LOGIN_SECRET is missing. Refusing to fall back to Microsoft login.");
+  }
 
   const response = await page.request.post(`${API_BASE}/auth/qa-login`, {
     headers: { "x-qa-login-secret": QA_LOGIN_SECRET },
@@ -306,8 +333,11 @@ async function completeQaLogin(page, testInfo) {
 
 async function openAts(page, testInfo) {
   await page.goto("/");
-  await test.step(QA_LOGIN_ENABLED ? "complete temporary QA test login and open ATS shell" : "complete Microsoft login and open ATS shell", async () => {
-    if (QA_LOGIN_ENABLED) {
+  await attachJson(testInfo, "auth-mode.json", getAuthDiagnostics());
+  testInfo?.annotations.push({ type: "auth-mode", description: AUTH_MODE });
+
+  await test.step(AUTH_MODE === "qa-login" ? "complete temporary QA test login and open ATS shell" : "complete Microsoft login and open ATS shell", async () => {
+    if (AUTH_MODE === "qa-login") {
       await completeQaLogin(page, testInfo);
       return;
     }
