@@ -17,6 +17,39 @@ function readResults() {
   return JSON.parse(fs.readFileSync(resultsPath, "utf8"));
 }
 
+function resolveAttachmentPath(attachmentPath) {
+  if (!attachmentPath) return null;
+  if (fs.existsSync(attachmentPath)) return attachmentPath;
+
+  const marker = `${path.sep}test-results${path.sep}`;
+  const index = attachmentPath.indexOf(marker);
+  if (index === -1) return null;
+
+  const localPath = path.join(outputDir, attachmentPath.slice(index + marker.length));
+  return fs.existsSync(localPath) ? localPath : null;
+}
+
+function readAttachmentText(attachments = []) {
+  const usefulAttachments = attachments.filter(attachment =>
+    /browser-events|current-page-state|error-context/i.test(attachment.name || attachment.path || ""),
+  );
+
+  return usefulAttachments.map(attachment => {
+    let text = "";
+    if (attachment.body) {
+      text = Buffer.from(attachment.body, "base64").toString("utf8");
+    } else {
+      const localPath = resolveAttachmentPath(attachment.path);
+      if (localPath) {
+        text = fs.readFileSync(localPath, "utf8");
+      }
+    }
+
+    if (!text.trim()) return "";
+    return `Attachment ${attachment.name || path.basename(attachment.path)}:\n${text.trim().slice(0, 4_000)}`;
+  }).filter(Boolean).join("\n\n");
+}
+
 function flattenSpecs(suite, titlePath = []) {
   const rows = [];
   const nextTitlePath = suite.title ? [...titlePath, suite.title] : titlePath;
@@ -24,6 +57,7 @@ function flattenSpecs(suite, titlePath = []) {
     for (const test of spec.tests || []) {
       const results = test.results || [];
       const finalResult = results[results.length - 1] || {};
+      const attachments = finalResult.attachments || [];
       rows.push({
         titlePath: [...nextTitlePath, spec.title].filter(Boolean),
         projectName: test.projectName,
@@ -35,7 +69,8 @@ function flattenSpecs(suite, titlePath = []) {
         duration: finalResult.duration || 0,
         errors: finalResult.errors || [],
         error: finalResult.error,
-        attachments: finalResult.attachments || [],
+        attachments,
+        attachmentText: readAttachmentText(attachments),
         attempts: results.map(result => ({
           status: result.status,
           retry: result.retry,
@@ -61,9 +96,50 @@ function classifyFailure(row) {
     row.error?.message,
     row.error?.stack,
     ...row.errors.map(error => error?.message || error?.stack || ""),
+    row.attachmentText,
   ].filter(Boolean).join("\n");
   const normalized = `${title}\n${errorText}`.toLowerCase();
 
+  if (normalized.includes("qa test login failed") || normalized.includes("/auth/qa-login")) {
+    return {
+      severity: "Critical",
+      bug: "Temporary QA login did not create an authenticated ATS session.",
+      suggestedFix: "Confirm QA_TEST_LOGIN_ENABLED and QA_TEST_LOGIN_SECRET are set in the backend App Service, ATS_QA_LOGIN_SECRET matches in GitHub Actions, and ATS_API_BASE_URL points to the live backend /api/v1 base URL.",
+      uxRecommendation: "Keep QA login failures separate from Microsoft login failures in the report so product bugs are not mixed with test-environment setup issues.",
+    };
+  }
+  if (normalized.includes("enter your email, phone, or skype") || normalized.includes("email entry screen")) {
+    return {
+      severity: "Critical",
+      bug: "Microsoft login stopped on the email entry screen before the ATS shell loaded.",
+      suggestedFix: "Use a resilient Microsoft login loop that submits ATS_TEST_EMAIL, handles account picker/password/stay-signed-in screens, and reports the exact blocking auth page when it cannot continue.",
+      uxRecommendation: "Attach current-page-state.txt to every QA failure so reviewers can see whether the user is on Microsoft login, ATS login, or the ATS dashboard.",
+    };
+  }
+  if (normalized.includes("enter password") || normalized.includes("password screen")) {
+    return {
+      severity: "Critical",
+      bug: "Microsoft login reached the password step but did not complete.",
+      suggestedFix: "Verify ATS_TEST_PASSWORD, confirm the QA account supports non-interactive CI login, and make the login helper submit the password form reliably.",
+      uxRecommendation: "Keep the QA account setup documented in the test report, including when MFA or passwordless login blocks automation.",
+    };
+  }
+  if (normalized.includes("multi-factor") || normalized.includes("authenticator") || normalized.includes("verify your identity") || normalized.includes("more information required")) {
+    return {
+      severity: "Critical",
+      bug: "Microsoft login is blocked by MFA, authenticator setup, or conditional access.",
+      suggestedFix: "Use a dedicated ATS QA account with the approved CI authentication policy, or switch the QA workflow to a pre-authenticated storage state managed as a GitHub secret.",
+      uxRecommendation: "Show a clear QA setup checklist for test accounts so login failures are not mistaken for ATS product defects.",
+    };
+  }
+  if (normalized.includes("request sent") || normalized.includes("needs admin approval") || normalized.includes("admin has been notified")) {
+    return {
+      severity: "Critical",
+      bug: "The Microsoft QA user is not assigned to or consented for the Karm. ATS application.",
+      suggestedFix: "Assign the QA user to the Enterprise Application and grant tenant-wide admin consent before running live QA.",
+      uxRecommendation: "Add an access-request troubleshooting note to the QA report with the exact Entra screen to review.",
+    };
+  }
   if (normalized.includes("login") || normalized.includes("aadsts") || normalized.includes("microsoft")) {
     return {
       severity: "Critical",
@@ -126,7 +202,9 @@ function makeBug(row, index) {
     severity: classification.severity,
     reproductionSteps: [
       `Open the live ATS at ${process.env.ATS_BASE_URL || "the configured ATS_BASE_URL"}.`,
-      "Sign in with the Microsoft 365 QA test account.",
+      process.env.ATS_QA_LOGIN_ENABLED === "true"
+        ? "Authenticate with the temporary QA test login endpoint."
+        : "Sign in with the Microsoft 365 QA test account.",
       `Run the Playwright scenario: ${title}.`,
       "Review the attached screenshot/video/trace and browser-events.txt for the failed step.",
     ],
@@ -134,6 +212,7 @@ function makeBug(row, index) {
     uxRecommendation: classification.uxRecommendation,
     evidence: {
       errorMessage,
+      attachmentText: row.attachmentText || "",
       attachments,
     },
   };
@@ -189,6 +268,16 @@ function writeReports(summary) {
         `**Evidence:** ${bug.evidence.errorMessage}`,
         "",
       );
+      if (bug.evidence.attachmentText) {
+        lines.push(
+          "**Failure Context:**",
+          "",
+          "```text",
+          bug.evidence.attachmentText.slice(0, 2_000),
+          "```",
+          "",
+        );
+      }
     }
   }
 

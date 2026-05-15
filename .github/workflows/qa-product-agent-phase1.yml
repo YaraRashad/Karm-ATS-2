@@ -25,6 +25,9 @@ jobs:
     env:
       ATS_BASE_URL: ${{ inputs.base_url }}
       ATS_TEST_PREFIX: ${{ inputs.test_prefix }}
+      ATS_API_BASE_URL: ${{ secrets.ATS_API_BASE_URL }}
+      ATS_QA_LOGIN_ENABLED: ${{ secrets.ATS_QA_LOGIN_ENABLED }}
+      ATS_QA_LOGIN_SECRET: ${{ secrets.ATS_QA_LOGIN_SECRET }}
       ATS_TEST_EMAIL: ${{ secrets.ATS_TEST_EMAIL }}
       ATS_TEST_PASSWORD: ${{ secrets.ATS_TEST_PASSWORD }}
 
@@ -66,6 +69,7 @@ jobs:
             echo ""
             echo "- Target: $ATS_BASE_URL"
             echo "- Test record prefix: $ATS_TEST_PREFIX"
+            echo "- Temporary QA login enabled: ${ATS_QA_LOGIN_ENABLED:-false}"
             echo "- Database reset: not performed"
             echo "- Demo seed: not performed"
             echo "- Artifacts: Playwright HTML report, screenshots, videos, traces, JSON, and JUnit are uploaded below."
