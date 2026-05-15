@@ -363,7 +363,317 @@ async function openNav(page, id, expectedTitle) {
   await expect(page.locator(".page-title"), `Page title should confirm "${expectedTitle}" opened`).toContainText(expectedTitle, { timeout: 20_000 });
 }
 
-test.describe("Karm ATS live QA smoke", () => {
+function slugify(value) {
+  return String(value || "item")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "item";
+}
+
+function formatError(error) {
+  if (!error) return "No error details captured.";
+  return String(error.stack || error.message || error).slice(0, 6_000);
+}
+
+function escapeMd(value) {
+  return String(value || "").replace(/\|/g, "\\|").replace(/\n/g, "<br>");
+}
+
+function classifyAuditIssue(flow, error) {
+  const message = formatError(error);
+  const normalized = message.toLowerCase();
+
+  if (/qa test login|auth\/qa-login|auth\/me|microsoft login|aadsts|login\/backend blocking|ats shell did not become visible|backend api is not reachable|load failed/i.test(message)) {
+    return {
+      category: "environment/auth setup issue",
+      severity: "Critical",
+      suggestedFix: "Verify QA login secrets, backend health, CORS, Azure AD redirect configuration, and that the authenticated ATS shell can load before reviewing downstream product flows.",
+      uxRecommendation: "Keep authentication and backend setup failures separate from ATS product defects in the QA report.",
+    };
+  }
+
+  if (/strict mode violation|locator|timeout.*waiting|expected.*to be visible|expected.*to contain text/i.test(message)) {
+    return {
+      category: "test automation issue",
+      severity: flow.testFailureSeverity || "Medium",
+      suggestedFix: "Use stable selectors, narrower table-cell assertions, and page-specific locators before treating this as a product defect.",
+      uxRecommendation: "Expose stable data-testid hooks on critical recruiter actions and result cells.",
+    };
+  }
+
+  if (/403|forbidden/i.test(message)) {
+    return {
+      category: "real product bug",
+      severity: "High",
+      suggestedFix: "Review the exact forbidden endpoint and confirm whether the QA admin account should be allowed, or hide/skip unauthorized frontend calls for lower roles.",
+      uxRecommendation: "Show role/access errors inline with the blocked action instead of leaving users with a generic failure.",
+    };
+  }
+
+  if (/api failed|request was not observed|validation failed|internal server error|save|create|schedule/i.test(message)) {
+    return {
+      category: "real product bug",
+      severity: flow.productFailureSeverity || "High",
+      suggestedFix: flow.suggestedFix || "Inspect the failed API response, frontend validation, and backend route handling for this ATS workflow.",
+      uxRecommendation: flow.uxRecommendation || "Show a clear success or validation message at the point where the user took action.",
+    };
+  }
+
+  return {
+    category: flow.category || "real product bug",
+    severity: flow.severity || "Medium",
+    suggestedFix: flow.suggestedFix || "Inspect the attached screenshot, trace, browser events, and API evidence for this failed ATS workflow.",
+    uxRecommendation: flow.uxRecommendation || "Make the failed state visible and actionable for recruiters.",
+  };
+}
+
+function makeReportMarkdown(report) {
+  const lines = [
+    "# ATS Full Audit QA Report",
+    "",
+    `- Generated: ${report.generatedAt}`,
+    `- Target: ${report.target}`,
+    `- Auth mode: ${report.auth.authMode}`,
+    `- Test prefix: ${report.testPrefix}`,
+    `- Production database reset: ${report.safety.databaseReset}`,
+    `- Demo seed: ${report.safety.demoSeed}`,
+    `- Non-TEST records touched: ${report.safety.nonTestRecordsTouched}`,
+    "",
+    "## Flow Results",
+    "",
+    "| Flow | Module | Status | Duration |",
+    "| --- | --- | --- | --- |",
+    ...report.flows.map(flow => `| ${escapeMd(flow.name)} | ${escapeMd(flow.module)} | ${escapeMd(flow.status)} | ${flow.durationMs}ms |`),
+    "",
+  ];
+
+  if (report.bugs.length === 0) {
+    lines.push("## Bugs", "", "No bugs found in this run.", "");
+  } else {
+    lines.push(
+      "## Bugs",
+      "",
+      "| ID | Severity | Category | Module | Bug | Suggested Fix | UX Recommendation |",
+      "| --- | --- | --- | --- | --- | --- | --- |",
+      ...report.bugs.map(bug => `| ${bug.id} | ${bug.severity} | ${escapeMd(bug.category)} | ${escapeMd(bug.module)} | ${escapeMd(bug.bug)} | ${escapeMd(bug.suggestedFix)} | ${escapeMd(bug.uxRecommendation)} |`),
+      "",
+    );
+
+    for (const bug of report.bugs) {
+      lines.push(
+        `### ${bug.id}: ${bug.severity} - ${bug.module}`,
+        "",
+        `**Category:** ${bug.category}`,
+        "",
+        `**Bug:** ${escapeMd(bug.bug)}`,
+        "",
+        "**Reproduction steps:**",
+        ...bug.reproductionSteps.map(step => `- ${escapeMd(step)}`),
+        "",
+        `**Evidence:** ${escapeMd(bug.evidence.errorMessage)}`,
+        "",
+        `**Screenshot:** ${bug.evidence.screenshot || "Not captured"}`,
+        "",
+        `**Trace:** ${bug.evidence.trace}`,
+        "",
+        `**Suggested fix:** ${escapeMd(bug.suggestedFix)}`,
+        "",
+        `**UX recommendation:** ${escapeMd(bug.uxRecommendation)}`,
+        "",
+      );
+    }
+  }
+
+  if (report.recommendations.length > 0) {
+    lines.push(
+      "## UX Recommendations",
+      "",
+      ...report.recommendations.map(item => `- **${escapeMd(item.module)}:** ${escapeMd(item.recommendation)}`),
+      "",
+    );
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
+function createAudit(testInfo) {
+  const bugs = [];
+  const flows = [];
+  const recommendations = [];
+
+  const addBug = async (page, flow, error, overrides = {}) => {
+    const classification = { ...classifyAuditIssue(flow, error), ...overrides };
+    const id = `ATS-QA-${String(bugs.length + 1).padStart(3, "0")}`;
+    const screenshotName = `${id}-${slugify(flow.name)}.png`;
+    let screenshot = null;
+    try {
+      screenshot = await page.screenshot({ fullPage: true });
+      await testInfo.attach(screenshotName, { body: screenshot, contentType: "image/png" });
+    } catch {
+      screenshot = null;
+    }
+
+    bugs.push({
+      id,
+      severity: classification.severity,
+      category: classification.category,
+      module: flow.module,
+      bug: classification.bug || `${flow.name} failed: ${String(error?.message || error || "Unknown failure").split("\n")[0]}`,
+      reproductionSteps: classification.reproductionSteps || flow.reproductionSteps,
+      evidence: {
+        errorMessage: formatError(error),
+        screenshot: screenshot ? screenshotName : null,
+        trace: "See the Playwright trace.zip artifact for the full browser session.",
+        extra: classification.evidence || null,
+      },
+      suggestedFix: classification.suggestedFix,
+      uxRecommendation: classification.uxRecommendation,
+    });
+  };
+
+  const runFlow = async (page, flow, fn) => {
+    const startedAt = Date.now();
+    const bugCountBefore = bugs.length;
+    try {
+      await test.step(flow.name, async () => {
+        await fn();
+      });
+      flows.push({
+        name: flow.name,
+        module: flow.module,
+        status: bugs.length === bugCountBefore ? "passed" : "completed_with_findings",
+        durationMs: Date.now() - startedAt,
+      });
+    } catch (error) {
+      await addBug(page, flow, error);
+      flows.push({
+        name: flow.name,
+        module: flow.module,
+        status: "failed_but_audit_continued",
+        durationMs: Date.now() - startedAt,
+      });
+    }
+  };
+
+  const check = async (page, flow, bug, fn, overrides = {}) => {
+    try {
+      await fn();
+      return true;
+    } catch (error) {
+      await addBug(page, flow, error, { bug, ...overrides });
+      return false;
+    }
+  };
+
+  const addRecommendation = (module, recommendation) => {
+    recommendations.push({ module, recommendation });
+  };
+
+  const attachReport = async () => {
+    const report = {
+      generatedAt: new Date().toISOString(),
+      target: process.env.ATS_BASE_URL || "unknown",
+      apiBase: API_BASE,
+      testPrefix: TEST_PREFIX,
+      auth: getAuthDiagnostics(),
+      safety: {
+        databaseReset: "not performed",
+        demoSeed: "not performed",
+        nonTestRecordsTouched: "no intentional writes outside TEST_ records",
+      },
+      flows,
+      bugs,
+      recommendations,
+    };
+    await attachJson(testInfo, "qa-full-audit-report.json", report);
+    await testInfo.attach("qa-full-audit-report.md", {
+      body: makeReportMarkdown(report),
+      contentType: "text/markdown",
+    });
+    return report;
+  };
+
+  return { bugs, flows, recommendations, addBug, runFlow, check, addRecommendation, attachReport };
+}
+
+const FLOW = {
+  dashboard: {
+    name: "Dashboard loads",
+    module: "Dashboard/Auth",
+    reproductionSteps: ["Open the live ATS.", "Authenticate with the configured QA auth mode.", "Wait for the ATS shell and dashboard to load."],
+    suggestedFix: "Confirm QA auth, backend health, app shell rendering, and initial dashboard data loading.",
+    uxRecommendation: "Show a clear authenticated loading state and a specific backend/auth error when the dashboard cannot load.",
+  },
+  jobs: {
+    name: "Job requisitions open",
+    module: "Job Requisitions",
+    reproductionSteps: ["Log in to ATS.", "Open Job Requisitions from the sidebar.", "Verify filters and actions render."],
+    suggestedFix: "Check job requisition page routing, RBAC visibility, and position list API responses.",
+    uxRecommendation: "Keep job filters and action buttons aligned and explain empty/error states.",
+  },
+  candidateCreate: {
+    name: "Candidate creation",
+    module: "Candidates",
+    reproductionSteps: ["Open Candidate Database.", "Click Add Candidate.", "Create a candidate whose name starts with TEST_.", "Save without assigning to a production job."],
+    suggestedFix: "Check Add Candidate form validation, POST /candidates response handling, and post-save modal state.",
+    uxRecommendation: "Show a success toast and keep the newly created candidate searchable immediately.",
+  },
+  candidatePersistence: {
+    name: "Candidate search and persistence",
+    module: "Candidates",
+    reproductionSteps: ["Search for the TEST_ candidate.", "Verify the row values.", "Reload the page.", "Search again and verify persistence."],
+    suggestedFix: "Verify the candidate is written to the production database and refetched after reload.",
+    uxRecommendation: "Make saved records immediately visible and searchable after refresh.",
+  },
+  pipeline: {
+    name: "Pipeline page opens",
+    module: "Pipeline",
+    reproductionSteps: ["Open Candidate Pipeline.", "Verify the pipeline page renders without writing to non-TEST records."],
+    suggestedFix: "Check pipeline page routing, stage rendering, and candidate API loading.",
+    uxRecommendation: "Show a useful empty state when no active applications are visible.",
+  },
+  interviews: {
+    name: "Interview scheduling flow",
+    module: "Interviews",
+    reproductionSteps: ["Open Interviews.", "Open Schedule Interview.", "Only submit if a TEST_ eligible candidate is available."],
+    suggestedFix: "Check Schedule Interview form binding, interviewerId submission, and POST /interviews validation.",
+    uxRecommendation: "Disable scheduling or show a clear message when no eligible candidate is available.",
+  },
+  offers: {
+    name: "Offer page access",
+    module: "Offers",
+    reproductionSteps: ["Open Offer Approvals.", "Verify the page renders without unauthorized salary/offer data calls."],
+    suggestedFix: "Check offer page RBAC, salary visibility logic, and backend offer list routes.",
+    uxRecommendation: "Show masked salary/offer details unless the user has permission.",
+  },
+  permissions: {
+    name: "Role and permission checks",
+    module: "Settings/RBAC",
+    reproductionSteps: ["Open Settings as the QA admin user.", "Verify user/permission controls are visible.", "Review captured 403 responses."],
+    suggestedFix: "Check admin RBAC, settings page API calls, and frontend handling of forbidden routes.",
+    uxRecommendation: "Make restricted actions explicit by role instead of failing silently.",
+  },
+};
+
+async function closeModalIfVisible(page) {
+  const modal = page.locator(".modal").last();
+  if (await modal.isVisible().catch(() => false)) {
+    const closeButton = modal.locator(".modal-close").first();
+    if (await closeButton.isVisible().catch(() => false)) {
+      await closeButton.click();
+      await expect(modal).toHaveCount(0, { timeout: 10_000 }).catch(() => {});
+    }
+  }
+}
+
+async function requireAuthenticated(isAuthenticated) {
+  if (!isAuthenticated()) {
+    throw new Error("Authenticated ATS shell is unavailable because the dashboard/auth flow did not complete.");
+  }
+}
+
+test.describe("Karm ATS live QA full audit", () => {
   test.beforeEach(async ({ page }, testInfo) => {
     const browserEvents = [];
     browserEventsByTest.set(testInfo, browserEvents);
@@ -439,99 +749,199 @@ test.describe("Karm ATS live QA smoke", () => {
       });
     }
 
-    if (testInfo.status === testInfo.expectedStatus && forbiddenResponses.length > 0) {
-      const lines = forbiddenResponses
-        .map(entry => `- ${entry.method} ${entry.url}${entry.responseBody ? `\n  Response: ${entry.responseBody}` : ""}`)
-        .join("\n");
-      throw new Error(`Unexpected 403 API responses observed for the ${AUTH_MODE} user:\n${lines}\nSee http-403-responses.json for full details.`);
-    }
   });
 
-  test("logs in and opens the live ATS dashboard", async ({ page }, testInfo) => {
-    await openAts(page, testInfo);
+  test("runs the full ATS audit round and reports every finding", async ({ page }, testInfo) => {
+    const audit = createAudit(testInfo);
+    let authenticated = false;
+    let createdCandidate = null;
 
-    await expect(page.locator(".page-title"), "Dashboard title should prove the authenticated app loaded").toContainText(/Karm\. ATS Dashboard|Dashboard/i);
-    await expect(page.getByTestId("nav-jobs"), "QA user should be able to see job requisitions").toBeVisible();
-    await expect(page.getByTestId("nav-candidates"), "QA user should be able to see candidates").toBeVisible();
-    await expect(page.getByTestId("nav-pipeline"), "QA user should be able to see the pipeline").toBeVisible();
-  });
-
-  test("creates only a TEST_ candidate through the normal UI", async ({ page }, testInfo) => {
-    await openAts(page, testInfo);
-
-    const unique = `${TEST_PREFIX}QA Candidate ${Date.now()}`;
-    const email = `test.qa.${Date.now()}@example.com`;
-
-    expect(unique.startsWith(TEST_PREFIX), "QA-created records must use the configured TEST_ prefix").toBeTruthy();
-
-    await openNav(page, "candidates", "Candidate Database");
-    await page.getByTestId("open-add-candidate").click();
-    await expect(page.locator(".modal-title"), "Add Candidate modal should open").toContainText("Add Candidate");
-
-    await page.getByTestId("candidate-name-input").fill(unique);
-    await page.getByTestId("candidate-email-input").fill(email);
-    await page.getByTestId("candidate-source-select").selectOption({ label: "Direct Application" });
-    await page.getByTestId("candidate-job-select").selectOption("");
-
-    const createResponsePromise = page.waitForResponse(response =>
-      response.url().startsWith(`${API_BASE}/candidates`) &&
-      response.request().method() === "POST",
-      { timeout: 30_000 },
-    ).catch(error => {
-      throw new Error(`Candidate create API request was not observed after clicking Add Candidate. The UI may not be submitting, may be blocked by validation, or may be using the wrong API base URL.\n${error.message}`);
-    });
-
-    await page.getByTestId("submit-add-candidate").click();
-    const createResponse = await createResponsePromise;
-    const createResult = await readApiResponse(createResponse);
-    await attachJson(testInfo, "candidate-create-response.json", createResult);
-
-    if (!createResponse.ok()) {
-      throw new Error(`Candidate create API failed (${createResponse.status()}) at ${createResponse.url()}.\n${createResult.raw || "No response body"}`);
-    }
-
-    await expect(page.locator(".modal"), "Candidate modal should close after successful creation").toHaveCount(0, { timeout: 30_000 });
-    await page.locator(".search-input").fill(unique);
-    const testCandidateRow = page.locator("tbody tr", { hasText: unique });
-    await expect(testCandidateRow, "New TEST_ candidate should appear in Candidate Database").toBeVisible({ timeout: 30_000 });
-    await expect(testCandidateRow, "New TEST_ candidate email should match submitted email").toContainText(email);
-    await expect(
-      testCandidateRow.locator("td").nth(4),
-      "Candidate created without assigning to a production job should have zero active apps",
-    ).toHaveText("0");
-
-    await page.reload({ waitUntil: "domcontentloaded" });
-    await waitForAtsShell(page, "after reloading to prove TEST_ candidate persistence");
-    await openNav(page, "candidates", "Candidate Database");
-    await page.locator(".search-input").fill(unique);
-    const persistedCandidateRow = page.locator("tbody tr", { hasText: unique });
-    await expect(persistedCandidateRow, "New TEST_ candidate should still be searchable after page reload").toBeVisible({ timeout: 30_000 });
-    await expect(persistedCandidateRow, "Persisted TEST_ candidate email should still match").toContainText(email);
-    await expect(
-      persistedCandidateRow.locator("td").nth(4),
-      "Persisted TEST_ candidate should still have zero active apps after reload",
-    ).toHaveText("0");
-    await testInfo.attach("candidate-persistence-check.txt", {
-      body: `Created and reloaded TEST_ candidate:\nname=${unique}\nemail=${email}\napiStatus=${createResponse.status()}\n`,
-      contentType: "text/plain",
-    });
-  });
-
-  test("opens key operational pages without touching non-TEST records", async ({ page }, testInfo) => {
-    await openAts(page, testInfo);
-
-    const pages = [
-      ["jobs", "Job Requisitions"],
-      ["candidates", "Candidate Database"],
-      ["pipeline", "Candidate Pipeline"],
-      ["interviews", "Interviews & Scorecards"],
-      ["offers", "Offer Approvals"],
-    ];
-
-    for (const [id, title] of pages) {
-      await test.step(`open ${title}`, async () => {
-        await openNav(page, id, title);
+    await audit.runFlow(page, FLOW.dashboard, async () => {
+      await openAts(page, testInfo);
+      authenticated = true;
+      await audit.check(page, FLOW.dashboard, "Dashboard title did not prove the authenticated app loaded.", async () => {
+        await expect(page.locator(".page-title")).toContainText(/Karm\. ATS Dashboard|Dashboard/i, { timeout: 20_000 });
       });
+      for (const navId of ["jobs", "candidates", "pipeline"]) {
+        await audit.check(page, FLOW.dashboard, `Dashboard shell is missing required navigation item: ${navId}.`, async () => {
+          await expect(page.getByTestId(`nav-${navId}`)).toBeVisible({ timeout: 10_000 });
+        });
+      }
+    });
+
+    await audit.runFlow(page, FLOW.jobs, async () => {
+      await requireAuthenticated(() => authenticated);
+      await openNav(page, "jobs", "Job Requisitions");
+      await audit.check(page, FLOW.jobs, "Job Requisitions search input is missing.", async () => {
+        await expect(page.locator(".search-input").first()).toBeVisible({ timeout: 10_000 });
+      });
+      await audit.check(page, FLOW.jobs, "Job Requisitions table did not render.", async () => {
+        await expect(page.locator(".table-wrap table").first()).toBeVisible({ timeout: 15_000 });
+      });
+    });
+
+    await audit.runFlow(page, FLOW.candidateCreate, async () => {
+      await requireAuthenticated(() => authenticated);
+      const unique = `${TEST_PREFIX}QA Candidate ${Date.now()}`;
+      const email = `test.qa.${Date.now()}@example.com`;
+      if (!unique.startsWith(TEST_PREFIX)) {
+        throw new Error(`QA-created records must use the configured ${TEST_PREFIX} prefix.`);
+      }
+
+      await openNav(page, "candidates", "Candidate Database");
+      await page.getByTestId("open-add-candidate").click();
+      await expect(page.locator(".modal-title"), "Add Candidate modal should open").toContainText("Add Candidate", { timeout: 10_000 });
+
+      await page.getByTestId("candidate-name-input").fill(unique);
+      await page.getByTestId("candidate-email-input").fill(email);
+      await page.getByTestId("candidate-source-select").selectOption({ label: "Direct Application" });
+      await page.getByTestId("candidate-job-select").selectOption("");
+
+      const createResponsePromise = page.waitForResponse(response =>
+        response.url().startsWith(`${API_BASE}/candidates`) &&
+        response.request().method() === "POST",
+        { timeout: 30_000 },
+      ).catch(error => {
+        throw new Error(`Candidate create API request was not observed after clicking Add Candidate. The UI may not be submitting, may be blocked by validation, or may be using the wrong API base URL.\n${error.message}`);
+      });
+
+      await page.getByTestId("submit-add-candidate").click();
+      const createResponse = await createResponsePromise;
+      const createResult = await readApiResponse(createResponse);
+      await attachJson(testInfo, "candidate-create-response.json", createResult);
+
+      if (!createResponse.ok()) {
+        throw new Error(`Candidate create API failed (${createResponse.status()}) at ${createResponse.url()}.\n${createResult.raw || "No response body"}`);
+      }
+
+      createdCandidate = { name: unique, email, apiStatus: createResponse.status() };
+      await audit.check(page, FLOW.candidateCreate, "Candidate modal did not close after successful creation.", async () => {
+        await expect(page.locator(".modal")).toHaveCount(0, { timeout: 30_000 });
+      });
+    });
+
+    await audit.runFlow(page, FLOW.candidatePersistence, async () => {
+      await requireAuthenticated(() => authenticated);
+      if (!createdCandidate) {
+        throw new Error("Candidate creation did not produce a TEST_ candidate to verify search and persistence.");
+      }
+
+      await openNav(page, "candidates", "Candidate Database");
+      await page.locator(".search-input").first().fill(createdCandidate.name);
+      const testCandidateRow = page.locator("tbody tr", { hasText: createdCandidate.name });
+      await expect(testCandidateRow, "New TEST_ candidate should appear in Candidate Database").toBeVisible({ timeout: 30_000 });
+      await audit.check(page, FLOW.candidatePersistence, "New TEST_ candidate email does not match submitted email.", async () => {
+        await expect(testCandidateRow).toContainText(createdCandidate.email);
+      });
+      await audit.check(page, FLOW.candidatePersistence, "Candidate created without a production job should have zero active apps.", async () => {
+        await expect(testCandidateRow.locator("td").nth(4)).toHaveText("0");
+      });
+
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await waitForAtsShell(page, "after reloading to prove TEST_ candidate persistence");
+      await openNav(page, "candidates", "Candidate Database");
+      await page.locator(".search-input").first().fill(createdCandidate.name);
+      const persistedCandidateRow = page.locator("tbody tr", { hasText: createdCandidate.name });
+      await expect(persistedCandidateRow, "New TEST_ candidate should still be searchable after page reload").toBeVisible({ timeout: 30_000 });
+      await audit.check(page, FLOW.candidatePersistence, "Persisted TEST_ candidate email no longer matches after reload.", async () => {
+        await expect(persistedCandidateRow).toContainText(createdCandidate.email);
+      });
+      await audit.check(page, FLOW.candidatePersistence, "Persisted TEST_ candidate active-app count changed after reload.", async () => {
+        await expect(persistedCandidateRow.locator("td").nth(4)).toHaveText("0");
+      });
+      await testInfo.attach("candidate-persistence-check.txt", {
+        body: `Created and reloaded TEST_ candidate:\nname=${createdCandidate.name}\nemail=${createdCandidate.email}\napiStatus=${createdCandidate.apiStatus}\n`,
+        contentType: "text/plain",
+      });
+    });
+
+    await audit.runFlow(page, FLOW.pipeline, async () => {
+      await requireAuthenticated(() => authenticated);
+      await openNav(page, "pipeline", "Candidate Pipeline");
+      await audit.check(page, FLOW.pipeline, "Pipeline kanban board did not render.", async () => {
+        await expect(page.locator(".kanban")).toBeVisible({ timeout: 15_000 });
+      });
+      await audit.check(page, FLOW.pipeline, "Pipeline search input is missing.", async () => {
+        await expect(page.locator(".search-input").first()).toBeVisible({ timeout: 10_000 });
+      });
+    });
+
+    await audit.runFlow(page, FLOW.interviews, async () => {
+      await requireAuthenticated(() => authenticated);
+      await openNav(page, "interviews", "Interviews & Scorecards");
+      const scheduleButton = page.getByRole("button", { name: /schedule interview/i });
+      await expect(scheduleButton, "Schedule Interview action should be visible for QA admin").toBeVisible({ timeout: 10_000 });
+      await scheduleButton.click();
+      const modal = page.locator(".modal").last();
+      await expect(modal.locator(".modal-title"), "Schedule Interview modal should open").toContainText("Schedule Interview", { timeout: 10_000 });
+
+      const candidateSelect = modal.locator("select.form-select").first();
+      const optionTexts = await candidateSelect.locator("option").allTextContents().catch(() => []);
+      const testOption = optionTexts.find(text => text.includes(TEST_PREFIX));
+      if (!testOption) {
+        audit.addRecommendation("Interviews", `No eligible ${TEST_PREFIX} candidate was available in Schedule Interview, so the QA agent opened and inspected the modal but did not submit an interview against a production candidate.`);
+        await closeModalIfVisible(page);
+        return;
+      }
+
+      await candidateSelect.selectOption({ label: testOption });
+      const interviewerSelect = modal.locator("select.form-select").last();
+      const interviewerValue = await interviewerSelect.inputValue().catch(() => "");
+      if (!interviewerValue) {
+        throw new Error("Schedule Interview showed an interviewer dropdown, but no interviewerId/value was selected.");
+      }
+      const scheduledAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 16);
+      await modal.locator('input[type="datetime-local"]').fill(scheduledAt);
+
+      const interviewResponsePromise = page.waitForResponse(response =>
+        response.url().startsWith(`${API_BASE}/interviews`) &&
+        response.request().method() === "POST",
+        { timeout: 30_000 },
+      ).catch(error => {
+        throw new Error(`Interview schedule API request was not observed after clicking Schedule Interview.\n${error.message}`);
+      });
+      await modal.getByRole("button", { name: /^schedule interview$/i }).click();
+      const interviewResponse = await interviewResponsePromise;
+      const interviewResult = await readApiResponse(interviewResponse);
+      await attachJson(testInfo, "interview-schedule-response.json", interviewResult);
+      if (!interviewResponse.ok()) {
+        throw new Error(`Interview schedule API failed (${interviewResponse.status()}) at ${interviewResponse.url()}.\n${interviewResult.raw || "No response body"}`);
+      }
+    });
+
+    await audit.runFlow(page, FLOW.offers, async () => {
+      await requireAuthenticated(() => authenticated);
+      await openNav(page, "offers", "Offer Approvals");
+      await audit.check(page, FLOW.offers, "Offer table or empty state did not render.", async () => {
+        await expect(page.locator(".card").first()).toBeVisible({ timeout: 15_000 });
+      });
+    });
+
+    await audit.runFlow(page, FLOW.permissions, async () => {
+      await requireAuthenticated(() => authenticated);
+      await openNav(page, "settings", "Settings");
+      await audit.check(page, FLOW.permissions, "Settings users area did not render for QA admin.", async () => {
+        await expect(page.getByText(/All team members|Role assignments/i).first()).toBeVisible({ timeout: 15_000 });
+      });
+    });
+
+    const forbiddenResponses = forbiddenResponsesByTest.get(testInfo) || [];
+    const forbiddenResponsePromises = forbiddenResponsePromisesByTest.get(testInfo) || [];
+    await Promise.allSettled(forbiddenResponsePromises);
+    if (forbiddenResponses.length > 0) {
+      await audit.addBug(page, FLOW.permissions, new Error(`Unexpected 403 API responses observed:\n${JSON.stringify(forbiddenResponses, null, 2)}`), {
+        category: "real product bug",
+        severity: "High",
+        bug: `The QA admin session received ${forbiddenResponses.length} forbidden backend response(s).`,
+        suggestedFix: "Review http-403-responses.json for the exact method and endpoint. Admin QA should not hit forbidden routes during the full audit unless the frontend is calling routes it should hide.",
+        uxRecommendation: "Handle permission errors gracefully and avoid calling restricted endpoints for users who cannot access them.",
+        evidence: forbiddenResponses,
+      });
+    }
+
+    const report = await audit.attachReport();
+    if (report.bugs.length > 0) {
+      throw new Error(`Full ATS audit completed with ${report.bugs.length} finding(s). See qa-full-audit-report.md and qa-full-audit-report.json for the complete prioritized bug list.`);
     }
   });
 });
