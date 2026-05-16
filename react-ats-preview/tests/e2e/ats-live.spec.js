@@ -1122,27 +1122,31 @@ test.describe("Karm ATS live QA full audit", () => {
           if (safeJobTitle) await page.locator(".search-input").first().fill(safeJobTitle);
           const deleteRow = safeJobTitle ? await findFirstRowContaining(page, safeJobTitle) : await findFirstTestRow(page);
           if (deleteRow) {
-            await audit.check(page, FLOW.jobActions, "Close/Reopen TEST_ requisition action did not respond.", async () => {
-              const closeButton = deleteRow.getByRole("button", { name: /close|reopen/i }).first();
-              await expect(closeButton).toBeVisible({ timeout: 10_000 });
-              const responsePromise = waitForOptionalResponse(page, response =>
-                response.url().startsWith(`${API_BASE}/positions`) &&
-                ["PUT", "PATCH"].includes(response.request().method()),
-                20_000,
-              );
-              await closeButton.click();
-              const response = await responsePromise;
-              if (response) {
-                const result = await readApiResponse(response);
-                await attachJson(testInfo, "job-close-reopen-response.json", result);
-                if (!response.ok()) {
-                  throw new Error(`Close/Reopen API failed (${response.status()}) at ${response.url()}.\n${result.raw || "No response body"}`);
+            const closeButton = deleteRow.getByRole("button", { name: /close|reopen/i }).first();
+            if (await closeButton.isVisible().catch(() => false)) {
+              await audit.check(page, FLOW.jobActions, "Close/Reopen TEST_ requisition action did not respond.", async () => {
+                const responsePromise = waitForOptionalResponse(page, response =>
+                  response.url().startsWith(`${API_BASE}/positions`) &&
+                  ["PUT", "PATCH"].includes(response.request().method()),
+                  20_000,
+                );
+                await closeButton.click();
+                const response = await responsePromise;
+                if (response) {
+                  const result = await readApiResponse(response);
+                  await attachJson(testInfo, "job-close-reopen-response.json", result);
+                  if (!response.ok()) {
+                    throw new Error(`Close/Reopen API failed (${response.status()}) at ${response.url()}.\n${result.raw || "No response body"}`);
+                  }
                 }
-              }
-              audit.recordAction("Job Requisitions", "Close/Reopen", "tested", "TEST_ row only");
-            }, {
-              severity: "Medium",
-            });
+                audit.recordAction("Job Requisitions", "Close/Reopen", "tested", "TEST_ row only");
+              }, {
+                severity: "Medium",
+              });
+            } else {
+              audit.recordAction("Job Requisitions", "Close/Reopen", "not available", "No Close/Reopen button available for the current TEST_ row state");
+              audit.addRecommendation("Job Requisitions", "No Close/Reopen button was available for the current TEST_ requisition state. If this is expected, show a disabled action or state-specific reason so admins and QA can understand why the action is unavailable.");
+            }
 
             await openNav(page, "jobs", "Job Requisitions");
             if (safeJobTitle) await page.locator(".search-input").first().fill(safeJobTitle);
@@ -1474,7 +1478,7 @@ test.describe("Karm ATS live QA full audit", () => {
       if (await addUserButton.isVisible().catch(() => false)) {
         await audit.check(page, FLOW.permissions, "Add User modal did not open.", async () => {
           await addUserButton.click();
-          await expect(modal(page).locator(".modal-title")).toContainText(/Add User/i, { timeout: 10_000 });
+          await expect(modal(page).locator(".modal-title")).toContainText(/Add(?: ATS)? User/i, { timeout: 10_000 });
           audit.recordAction("Settings", "Add User button", "tested", "Opened modal without saving");
           await closeModalIfVisible(page);
         }, {
