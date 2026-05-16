@@ -426,6 +426,54 @@ function escapeMd(value) {
   return String(value || "").replace(/\|/g, "\\|").replace(/\n/g, "<br>");
 }
 
+function appendProductAuditMarkdown(lines, productAudit) {
+  if (!productAudit) return;
+
+  lines.push(
+    "## Product / UX Auditor Assessment",
+    "",
+    productAudit.benchmarkStatement
+      ? escapeMd(productAudit.benchmarkStatement)
+      : "Conceptual benchmark against mature ATS patterns: complete candidate profiles, governed approvals, structured scorecards, recruiter productivity queues, role-based visibility, auditability, reporting, and automation.",
+    "",
+  );
+
+  if (productAudit.priorityCounts) {
+    lines.push(
+      `- Critical enhancements: ${productAudit.priorityCounts.Critical || 0}`,
+      `- Important enhancements: ${productAudit.priorityCounts.Important || 0}`,
+      `- Nice-to-have enhancements: ${productAudit.priorityCounts["Nice-to-have"] || 0}`,
+      "",
+    );
+  }
+
+  if (Array.isArray(productAudit.categories) && productAudit.categories.length > 0) {
+    lines.push(
+      "### Enhancement Coverage",
+      "",
+      "| Category | Critical | Important | Nice-to-have |",
+      "| --- | --- | --- | --- |",
+    );
+    for (const category of productAudit.categories) {
+      lines.push(`| ${escapeMd(category.category)} | ${category.critical || 0} | ${category.important || 0} | ${category.niceToHave || 0} |`);
+    }
+    lines.push("");
+  }
+
+  if (Array.isArray(productAudit.recommendations) && productAudit.recommendations.length > 0) {
+    lines.push(
+      "### Enterprise ATS Roadmap",
+      "",
+      "| ID | Priority | Category | Module | Recommendation | Business Impact | UX Impact | Technical Complexity | Benchmark / Rationale | Suggested Next Step |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    );
+    for (const item of productAudit.recommendations) {
+      lines.push(`| ${escapeMd(item.id)} | ${escapeMd(item.priority)} | ${escapeMd(item.category)} | ${escapeMd(item.module)} | ${escapeMd(item.recommendation)} | ${escapeMd(item.businessImpact)} | ${escapeMd(item.userExperienceImpact)} | ${escapeMd(item.technicalComplexity)} | ${escapeMd(item.benchmark)} | ${escapeMd(item.suggestedNextStep)} |`);
+    }
+    lines.push("");
+  }
+}
+
 function writeReports(summary) {
   fs.writeFileSync(jsonPath, `${JSON.stringify(summary, null, 2)}\n`);
 
@@ -538,10 +586,14 @@ function writeReports(summary) {
     lines.push(
       "## UX Recommendations",
       "",
-      ...summary.recommendations.map(item => `- **${escapeMd(item.module)}:** ${escapeMd(item.recommendation)}`),
+      "| Priority | Module | Recommendation | Business Impact | UX Impact | Technical Complexity |",
+      "| --- | --- | --- | --- | --- | --- |",
+      ...summary.recommendations.map(item => `| ${escapeMd(item.priority || "Important")} | ${escapeMd(item.module)} | ${escapeMd(item.recommendation)} | ${escapeMd(item.businessImpact || "Medium")} | ${escapeMd(item.userExperienceImpact || "Medium")} | ${escapeMd(item.technicalComplexity || "Medium")} |`),
       "",
     );
   }
+
+  appendProductAuditMarkdown(lines, summary.productAudit);
 
   fs.writeFileSync(markdownPath, `${lines.join("\n")}\n`);
 }
@@ -591,6 +643,7 @@ const bugs = auditReports.length > 0
   : failedRows.map(makeBug);
 const flows = auditReports.flatMap(({ report }) => report.flows || []);
 const recommendations = auditReports.flatMap(({ report }) => report.recommendations || []);
+const productAudit = auditReports.find(({ report }) => report.productAudit)?.report.productAudit || null;
 const actionsTested = auditReports.flatMap(({ report }) => report.actionsTested || []);
 const readiness = auditReports.find(({ report }) => report.readiness)?.report.readiness || null;
 const categoryBreakdown = bugs.reduce((acc, bug) => {
@@ -615,6 +668,7 @@ writeReports({
   actionsTested,
   flows,
   recommendations,
+  productAudit,
   bugs,
 });
 

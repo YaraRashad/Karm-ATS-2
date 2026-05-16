@@ -4,6 +4,8 @@ This Playwright suite tests the live ATS as a human QA/product reviewer without 
 
 The main live test now runs in full audit mode: each ATS flow is wrapped independently, failures are collected, and the GitHub Action only fails after the final structured report is generated.
 
+The report also includes a Product/UX Auditor assessment. This section benchmarks the ATS conceptually against mature enterprise ATS patterns and highlights the roadmap needed for a professional rollout, without copying any vendor-specific workflow.
+
 ## GitHub Secrets Required
 
 Add these repository secrets before running the workflow:
@@ -40,14 +42,45 @@ Inputs:
 - Screenshots, videos, traces, HTML report, JSON report, and JUnit report are uploaded as GitHub Actions artifacts after every run.
 - `qa-full-audit-report.md/json` are attached to the Playwright test.
 - `test-results/qa-bug-summary.md` and `test-results/qa-bug-summary.json` are generated after every run with category, module, bug, severity, reproduction steps, evidence, suggested fix, and UX recommendation.
+- The report also includes enterprise ATS enhancement recommendations grouped by priority, business impact, user experience impact, and technical complexity.
 
 ## Audit Flows
 
 - Dashboard loads.
+- Hiring Requests workflow audit.
 - Job requisitions open.
+- Job requisition buttons, filters, export/import, TEST_ edit/save, assignment, close/reopen, and delete behavior.
 - Candidate creation.
 - Candidate search and persistence.
-- Pipeline page opens.
+- Candidate buttons, validation, profile, and TEST_ safety behavior.
+- Pipeline page, upload entry point, stuck-candidate summary, cards, and safe TEST_ actions.
 - Interview scheduling flow.
-- Offer page access.
+- Offer page access and create-offer entry point.
 - Role and permission checks.
+- Mobile responsive basic audit.
+
+## Product / UX Auditor Assessment
+
+The QA agent produces one enhancement roadmap after every run. Recommendations are classified by:
+
+- Priority: `Critical`, `Important`, or `Nice-to-have`.
+- Business impact: `High`, `Medium`, or `Low`.
+- User experience impact: `High`, `Medium`, or `Low`.
+- Technical complexity: `High`, `Medium`, or `Low`.
+
+The assessment covers:
+
+- Missing ATS features.
+- UX improvements.
+- Workflow improvements.
+- Permission and governance improvements.
+- Recruiter productivity enhancements.
+- Hiring manager experience improvements.
+- Reporting and dashboard recommendations.
+- Automation opportunities.
+- Candidate experience improvements.
+- Mobile and responsive recommendations.
+- AI and automation opportunities.
+- Audit, compliance, and security recommendations.
+
+These recommendations are not all blockers. They help separate immediate defects from the longer-term roadmap required to evolve Karm. ATS into an enterprise-grade internal recruitment system.
