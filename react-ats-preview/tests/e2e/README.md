@@ -31,9 +31,9 @@ Inputs:
 
 ## Safety Rules
 
-- The suite only creates records whose names start with `TEST_`.
-- TEST_ candidates are created without assigning them to live requisitions, so production job counts are not intentionally changed.
-- Interview scheduling is only submitted when an eligible `TEST_` candidate is available; otherwise the agent records a UX recommendation and moves on.
+- The suite only creates records whose names/titles start with `TEST_`.
+- It may create a `TEST_` candidate, `TEST_` requisition, and `TEST_` application fixture so pipeline and interview flows can be tested without touching production records.
+- Interview scheduling is submitted only against generated or available `TEST_` application fixtures.
 - It does not reset the database.
 - It does not run demo seed scripts.
 - It does not change production environment variables.

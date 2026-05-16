@@ -173,7 +173,20 @@ candidatesRouter.delete('/:id', requireRoles([ROLES.ADMIN]), async (req, res, ne
   try {
     const candidate = await prisma.candidate.findUnique({ where: { id: req.params.id } });
     if (!candidate) return notFound(res, 'Candidate');
-    await prisma.candidate.update({ where: { id: req.params.id }, data: { isActive: false } });
+    const updated = await prisma.candidate.update({ where: { id: req.params.id }, data: { isActive: false } });
+    await auditLog(req, {
+      action: 'deleted',
+      entity: 'candidates',
+      entityId: candidate.id,
+      before: {
+        email: candidate.email,
+        firstName: candidate.firstName,
+        lastName: candidate.lastName,
+        source: candidate.source,
+        isActive: candidate.isActive,
+      },
+      after: { isActive: updated.isActive },
+    });
     return noContent(res);
   } catch (err) { next(err); }
 });
