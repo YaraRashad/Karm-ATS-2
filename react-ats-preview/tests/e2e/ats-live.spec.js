@@ -547,6 +547,327 @@ function normalizeText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
+const PRODUCT_AUDIT_CATEGORIES = [
+  "Missing ATS features",
+  "UX improvements",
+  "Workflow improvements",
+  "Permission/governance improvements",
+  "Recruiter productivity enhancements",
+  "Hiring manager experience improvements",
+  "Reporting/dashboard recommendations",
+  "Automation opportunities",
+  "Candidate experience improvements",
+  "Mobile/responsive recommendations",
+  "AI/automation opportunities",
+  "Audit/compliance/security recommendations",
+];
+
+const PRODUCT_AUDIT_BASELINE = [
+  {
+    category: "Missing ATS features",
+    module: "Candidates",
+    priority: "Critical",
+    businessImpact: "High",
+    userExperienceImpact: "High",
+    technicalComplexity: "Medium",
+    recommendation: "Complete resume intelligence for PDF and Word files, duplicate candidate detection, candidate source history, and controlled candidate merge workflows.",
+    benchmark: "Mature ATS platforms treat the candidate profile as the system of record, with searchable resumes, deduplication, and a complete application history.",
+    suggestedNextStep: "Add a parsing coverage dashboard and mark candidates with low-confidence extraction so recruiters know what needs manual review.",
+  },
+  {
+    category: "UX improvements",
+    module: "Global UI",
+    priority: "Important",
+    businessImpact: "Medium",
+    userExperienceImpact: "High",
+    technicalComplexity: "Low",
+    recommendation: "Standardize success toasts, inline validation messages, disabled-state explanations, and row action layouts across all modules.",
+    benchmark: "Professional ATS tools make every save, rejection, approval, and assignment visibly confirm what happened and what changed.",
+    suggestedNextStep: "Create shared button, toast, validation, and empty-state patterns for all ATS pages.",
+  },
+  {
+    category: "Workflow improvements",
+    module: "Hiring Requests / Requisitions",
+    priority: "Critical",
+    businessImpact: "High",
+    userExperienceImpact: "Medium",
+    technicalComplexity: "Medium",
+    recommendation: "Link the hiring request, approval decision, requisition, pipeline, offer, and hire outcome in one governed workflow.",
+    benchmark: "Enterprise ATS workflows preserve the chain from approved headcount to offer approval so HR can explain why a role exists and who approved it.",
+    suggestedNextStep: "Add visible status history and approval owners to each requisition and prevent bypassing required approval steps.",
+  },
+  {
+    category: "Permission/governance improvements",
+    module: "Settings/RBAC",
+    priority: "Critical",
+    businessImpact: "High",
+    userExperienceImpact: "High",
+    technicalComplexity: "Medium",
+    recommendation: "Expose admin-editable user roles, access scopes, department assignment, salary visibility, offer approval, and requisition approval in Settings.",
+    benchmark: "Professional internal systems give admins clear role governance while keeping recruiters, managers, and interviewers scoped to their work.",
+    suggestedNextStep: "Keep role changes auditable and show exactly what each permission enables before saving.",
+  },
+  {
+    category: "Recruiter productivity enhancements",
+    module: "Pipeline",
+    priority: "Important",
+    businessImpact: "High",
+    userExperienceImpact: "High",
+    technicalComplexity: "Medium",
+    recommendation: "Add saved views, recruiter workload filters, bulk actions, next-action reminders, stuck-stage queues, and interview-feedback chase lists.",
+    benchmark: "Recruiter-centered ATS products minimize daily triage time by surfacing priority candidates and overdue follow-ups.",
+    suggestedNextStep: "Introduce a recruiter workbench view with delayed candidates, pending feedback, and unassigned requisitions.",
+  },
+  {
+    category: "Hiring manager experience improvements",
+    module: "Interviews / Scorecards",
+    priority: "Important",
+    businessImpact: "High",
+    userExperienceImpact: "High",
+    technicalComplexity: "Medium",
+    recommendation: "Give hiring managers a focused view for assigned jobs, candidate CVs, interview kits, structured recommendations, and pending approvals.",
+    benchmark: "Strong ATS experiences keep managers away from the full HR workspace and guide them through only the decisions they own.",
+    suggestedNextStep: "Add a manager dashboard with assigned candidates, missing feedback, pending requisition approvals, and offer approvals.",
+  },
+  {
+    category: "Reporting/dashboard recommendations",
+    module: "Dashboard / Analytics",
+    priority: "Important",
+    businessImpact: "High",
+    userExperienceImpact: "Medium",
+    technicalComplexity: "Medium",
+    recommendation: "Expand executive metrics: time to fill, time in stage, conversion by stage, source quality, recruiter load, offer acceptance, and plan-vs-filled progress.",
+    benchmark: "Enterprise ATS dashboards move beyond counts and show pipeline health, bottlenecks, and hiring-plan progress.",
+    suggestedNextStep: "Add dashboard tiles with drill-through filters so EXCOM and HR can trace each metric to the records behind it.",
+  },
+  {
+    category: "Automation opportunities",
+    module: "Pipeline / Interviews",
+    priority: "Important",
+    businessImpact: "High",
+    userExperienceImpact: "Medium",
+    technicalComplexity: "Medium",
+    recommendation: "Automate reminders for stuck candidates, overdue hiring-manager feedback, upcoming interviews, rejected-candidate follow-up, and pending approvals.",
+    benchmark: "Modern ATS systems reduce manual chasing through SLA alerts and task queues while keeping humans in control of decisions.",
+    suggestedNextStep: "Add a notification preference model and start with overdue feedback and stuck-stage alerts.",
+  },
+  {
+    category: "Candidate experience improvements",
+    module: "Candidates / Communications",
+    priority: "Important",
+    businessImpact: "Medium",
+    userExperienceImpact: "High",
+    technicalComplexity: "Medium",
+    recommendation: "Add candidate communication templates, contact history, rejection reasons, and candidate-facing status/email consistency.",
+    benchmark: "Candidate experience is part of employer brand; professional ATS tools keep candidate communication consistent and traceable.",
+    suggestedNextStep: "Start with email templates for screening, interview scheduling, rejection, offer, and missing documents.",
+  },
+  {
+    category: "Mobile/responsive recommendations",
+    module: "Responsive UX",
+    priority: "Nice-to-have",
+    businessImpact: "Medium",
+    userExperienceImpact: "Medium",
+    technicalComplexity: "Medium",
+    recommendation: "Optimize mobile and tablet views for manager approvals, scorecards, candidate review, and urgent HR actions.",
+    benchmark: "Manager workflows often happen outside HR desktops, so responsive approval and feedback flows matter even if recruiters use desktop.",
+    suggestedNextStep: "Prioritize mobile layouts for Hiring Requests, Scorecards, and Offer/Requisition approvals before full pipeline management.",
+  },
+  {
+    category: "AI/automation opportunities",
+    module: "AI QA / Resume Intelligence",
+    priority: "Important",
+    businessImpact: "High",
+    userExperienceImpact: "High",
+    technicalComplexity: "High",
+    recommendation: "Use AI carefully for resume summarization, candidate-job fit notes, missing-field detection, JD drafting, QA/product audits, and anomaly detection.",
+    benchmark: "AI in an ATS should assist review and consistency, not make uncontrolled hiring decisions.",
+    suggestedNextStep: "Keep AI outputs explainable, optional, and auditable, with human confirmation before candidate decisions.",
+  },
+  {
+    category: "Audit/compliance/security recommendations",
+    module: "Audit / Security",
+    priority: "Critical",
+    businessImpact: "High",
+    userExperienceImpact: "Medium",
+    technicalComplexity: "Medium",
+    recommendation: "Strengthen audit trails for exports, CV access/downloads, salary visibility, role changes, deletes, approvals, and failed permission checks.",
+    benchmark: "Enterprise-grade ATS usage requires traceability around sensitive candidate, salary, and offer data.",
+    suggestedNextStep: "Add audit entries for every export/download/delete and review retention rules for CVs and candidate personal data.",
+  },
+];
+
+function normalizeProductPriority(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "critical") return "Critical";
+  if (normalized === "nice-to-have" || normalized === "nice to have" || normalized === "nice") return "Nice-to-have";
+  return "Important";
+}
+
+function normalizeImpact(value, fallback = "Medium") {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "high") return "High";
+  if (normalized === "low") return "Low";
+  return fallback;
+}
+
+function normalizeComplexity(value, fallback = "Medium") {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "high") return "High";
+  if (normalized === "low") return "Low";
+  return fallback;
+}
+
+function normalizeProductCategory(value) {
+  const exact = PRODUCT_AUDIT_CATEGORIES.find(category => category.toLowerCase() === String(value || "").trim().toLowerCase());
+  return exact || "UX improvements";
+}
+
+function inferRecommendationMetadata(module, recommendation) {
+  const text = `${module} ${recommendation}`.toLowerCase();
+
+  if (/recruiter filter|workload|bulk|stuck|next action|priority/i.test(text)) {
+    return {
+      category: "Recruiter productivity enhancements",
+      priority: "Important",
+      businessImpact: "High",
+      userExperienceImpact: "High",
+      technicalComplexity: "Low",
+      benchmark: "Recruiters need fast filtering and triage controls to manage volume without spreadsheet workarounds.",
+    };
+  }
+
+  if (/edit user|role|permission|salary|access|rbac|settings/i.test(text)) {
+    return {
+      category: "Permission/governance improvements",
+      priority: "Critical",
+      businessImpact: "High",
+      userExperienceImpact: "High",
+      technicalComplexity: "Medium",
+      benchmark: "Admin role governance must be obvious, auditable, and safe before wider rollout.",
+    };
+  }
+
+  if (/delete action|delete button|bad upload|mistaken record/i.test(text)) {
+    return {
+      category: "Audit/compliance/security recommendations",
+      priority: "Important",
+      businessImpact: "Medium",
+      userExperienceImpact: "Medium",
+      technicalComplexity: "Low",
+      benchmark: "Delete actions should be available to authorized admins, confirmed explicitly, and always audit logged.",
+    };
+  }
+
+  if (/pipeline|kanban|card|application fixture/i.test(text)) {
+    return {
+      category: "Workflow improvements",
+      priority: "Important",
+      businessImpact: "High",
+      userExperienceImpact: "Medium",
+      technicalComplexity: "Medium",
+      benchmark: "Pipeline boards should support safe stage movement, quick actions, delayed-candidate visibility, and realistic QA fixtures.",
+    };
+  }
+
+  if (/interview|scorecard|eligible/i.test(text)) {
+    return {
+      category: "Hiring manager experience improvements",
+      priority: "Important",
+      businessImpact: "High",
+      userExperienceImpact: "High",
+      technicalComplexity: "Medium",
+      benchmark: "Interview workflows should make eligible candidates and scorecard responsibilities clear to managers and interviewers.",
+    };
+  }
+
+  if (/offer|salary/i.test(text)) {
+    return {
+      category: "Permission/governance improvements",
+      priority: "Critical",
+      businessImpact: "High",
+      userExperienceImpact: "Medium",
+      technicalComplexity: "Medium",
+      benchmark: "Offer and salary workflows require controlled visibility, approvals, and clear policy states.",
+    };
+  }
+
+  if (/mobile|responsive/i.test(text)) {
+    return {
+      category: "Mobile/responsive recommendations",
+      priority: "Nice-to-have",
+      businessImpact: "Medium",
+      userExperienceImpact: "Medium",
+      technicalComplexity: "Medium",
+      benchmark: "Responsive manager workflows help approvals and feedback continue outside HR desktops.",
+    };
+  }
+
+  return {
+    category: "UX improvements",
+    priority: "Important",
+    businessImpact: "Medium",
+    userExperienceImpact: "High",
+    technicalComplexity: "Low",
+    benchmark: "Professional ATS interfaces explain what happened, what is next, and why an action is unavailable.",
+  };
+}
+
+function createProductRecommendation(item, index) {
+  const inferred = inferRecommendationMetadata(item.module, item.recommendation);
+  const merged = { ...inferred, ...item };
+
+  return {
+    id: merged.id || `ATS-PX-${String(index + 1).padStart(3, "0")}`,
+    category: normalizeProductCategory(merged.category),
+    module: merged.module || "General ATS",
+    priority: normalizeProductPriority(merged.priority),
+    businessImpact: normalizeImpact(merged.businessImpact),
+    userExperienceImpact: normalizeImpact(merged.userExperienceImpact),
+    technicalComplexity: normalizeComplexity(merged.technicalComplexity),
+    recommendation: merged.recommendation,
+    benchmark: merged.benchmark || inferred.benchmark,
+    suggestedNextStep: merged.suggestedNextStep || "Review with HR, one recruiter, one hiring manager, and one admin before prioritizing for the next sprint.",
+    source: merged.source || "runtime QA observation",
+  };
+}
+
+function buildProductAudit(runtimeRecommendations = []) {
+  const baseline = PRODUCT_AUDIT_BASELINE.map(item => ({ ...item, source: "professional ATS benchmark" }));
+  const combined = [...baseline, ...runtimeRecommendations].map(createProductRecommendation);
+  const categories = PRODUCT_AUDIT_CATEGORIES.map(category => {
+    const items = combined.filter(item => item.category === category);
+    const priorityCounts = items.reduce((acc, item) => {
+      acc[item.priority] = (acc[item.priority] || 0) + 1;
+      return acc;
+    }, {});
+
+    return {
+      category,
+      critical: priorityCounts.Critical || 0,
+      important: priorityCounts.Important || 0,
+      niceToHave: priorityCounts["Nice-to-have"] || 0,
+      items,
+    };
+  });
+
+  const priorityCounts = combined.reduce((acc, item) => {
+    acc[item.priority] = (acc[item.priority] || 0) + 1;
+    return acc;
+  }, {});
+
+  return {
+    benchmarkStatement: "Conceptual benchmark against mature ATS patterns from platforms such as Greenhouse, Lever, Workday, and BambooHR: complete candidate profiles, governed approvals, structured scorecards, recruiter productivity queues, role-based visibility, auditability, reporting, and automation. This is not a feature copy; it is a professional-readiness lens for Karm. ATS.",
+    priorityCounts: {
+      Critical: priorityCounts.Critical || 0,
+      Important: priorityCounts.Important || 0,
+      "Nice-to-have": priorityCounts["Nice-to-have"] || 0,
+    },
+    categories,
+    recommendations: combined,
+  };
+}
+
 function buildReadinessSummary(bugs) {
   const bySeverity = bugs.reduce((acc, bug) => {
     acc[bug.severity] = (acc[bug.severity] || 0) + 1;
@@ -687,7 +1008,34 @@ function makeReportMarkdown(report) {
     lines.push(
       "## UX Recommendations",
       "",
-      ...report.recommendations.map(item => `- **${escapeMd(item.module)}:** ${escapeMd(item.recommendation)}`),
+      "| Priority | Module | Recommendation | Business Impact | UX Impact | Technical Complexity |",
+      "| --- | --- | --- | --- | --- | --- |",
+      ...report.recommendations.map(item => `| ${escapeMd(item.priority)} | ${escapeMd(item.module)} | ${escapeMd(item.recommendation)} | ${escapeMd(item.businessImpact)} | ${escapeMd(item.userExperienceImpact)} | ${escapeMd(item.technicalComplexity)} |`),
+      "",
+    );
+  }
+
+  if (report.productAudit) {
+    lines.push(
+      "## Product / UX Auditor Assessment",
+      "",
+      report.productAudit.benchmarkStatement,
+      "",
+      `- Critical enhancements: ${report.productAudit.priorityCounts.Critical}`,
+      `- Important enhancements: ${report.productAudit.priorityCounts.Important}`,
+      `- Nice-to-have enhancements: ${report.productAudit.priorityCounts["Nice-to-have"]}`,
+      "",
+      "### Enhancement Coverage",
+      "",
+      "| Category | Critical | Important | Nice-to-have |",
+      "| --- | --- | --- | --- |",
+      ...report.productAudit.categories.map(category => `| ${escapeMd(category.category)} | ${category.critical} | ${category.important} | ${category.niceToHave} |`),
+      "",
+      "### Enterprise ATS Roadmap",
+      "",
+      "| ID | Priority | Category | Module | Recommendation | Business Impact | UX Impact | Technical Complexity | Benchmark / Rationale | Suggested Next Step |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+      ...report.productAudit.recommendations.map(item => `| ${item.id} | ${item.priority} | ${escapeMd(item.category)} | ${escapeMd(item.module)} | ${escapeMd(item.recommendation)} | ${item.businessImpact} | ${item.userExperienceImpact} | ${item.technicalComplexity} | ${escapeMd(item.benchmark)} | ${escapeMd(item.suggestedNextStep)} |`),
       "",
     );
   }
@@ -775,11 +1123,19 @@ function createAudit(testInfo) {
     }
   };
 
-  const addRecommendation = (module, recommendation) => {
-    recommendations.push({ module, recommendation });
+  const addRecommendation = (module, recommendation, metadata = {}) => {
+    const productRecommendation = createProductRecommendation({
+      id: metadata.id || `ATS-RX-${String(recommendations.length + 1).padStart(3, "0")}`,
+      module,
+      recommendation,
+      ...metadata,
+      source: metadata.source || "runtime QA observation",
+    }, recommendations.length);
+    recommendations.push(productRecommendation);
   };
 
   const attachReport = async () => {
+    const productAudit = buildProductAudit(recommendations);
     const report = {
       generatedAt: new Date().toISOString(),
       target: process.env.ATS_BASE_URL || "unknown",
@@ -796,6 +1152,7 @@ function createAudit(testInfo) {
       flows,
       bugs,
       recommendations,
+      productAudit,
     };
     await attachJson(testInfo, "qa-full-audit-report.json", report);
     await testInfo.attach("qa-full-audit-report.md", {
