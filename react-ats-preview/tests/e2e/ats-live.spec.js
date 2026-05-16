@@ -35,6 +35,30 @@ async function readApiResponse(response) {
   return { status: response.status(), ok: response.ok(), url: response.url(), body, raw: text };
 }
 
+function unwrapApiData(result) {
+  return result?.body?.data ?? result?.body;
+}
+
+async function getAtsAccessToken(page) {
+  const token = await page.evaluate(() => sessionStorage.getItem("karm_ats_access_token"));
+  if (!token) throw new Error("No ATS access token was found in sessionStorage for QA API setup.");
+  return token;
+}
+
+async function qaApiRequest(page, method, path, data) {
+  const accessToken = await getAtsAccessToken(page);
+  const response = await page.request.fetch(`${API_BASE}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    data,
+  });
+  const result = await readApiResponse(response);
+  return { response, result, data: unwrapApiData(result) };
+}
+
 async function attachJson(testInfo, name, value) {
   if (!testInfo) return;
   await testInfo.attach(name, {
@@ -430,6 +454,76 @@ async function closeModalIfVisible(page) {
       await expect(currentModal).toHaveCount(0, { timeout: 10_000 }).catch(() => {});
     }
   }
+}
+
+async function ensureTestPipelineFixture(page, testInfo, audit, candidate) {
+  if (!candidate?.id) {
+    audit.addRecommendation("Pipeline", "Candidate create API response did not include an id, so the QA agent could not create a TEST_ application fixture.");
+    return null;
+  }
+
+  const now = Date.now();
+  const title = `${TEST_PREFIX}QA Pipeline Role ${now}`;
+  const positionCreate = await qaApiRequest(page, "POST", "/positions", {
+    title,
+    departmentName: "QA",
+    entity: "egypt",
+    seniority: "mid",
+    employmentType: "full_time",
+    currency: "EGP",
+    salaryMin: 1,
+    salaryMax: 2,
+    priority: "normal",
+    description: `${TEST_PREFIX} QA-only pipeline fixture. Do not use for production recruiting.`,
+    requirements: [],
+    headcountRationale: "TEST_ QA fixture",
+  });
+  await attachJson(testInfo, "qa-pipeline-position-create-response.json", positionCreate.result);
+  if (!positionCreate.response.ok()) {
+    throw new Error(`TEST_ pipeline position create API failed (${positionCreate.response.status()}) at ${API_BASE}/positions.\n${positionCreate.result.raw || "No response body"}`);
+  }
+
+  let position = positionCreate.data;
+  if (!position?.id) {
+    throw new Error(`TEST_ pipeline position create response did not include an id.\n${positionCreate.result.raw || "No response body"}`);
+  }
+
+  if (position.status !== "open") {
+    const statusUpdate = await qaApiRequest(page, "PATCH", `/positions/${position.id}/status`, { status: "open" });
+    await attachJson(testInfo, "qa-pipeline-position-open-response.json", statusUpdate.result);
+    if (!statusUpdate.response.ok()) {
+      throw new Error(`TEST_ pipeline position open API failed (${statusUpdate.response.status()}).\n${statusUpdate.result.raw || "No response body"}`);
+    }
+    position = statusUpdate.data || position;
+  }
+
+  const applicationCreate = await qaApiRequest(page, "POST", "/applications", {
+    candidateId: candidate.id,
+    positionId: position.id,
+  });
+  await attachJson(testInfo, "qa-pipeline-application-create-response.json", applicationCreate.result);
+  if (!applicationCreate.response.ok()) {
+    throw new Error(`TEST_ application create API failed (${applicationCreate.response.status()}) at ${API_BASE}/applications.\n${applicationCreate.result.raw || "No response body"}`);
+  }
+
+  let application = applicationCreate.data;
+  if (!application?.id) {
+    throw new Error(`TEST_ application create response did not include an id.\n${applicationCreate.result.raw || "No response body"}`);
+  }
+
+  const stageMove = await qaApiRequest(page, "PATCH", `/applications/${application.id}/stage`, {
+    stage: "assessment",
+    reason: "TEST_ QA pipeline fixture for interview scheduling audit.",
+  });
+  await attachJson(testInfo, "qa-pipeline-application-stage-response.json", stageMove.result);
+  if (stageMove.response.ok()) {
+    application = stageMove.data || application;
+  } else if (!/already|current/i.test(stageMove.result.raw || "")) {
+    throw new Error(`TEST_ application stage move API failed (${stageMove.response.status()}).\n${stageMove.result.raw || "No response body"}`);
+  }
+
+  audit.recordAction("Pipeline", "Create TEST_ application fixture", "tested", `${candidate.name} -> ${position.title}`);
+  return { position, application, candidate };
 }
 
 function slugify(value) {
@@ -897,6 +991,7 @@ test.describe("Karm ATS live QA full audit", () => {
     let authenticated = false;
     let createdCandidate = null;
     let createdJob = null;
+    let testPipelineFixture = null;
 
     await audit.runFlow(page, FLOW.dashboard, async () => {
       await openAts(page, testInfo);
@@ -1214,7 +1309,8 @@ test.describe("Karm ATS live QA full audit", () => {
         throw new Error(`Candidate create API failed (${createResponse.status()}) at ${createResponse.url()}.\n${createResult.raw || "No response body"}`);
       }
 
-      createdCandidate = { name: unique, email, apiStatus: createResponse.status() };
+      const createdCandidateData = unwrapApiData(createResult);
+      createdCandidate = { id: createdCandidateData?.id, name: unique, email, apiStatus: createResponse.status() };
       audit.recordAction("Candidates", "Create TEST_ candidate", "tested", unique);
       await audit.check(page, FLOW.candidateCreate, "Candidate modal did not close after successful creation.", async () => {
         await expect(page.locator(".modal")).toHaveCount(0, { timeout: 30_000 });
@@ -1341,6 +1437,9 @@ test.describe("Karm ATS live QA full audit", () => {
 
     await audit.runFlow(page, FLOW.pipeline, async () => {
       await requireAuthenticated(() => authenticated);
+      if (!testPipelineFixture && createdCandidate?.id) {
+        testPipelineFixture = await ensureTestPipelineFixture(page, testInfo, audit, createdCandidate);
+      }
       await openNav(page, "pipeline", "Candidate Pipeline");
       audit.recordAction("Pipeline", "Open page", "tested");
       await audit.check(page, FLOW.pipeline, "Pipeline kanban board did not render.", async () => {
@@ -1376,6 +1475,8 @@ test.describe("Karm ATS live QA full audit", () => {
             severity: "Medium",
           });
         }
+      } else if (testPipelineFixture) {
+        throw new Error(`TEST_ pipeline fixture was created for ${testPipelineFixture.candidate.name}, but no TEST_ kanban card was visible.`);
       } else {
         audit.addRecommendation("Pipeline", "No TEST_ pipeline card was available, so card quick actions and bulk actions were inspected only at page level. Add a dedicated TEST_ application fixture for richer pipeline QA.");
       }
@@ -1383,6 +1484,9 @@ test.describe("Karm ATS live QA full audit", () => {
 
     await audit.runFlow(page, FLOW.interviews, async () => {
       await requireAuthenticated(() => authenticated);
+      if (!testPipelineFixture && createdCandidate?.id) {
+        testPipelineFixture = await ensureTestPipelineFixture(page, testInfo, audit, createdCandidate);
+      }
       await openNav(page, "interviews", "Interviews & Scorecards");
       audit.recordAction("Interviews", "Open page", "tested");
       for (const tab of ["Scheduled", "Completed"]) {
@@ -1403,6 +1507,9 @@ test.describe("Karm ATS live QA full audit", () => {
       const optionTexts = await candidateSelect.locator("option").allTextContents().catch(() => []);
       const testOption = optionTexts.find(text => text.includes(TEST_PREFIX));
       if (!testOption) {
+        if (testPipelineFixture) {
+          throw new Error(`A TEST_ pipeline fixture exists (${testPipelineFixture.candidate.name}) but Schedule Interview did not offer any TEST_ candidate.`);
+        }
         audit.addRecommendation("Interviews", `No eligible ${TEST_PREFIX} candidate was available in Schedule Interview, so the QA agent opened and inspected the modal but did not submit an interview against a production candidate.`);
         await closeModalIfVisible(page);
         return;

@@ -437,6 +437,7 @@ export const backendActions = {
     body: JSON.stringify({ status: positionStatusToApi[status] || status }),
   }),
   deletePosition: (id) => api(`/positions/${id}`, { method: "DELETE" }),
+  deleteCandidate: (id) => api(`/candidates/${id}`, { method: "DELETE" }),
   createApplication: (payload) => api("/applications", { method: "POST", body: JSON.stringify(payload) }),
   moveApplication: (id, payload) => api(`/applications/${id}/stage`, { method: "PATCH", body: JSON.stringify(payload) }),
   rejectApplication: (id, payload) => api(`/applications/${id}/disqualify`, { method: "POST", body: JSON.stringify(payload) }),

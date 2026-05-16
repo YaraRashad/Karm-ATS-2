@@ -2143,12 +2143,13 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
 }
 
 // ── CANDIDATES PAGE ───────────────────────────────────────────────────────────
-function CandidatesPage({ candidates, setCandidates, applications, jobs, roleConfig, openModal }) {
+function CandidatesPage({ candidates, setCandidates, applications, jobs, roleConfig, openModal, backendActions, reloadData }) {
   const [search, setSearch] = useState("");
   const [filterSource, setFilterSource] = useState("All");
   const [filterJob, setFilterJob] = useState("All");
   const [filterDept, setFilterDept] = useState("All");
   const [filterStage, setFilterStage] = useState("All");
+  const [deletingCandidateId, setDeletingCandidateId] = useState(null);
   const deptOptions = Array.from(new Set(jobs.map(j => j.dept).filter(Boolean))).sort();
 
   const filtered = candidates.filter(c => {
@@ -2163,6 +2164,26 @@ function CandidatesPage({ candidates, setCandidates, applications, jobs, roleCon
   });
 
   const canCreate = !!roleConfig.canEditCandidates;
+  const canDelete = !!roleConfig.canDeleteRecords;
+
+  const deleteCandidate = async (candidate) => {
+    if (!canDelete || !backendActions?.deleteCandidate) return;
+    const activeCount = applications.filter(a => a.candidateId === candidate.id && a.status === "Active").length;
+    const warning = activeCount
+      ? ` They currently have ${activeCount} active application${activeCount === 1 ? "" : "s"}.`
+      : "";
+    if (!window.confirm(`Delete candidate ${candidate.name}? This will hide the candidate from the ATS.${warning}`)) return;
+
+    setDeletingCandidateId(candidate.id);
+    try {
+      await backendActions.deleteCandidate(candidate.id);
+      await reloadData?.();
+    } catch (e) {
+      alert(e.message || "Could not delete candidate.");
+    } finally {
+      setDeletingCandidateId(null);
+    }
+  };
 
   const exportCandidates = () => {
     const headers = ["Full Name", "Email", "Phone", "Nationality", "Source", "Referred By", "Active Applications", "Current Stage", "Applied Job", "Date Added", "Tags"];
@@ -2260,7 +2281,21 @@ function CandidatesPage({ candidates, setCandidates, applications, jobs, roleCon
                       <td style={{ fontFamily: "var(--mono)", color: "var(--accent)" }}>{applications.filter(a => a.candidateId === c.id && a.status === "Active").length}</td>
                       <td>{activeApp ? <span className={`badge ${stageBadge(activeApp.stage)}`}>{activeApp.stage}</span> : <span style={{ color: "var(--text3)", fontSize: 12 }}>—</span>}</td>
                       <td style={{ fontFamily: "var(--mono)", color: "var(--text3)", fontSize: 12 }}>{c.addedDate}</td>
-                      <td><button className="btn btn-ghost btn-sm" onClick={() => openModal("viewCandidate", { candidate: c, activeApp, activeJob })}>View</button></td>
+                      <td>
+                        <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap" }}>
+                          <button className="btn btn-ghost btn-sm" onClick={() => openModal("viewCandidate", { candidate: c, activeApp, activeJob })}>View</button>
+                          {canDelete && (
+                            <button
+                              className="btn btn-danger btn-sm"
+                              data-testid={`delete-candidate-${c.id}`}
+                              onClick={() => deleteCandidate(c)}
+                              disabled={deletingCandidateId === c.id}
+                            >
+                              {deletingCandidateId === c.id ? "Deleting..." : "Delete"}
+                            </button>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
@@ -2284,6 +2319,11 @@ function CVParserModal({ jobs, setJobs, candidates, setCandidates, applications,
   const fileInputRef = useState(null);
 
   const COLORS = ["#4f8ef7","#2dd4b4","#a78bfa","#f59e0b","#fb923c","#f87171","#4ade80","#38bdf8","#e879f9","#34d399"];
+  const PDF_UNREADABLE_MESSAGE = "We could not read this PDF automatically. Please enter the candidate details manually.";
+  const isPdfFile = (file) => {
+    const lower = file.name.toLowerCase();
+    return file.type === "application/pdf" || lower.endsWith(".pdf");
+  };
 
   const readFileAsBase64 = (file) => new Promise((res, rej) => {
     const reader = new FileReader();
@@ -2349,7 +2389,7 @@ function CVParserModal({ jobs, setJobs, candidates, setCandidates, applications,
 
   const readCvText = async (file) => {
     const lower = file.name.toLowerCase();
-    if (file.type === "application/pdf" || lower.endsWith(".pdf")) return extractPdfText(file);
+    if (isPdfFile(file)) return extractPdfText(file);
     if (lower.endsWith(".docx")) return extractDocxText(file);
     if (file.type.startsWith("text/") || lower.endsWith(".txt") || lower.endsWith(".csv")) return readFileAsText(file);
     return "";
@@ -2517,7 +2557,9 @@ const extractCandidateName = (text) => {
 
   const parseCVLocally = async (file) => {
     let text = "";
-    try { text = await readCvText(file); } catch {}
+    let readError = null;
+    const isPdf = isPdfFile(file);
+    try { text = await readCvText(file); } catch (e) { readError = e; }
     const normalizedText = normalizeExtractedText(text);
     const searchableText = normalizedText.replace(/\s*([@._%+-])\s*/g, "$1");
     const compactText = normalizedText.replace(/\s+/g, " ").trim();
@@ -2526,6 +2568,7 @@ const extractCandidateName = (text) => {
     const name = extractCandidateName(normalizedText);
     const skills = extractSkills(`${normalizedText} ${file.name}`);
     const suggestedJobObj = suggestJobForText(`${normalizedText} ${file.name}`);
+    const parseWarning = !compactText && isPdf ? PDF_UNREADABLE_MESSAGE : "";
     return {
       name,
       email,
@@ -2539,7 +2582,9 @@ const extractCandidateName = (text) => {
       suggestedJobObj,
       summary: compactText
         ? `Extracted ${name ? "candidate name" : "readable CV text"}${email ? ", email" : ""}${phone ? ", phone" : ""}${skills.length ? `, and ${skills.length} skill tag${skills.length === 1 ? "" : "s"}` : ""} from the uploaded CV. Please review before confirming.`
-        : "CV was attached, but readable text could not be extracted. Please complete the fields manually.",
+        : parseWarning || "CV was attached, but readable text could not be extracted. Please complete the fields manually.",
+      parseWarning,
+      parseError: readError?.message || "",
       needsNameReview: !name,
     };
   };
@@ -2567,6 +2612,7 @@ const extractCandidateName = (text) => {
             skills: extracted.skills || [],
             source: "CV Upload",
             summary: extracted.summary || "",
+            parseWarning: extracted.parseWarning || "",
             suggestedJob: extracted.suggestedJob || "",
           },
           parseError: extracted.needsNameReview,
@@ -2791,9 +2837,9 @@ const extractCandidateName = (text) => {
           {/* REVIEW STATE */}
           {phase === "review" && cur && (
             <div>
-              {cur.parseError && (
+              {(cur.extracted.parseWarning || cur.parseError) && (
                 <div className="alert alert-amber" style={{ marginBottom: 16 }}>
-                  <Icon name="alert" size={14} /> Candidate name was not found inside the CV. Please type it manually before confirming.
+                  <Icon name="alert" size={14} /> {cur.extracted.parseWarning || "Candidate name was not found inside the CV. Please type it manually before confirming."}
                 </div>
               )}
 
@@ -3837,13 +3883,27 @@ function OffersPage({ offers, setOffers, applications, candidates, jobs, roleCon
 
 // ── SETTINGS PAGE ─────────────────────────────────────────────────────────────
 function SettingsPage({ currentRole, roleAssignments, setRoleAssignments, ROLES_CONFIG, auditLogs, backendUsers = [], backendActions, reloadData }) {
-  const [activeTab, setActiveTab] = useState("users");
-  const [saved, setSaved] = useState(false);
-  const [localAssignments, setLocalAssignments] = useState({ ...roleAssignments });
-  const [showAddUser, setShowAddUser] = useState(false);
-  const [addingUser, setAddingUser] = useState(false);
-  const [userError, setUserError] = useState("");
-  const [newUser, setNewUser] = useState({
+  const defaultAccessScopeForRole = (role) => role === "admin"
+    ? "all_data"
+    : role === "recruiter"
+      ? "recruitment_data"
+      : role === "hiring_manager"
+        ? "assigned_jobs"
+        : "assigned_interviews";
+  const roleKeyFromLabel = (role) => ({
+    Admin: "admin",
+    Recruiter: "recruiter",
+    "Hiring Manager": "hiring_manager",
+    Interviewer: "interviewer",
+  }[role] || role || "recruiter");
+  const accessScopeKeyFromLabel = (scope) => ({
+    "All system data": "all_data",
+    "All recruitment data": "recruitment_data",
+    "Assigned recruitment data": "recruitment_data",
+    "Assigned jobs": "assigned_jobs",
+    "Assigned interviews": "assigned_interviews",
+  }[scope] || scope || "recruitment_data");
+  const emptyUserForm = () => ({
     fullName: "",
     email: "",
     role: "recruiter",
@@ -3851,20 +3911,30 @@ function SettingsPage({ currentRole, roleAssignments, setRoleAssignments, ROLES_
     canViewSalary: false,
     canApproveOffers: false,
     canApproveRequisitions: false,
+    isActive: true,
   });
+  const applyRoleDefaults = (prev, value) => ({
+    ...prev,
+    role: value,
+    accessScope: defaultAccessScopeForRole(value),
+    canViewSalary: value === "admin" ? true : prev.canViewSalary,
+    canApproveOffers: value === "admin" ? true : prev.canApproveOffers,
+    canApproveRequisitions: value === "admin" ? true : prev.canApproveRequisitions,
+  });
+  const [activeTab, setActiveTab] = useState("users");
+  const [saved, setSaved] = useState(false);
+  const [localAssignments, setLocalAssignments] = useState({ ...roleAssignments });
+  const [showAddUser, setShowAddUser] = useState(false);
+  const [addingUser, setAddingUser] = useState(false);
+  const [userError, setUserError] = useState("");
+  const [newUser, setNewUser] = useState(emptyUserForm);
+  const [editingUser, setEditingUser] = useState(null);
+  const [savingUser, setSavingUser] = useState(false);
+  const [editUserError, setEditUserError] = useState("");
   const userDirectory = backendUsers.length ? backendUsers : TEAM;
 
   const updateNewUser = (field, value) => {
-    setNewUser(prev => {
-      const next = { ...prev, [field]: value };
-      if (field === "role") {
-        next.accessScope = value === "admin" ? "all_data" : value === "recruiter" ? "recruitment_data" : value === "hiring_manager" ? "assigned_jobs" : "assigned_interviews";
-        next.canViewSalary = value === "admin" ? true : prev.canViewSalary;
-        next.canApproveOffers = value === "admin" ? true : prev.canApproveOffers;
-        next.canApproveRequisitions = value === "admin" ? true : prev.canApproveRequisitions;
-      }
-      return next;
-    });
+    setNewUser(prev => field === "role" ? applyRoleDefaults(prev, value) : { ...prev, [field]: value });
   };
 
   const submitUser = async () => {
@@ -3890,19 +3960,60 @@ function SettingsPage({ currentRole, roleAssignments, setRoleAssignments, ROLES_
       });
       await reloadData();
       setShowAddUser(false);
-      setNewUser({
-        fullName: "",
-        email: "",
-        role: "recruiter",
-        accessScope: "recruitment_data",
-        canViewSalary: false,
-        canApproveOffers: false,
-        canApproveRequisitions: false,
-      });
+      setNewUser(emptyUserForm());
     } catch (e) {
       setUserError(e.message);
     } finally {
       setAddingUser(false);
+    }
+  };
+
+  const openEditUser = (user) => {
+    const roleKey = roleKeyFromLabel(user.roleKey || user.role);
+    setEditUserError("");
+    setEditingUser({
+      id: user.id,
+      fullName: user.fullName || "",
+      email: user.email || "",
+      role: roleKey,
+      accessScope: accessScopeKeyFromLabel(user.accessScopeKey || user.accessScope) || defaultAccessScopeForRole(roleKey),
+      canViewSalary: !!user.canViewSalary || roleKey === "admin",
+      canApproveOffers: !!user.canApproveOffers || roleKey === "admin",
+      canApproveRequisitions: !!user.canApproveRequisitions || roleKey === "admin",
+      isActive: user.active !== false,
+    });
+  };
+
+  const updateEditingUser = (field, value) => {
+    setEditingUser(prev => {
+      if (!prev) return prev;
+      return field === "role" ? applyRoleDefaults(prev, value) : { ...prev, [field]: value };
+    });
+  };
+
+  const submitEditUser = async () => {
+    setEditUserError("");
+    if (!editingUser?.id) {
+      setEditUserError("This user can only be edited after it exists in the backend.");
+      return;
+    }
+    setSavingUser(true);
+    try {
+      await backendActions.updateUser(editingUser.id, {
+        role: editingUser.role,
+        accessScope: editingUser.accessScope,
+        entities: ["egypt", "cyprus", "uk", "tunisia"],
+        canViewSalary: !!editingUser.canViewSalary,
+        canApproveOffers: !!editingUser.canApproveOffers,
+        canApproveRequisitions: !!editingUser.canApproveRequisitions,
+        isActive: !!editingUser.isActive,
+      });
+      await reloadData();
+      setEditingUser(null);
+    } catch (e) {
+      setEditUserError(e.message || "Could not update user.");
+    } finally {
+      setSavingUser(false);
     }
   };
 
@@ -4020,7 +4131,7 @@ function SettingsPage({ currentRole, roleAssignments, setRoleAssignments, ROLES_
               </div>
               <div className="table-wrap">
                 <table>
-                  <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Department</th><th>Access scope</th><th>Status</th><th>Salary</th><th>Offers</th><th>Requisitions</th></tr></thead>
+                  <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Department</th><th>Access scope</th><th>Status</th><th>Salary</th><th>Offers</th><th>Requisitions</th><th></th></tr></thead>
                   <tbody>
                     {userDirectory.map((u, idx) => {
                       const assignedRole = Object.entries(localAssignments).find(([, indexes]) => (Array.isArray(indexes) ? indexes : [indexes]).includes(idx));
@@ -4042,6 +4153,9 @@ function SettingsPage({ currentRole, roleAssignments, setRoleAssignments, ROLES_
                           <td>{hasSalaryAccess(perms) ? <span style={{ color: "var(--green)" }}><Icon name="check" size={14} /></span> : <span style={{ color: "var(--text3)" }}>—</span>}</td>
                           <td>{hasOfferApprovalAccess(perms) ? <span style={{ color: "var(--green)" }}><Icon name="check" size={14} /></span> : <span style={{ color: "var(--text3)" }}>—</span>}</td>
                           <td>{hasRequisitionApprovalAccess(perms) ? <span style={{ color: "var(--green)" }}><Icon name="check" size={14} /></span> : <span style={{ color: "var(--text3)" }}>—</span>}</td>
+                          <td>
+                            <button className="btn btn-ghost btn-sm" onClick={() => openEditUser(u)} disabled={!u.id || !backendActions?.updateUser}>Edit</button>
+                          </td>
                         </tr>
                       );
                     })}
@@ -4095,6 +4209,57 @@ function SettingsPage({ currentRole, roleAssignments, setRoleAssignments, ROLES_
                   <div className="modal-footer">
                     <button className="btn btn-ghost" onClick={() => setShowAddUser(false)}>Cancel</button>
                     <button className="btn btn-primary" onClick={submitUser} disabled={addingUser}>{addingUser ? "Adding..." : "Add User"}</button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {editingUser && (
+              <div className="modal-overlay" onClick={() => setEditingUser(null)}>
+                <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
+                  <div className="modal-header">
+                    <div className="modal-title">Edit ATS User</div>
+                    <button className="modal-close" onClick={() => setEditingUser(null)}>×</button>
+                  </div>
+                  <div className="modal-body">
+                    {editUserError && <div className="alert alert-amber" style={{ marginBottom: 16 }}><Icon name="alert" size={14} />{editUserError}</div>}
+                    <div className="form-group">
+                      <label className="form-label">Full name</label>
+                      <input className="form-input" value={editingUser.fullName} readOnly />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Company email</label>
+                      <input className="form-input" value={editingUser.email} readOnly />
+                    </div>
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label className="form-label">Role</label>
+                        <select className="form-select" value={editingUser.role} onChange={e => updateEditingUser("role", e.target.value)}>
+                          <option value="admin">Admin</option>
+                          <option value="recruiter">Recruiter</option>
+                          <option value="hiring_manager">Hiring Manager</option>
+                          <option value="interviewer">Interviewer</option>
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Access scope</label>
+                        <select className="form-select" value={editingUser.accessScope} onChange={e => updateEditingUser("accessScope", e.target.value)}>
+                          <option value="all_data">All system data</option>
+                          <option value="recruitment_data">All recruitment data</option>
+                          <option value="assigned_jobs">Assigned jobs</option>
+                          <option value="assigned_interviews">Assigned interviews</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div style={{ display: "grid", gap: 10 }}>
+                      <label className="chip" style={{ cursor: "pointer" }}><input type="checkbox" checked={editingUser.isActive} onChange={e => updateEditingUser("isActive", e.target.checked)} /> Active user</label>
+                      <label className="chip" style={{ cursor: "pointer" }}><input type="checkbox" checked={editingUser.canViewSalary} onChange={e => updateEditingUser("canViewSalary", e.target.checked)} /> Can view salary details</label>
+                      <label className="chip" style={{ cursor: "pointer" }}><input type="checkbox" checked={editingUser.canApproveOffers} onChange={e => updateEditingUser("canApproveOffers", e.target.checked)} /> Can approve offers</label>
+                      <label className="chip" style={{ cursor: "pointer" }}><input type="checkbox" checked={editingUser.canApproveRequisitions} onChange={e => updateEditingUser("canApproveRequisitions", e.target.checked)} /> Can approve requisitions</label>
+                    </div>
+                  </div>
+                  <div className="modal-footer">
+                    <button className="btn btn-ghost" onClick={() => setEditingUser(null)}>Cancel</button>
+                    <button className="btn btn-primary" onClick={submitEditUser} disabled={savingUser}>{savingUser ? "Saving..." : "Save User"}</button>
                   </div>
                 </div>
               </div>
