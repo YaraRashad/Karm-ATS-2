@@ -816,8 +816,8 @@ function LegacyAtsApp({ sessionUser, backendData, dataError, reloadData, logout:
     { id: "dashboard",  label: "Dashboard",        icon: "dashboard" },
     { id: "requests",   label: "Hiring Requests",   icon: "jobs",       badge: scopedHiringRequests.filter(r => r.status.includes("Pending")).length, badgeColor: "amber" },
     { id: "jobs",       label: "Job Requisitions",  icon: "jobs",       badge: openJobs },
-    { id: "candidates", label: "Candidates",        icon: "candidates" },
-    { id: "pipeline",   label: "Pipeline",          icon: "pipeline" },
+    { id: "candidates", label: "Talent Database",   icon: "candidates" },
+    { id: "pipeline",   label: "Active Hiring Pipeline", icon: "pipeline" },
     { id: "interviews", label: "Interviews",        icon: "interviews", badge: pendingScorecards, badgeColor: "amber" },
     { id: "offers",     label: "Offers",            icon: "offers",     badge: pendingOffers, badgeColor: "red" },
   ];
@@ -991,9 +991,9 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, sco
             <div className="stat-sub"><span className="dot dot-green" /> {openJobs} across {openEntityCount} {openEntityCount === 1 ? "entity" : "entities"}</div>
           </div>
           <div className="stat-card">
-            <div className="stat-label">Active candidates</div>
+            <div className="stat-label">Active applications</div>
             <div className="stat-value">{activeApps}</div>
-            <div className="stat-sub"><span className="dot dot-blue" /> In pipeline now</div>
+            <div className="stat-sub"><span className="dot dot-blue" /> In active hiring pipeline</div>
           </div>
           <div className="stat-card">
             <div className="stat-label">Pending offers</div>
@@ -1034,7 +1034,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, sco
 
           {/* PIPELINE FUNNEL */}
           <div className="card" style={{ gridColumn: "span 2" }}>
-            <div className="card-header"><div className="card-title">Pipeline by stage</div></div>
+            <div className="card-header"><div className="card-title">Applications by stage</div></div>
             <div className="card-body">
               {PIPELINE_STAGES.map(stage => {
                 const count = stageCount[stage] || 0;
@@ -1046,7 +1046,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, sco
                         <span style={{ width: 8, height: 8, borderRadius: "50%", background: stageColor(stage), display: "inline-block", flexShrink: 0 }} />
                         <span style={{ fontSize: 12, color: "var(--text2)" }}>{stage}</span>
                       </div>
-                      <span style={{ fontSize: 11, fontFamily: "var(--mono)", color: "var(--text3)" }}>{count} candidate{count !== 1 ? "s" : ""}</span>
+                      <span style={{ fontSize: 11, fontFamily: "var(--mono)", color: "var(--text3)" }}>{count} application{count !== 1 ? "s" : ""}</span>
                     </div>
                     <div className="mini-bar">
                       <div className="mini-bar-fill" style={{ width: `${pct}%`, background: stageColor(stage) }} />
@@ -1084,7 +1084,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, sco
             <div className="card-header"><div className="card-title">Open requisitions</div></div>
             <div className="table-wrap">
               <table>
-                <thead><tr><th>Role</th><th>Entity</th><th>Candidates</th><th>Status</th></tr></thead>
+                <thead><tr><th>Role</th><th>Entity</th><th>Applications</th><th>Status</th></tr></thead>
                 <tbody>
                   {jobs.filter(j => j.status === "Open").map(j => {
                     const appCount = applications.filter(a => a.jobId === j.id && a.status === "Active").length;
@@ -1104,13 +1104,13 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, sco
 
           {/* SOURCE BREAKDOWN */}
           <div className="card">
-            <div className="card-header"><div className="card-title">Candidate sources</div></div>
+            <div className="card-header"><div className="card-title">Talent sources</div></div>
             <div className="card-body">
               {topSources.map(([source, count]) => (
                 <div key={source} style={{ marginBottom: 12 }}>
                   <div className="source-row">
                     <span className="source-name">{source}</span>
-                    <span className="source-count">{count} candidate{count !== 1 ? "s" : ""}</span>
+                    <span className="source-count">{count} profile{count !== 1 ? "s" : ""}</span>
                   </div>
                   <div className="mini-bar">
                     <div className="mini-bar-fill" style={{ width: `${(count / maxSource) * 100}%`, background: "var(--accent)" }} />
@@ -1123,10 +1123,10 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, sco
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
           <div className="card">
-            <div className="card-header"><div className="card-title">Rejected candidates by reason</div></div>
+            <div className="card-header"><div className="card-title">Rejected applications by reason</div></div>
             <div className="card-body">
               {Object.keys(rejectedByReason).length === 0 ? (
-                <div style={{ fontSize: 13, color: "var(--text3)" }}>No rejected candidates recorded yet.</div>
+                <div style={{ fontSize: 13, color: "var(--text3)" }}>No rejected applications recorded yet.</div>
               ) : Object.entries(rejectedByReason).map(([reason, count]) => (
                 <div key={reason} className="source-row">
                   <span className="source-name">{reason}</span>
@@ -1136,13 +1136,13 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, sco
             </div>
           </div>
           <div className="card">
-            <div className="card-header"><div className="card-title">Candidates per recruiter</div></div>
+            <div className="card-header"><div className="card-title">Applications per recruiter</div></div>
             <div className="card-body">
               {Object.entries(recruiterCount).map(([recruiter, count]) => (
                 <div key={recruiter} style={{ marginBottom: 12 }}>
                   <div className="source-row">
                     <span className="source-name">{recruiter}</span>
-                    <span className="source-count">{count} candidate{count === 1 ? "" : "s"}</span>
+                    <span className="source-count">{count} application{count === 1 ? "" : "s"}</span>
                   </div>
                   <div className="mini-bar">
                     <div className="mini-bar-fill" style={{ width: `${(count / Math.max(...Object.values(recruiterCount), 1)) * 100}%`, background: "var(--teal)" }} />
@@ -1804,7 +1804,7 @@ function JobDetailModal({ job, applications, candidates, jobs, setJobs, openModa
               <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 24 }}>
                 {[
                   { label: "Headcount", value: viewJob.headcount },
-                  { label: "Candidates", value: jobApps.length },
+                  { label: "Applications", value: jobApps.length },
                   { label: "Budget", value: canViewSalary ? (viewJob.salaryMin ? `${viewJob.salaryMin.toLocaleString()} – ${viewJob.salaryMax.toLocaleString()} EGP` : "—") : "Restricted" },
                   { label: "Recruiter", value: viewJob.recruiter || "Unassigned" },
                   { label: "Approved by", value: viewJob.approvedBy || "—" },
@@ -1825,13 +1825,13 @@ function JobDetailModal({ job, applications, candidates, jobs, setJobs, openModa
                 </div>
               )}
 
-              {/* Candidates for this job */}
+              {/* Applications for this requisition */}
               <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)", marginBottom: 12 }}>
-                Candidates ({jobApps.length})
+                Applications ({jobApps.length})
               </div>
               {jobApps.length === 0 ? (
                 <div style={{ textAlign: "center", padding: "32px", color: "var(--text3)", background: "var(--bg3)", borderRadius: "var(--radius)", border: "1px solid var(--border)" }}>
-                  No candidates in pipeline yet
+                  No active applications for this requisition yet
                 </div>
               ) : (
                 <div style={{ border: "1px solid var(--border)", borderRadius: "var(--radius)", overflow: "hidden" }}>
@@ -2012,7 +2012,7 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
   };
 
   const exportJobs = () => {
-    const headers = ["Job Title", "Department", "Entity", "Position Type", "Job Family", "Headcount", "Active Candidates", "Open Date", "Recruiter", "Hiring Manager", "Salary Min (EGP)", "Salary Max (EGP)", "Status"];
+    const headers = ["Job Title", "Department", "Entity", "Position Type", "Job Family", "Headcount", "Active Applications", "Open Date", "Recruiter", "Hiring Manager", "Salary Min (EGP)", "Salary Max (EGP)", "Status"];
     const rows = filtered.map(j => {
       const appCount = applications.filter(a => a.jobId === j.id && a.status === "Active").length;
       return [j.title, j.dept, j.entity, j.positionType || "Manpower", j.level, j.headcount, appCount, j.openDate, j.recruiter, j.hiringManager, canViewSalary ? j.salaryMin : "Restricted", canViewSalary ? j.salaryMax : "Restricted", j.status];
@@ -2096,7 +2096,7 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
         <div className="card">
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Job title</th><th>Department</th><th>Entity</th><th>Position type</th><th>Budget</th><th>Approved by</th><th>Approval date</th><th>HC</th><th>Candidates</th><th>Recruiter</th><th>Status</th><th></th></tr></thead>
+              <thead><tr><th>Job title</th><th>Department</th><th>Entity</th><th>Position type</th><th>Budget</th><th>Approved by</th><th>Approval date</th><th>HC</th><th>Applications</th><th>Recruiter</th><th>Status</th><th></th></tr></thead>
               <tbody>
                 {filtered.map(job => {
                   const appCount = applications.filter(a => a.jobId === job.id && a.status === "Active").length;
@@ -2201,15 +2201,15 @@ function CandidatesPage({ candidates, setCandidates, applications, jobs, roleCon
       ];
     });
     const dateStr = new Date().toISOString().split("T")[0];
-    exportToCSV(`Karm_ATS_Candidates_${dateStr}.csv`, headers, rows);
+    exportToCSV(`Karm_ATS_Talent_Database_${dateStr}.csv`, headers, rows);
   };
 
   return (
     <>
       <div className="page-header">
         <div>
-          <div className="page-title">Candidate Database</div>
-          <div className="page-sub">{candidates.length} candidates in the system</div>
+          <div className="page-title">Talent Database</div>
+          <div className="page-sub">{candidates.length} talent profile{candidates.length === 1 ? "" : "s"} in the system</div>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
           <ExportButton onClick={exportCandidates} />
@@ -2220,7 +2220,7 @@ function CandidatesPage({ candidates, setCandidates, applications, jobs, roleCon
         <div className="toolbar" style={{ marginBottom: 16 }}>
           <div className="search-wrap">
             <span className="search-icon"><Icon name="search" size={14} /></span>
-            <input className="search-input" placeholder="Search candidates..." value={search} onChange={e => setSearch(e.target.value)} />
+            <input className="search-input" placeholder="Search talent..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
           <div>
             <label className="form-label">Position</label>
@@ -2769,7 +2769,7 @@ const extractCandidateName = (text) => {
               {phase === "drop" && "📄 Drop CVs to Auto-Fill"}
               {phase === "parsing" && "Reading CVs..."}
               {phase === "review" && `Review Extracted Data (${currentIdx + 1} of ${parsedFiles.length})`}
-              {phase === "done" && "✅ All Candidates Added"}
+              {phase === "done" && "✅ All Talent Profiles Added"}
             </div>
             {phase === "review" && <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 2, fontFamily: "var(--mono)" }}>{cur?.fileName}</div>}
           </div>
@@ -2818,7 +2818,7 @@ const extractCandidateName = (text) => {
               <div style={{ marginTop: 16, padding: "12px 16px", background: "var(--bg3)", borderRadius: "var(--radius)", border: "1px solid var(--border)" }}>
                 <div style={{ fontSize: 11, fontFamily: "var(--mono)", color: "var(--text3)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.5px" }}>How it works</div>
                 <div style={{ fontSize: 12, color: "var(--text2)", lineHeight: 1.7 }}>
-                  The upload reads text from the CV, creates a candidate draft, and keeps the CV attached for preview/download. If the name is not found inside the resume, the name field stays blank for review.
+                  The upload reads text from the CV, creates a talent profile draft, and keeps the CV attached for preview/download. If the name is not found inside the resume, the name field stays blank for review.
                 </div>
               </div>
             </div>
@@ -2829,7 +2829,7 @@ const extractCandidateName = (text) => {
             <div style={{ textAlign: "center", padding: "52px 24px" }}>
               <div style={{ fontSize: 44, marginBottom: 20, animation: "spin 1s linear infinite", display: "inline-block" }}>⚙️</div>
               <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>Reading CV files locally</div>
-              <div style={{ fontSize: 13, color: "var(--text3)" }}>Creating editable candidate drafts and attaching each CV...</div>
+              <div style={{ fontSize: 13, color: "var(--text3)" }}>Creating editable talent profile drafts and attaching each CV...</div>
               <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
             </div>
           )}
@@ -2940,10 +2940,10 @@ const extractCandidateName = (text) => {
             <div style={{ textAlign: "center", padding: "40px 24px" }}>
               <div style={{ fontSize: 48, marginBottom: 16 }}>🎉</div>
               <div style={{ fontSize: 16, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>
-                {parsedFiles.length} candidate{parsedFiles.length > 1 ? "s" : ""} added successfully
+                {parsedFiles.length} talent profile{parsedFiles.length > 1 ? "s" : ""} added successfully
               </div>
               <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 24 }}>
-                All candidates are now in the Applied column of the pipeline.
+                New profiles with a selected requisition are now in Applied in the Active Hiring Pipeline.
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center" }}>
                 {parsedFiles.map((p, i) => (
@@ -3160,8 +3160,8 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
       )}
       <div className="page-header">
         <div>
-          <div className="page-title">Candidate Pipeline</div>
-          <div className="page-sub">{filteredApps.length} active applications in view</div>
+          <div className="page-title">Active Hiring Pipeline</div>
+          <div className="page-sub">{filteredApps.length} active application{filteredApps.length === 1 ? "" : "s"} across requisitions</div>
         </div>
         {canUpload && (
           <button className="btn btn-primary" onClick={() => openCvParser()}>
@@ -3177,19 +3177,19 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
         >
           <Icon name="alert" size={15} />
           <span>
-            {delayedApps.length} candidate{delayedApps.length === 1 ? "" : "s"} delayed 5+ days
+            {delayedApps.length} application{delayedApps.length === 1 ? "" : "s"} delayed 5+ days
             {showDelayedOnly ? " — showing delayed only" : " — click to filter"}
           </span>
         </div>
         <div className="toolbar" style={{ marginBottom: 16 }}>
           <div className="search-wrap">
             <span className="search-icon"><Icon name="search" size={14} /></span>
-            <input className="search-input" placeholder="Search pipeline..." value={pipelineSearch} onChange={e => setPipelineSearch(e.target.value)} />
+            <input className="search-input" placeholder="Search active applications..." value={pipelineSearch} onChange={e => setPipelineSearch(e.target.value)} />
           </div>
           <div>
             <label className="form-label">Position</label>
             <select className="form-select" style={{ width: "auto" }} value={filterJob} onChange={e => setFilterJob(e.target.value)}>
-              <option value="All">All jobs</option>
+              <option value="All">All requisitions</option>
               {openJobs.map(j => <option key={j.id} value={j.id}>{j.title}</option>)}
             </select>
           </div>
@@ -3385,7 +3385,7 @@ function RejectCandidateModal({ appIds, applications, candidates, jobs, onCancel
       <div className="modal" style={{ maxWidth: 460 }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <div>
-            <div className="modal-title">Reject candidate{appIds.length > 1 ? "s" : ""}</div>
+            <div className="modal-title">Reject application{appIds.length > 1 ? "s" : ""}</div>
             <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 2 }}>
               Reason is required before rejection is saved.
             </div>
@@ -4275,7 +4275,7 @@ function SettingsPage({ currentRole, roleAssignments, setRoleAssignments, ROLES_
             </div>
             <div className="table-wrap">
               <table>
-                <thead><tr><th>Role</th><th>Scope</th><th>Move candidates</th><th>Approve offers</th><th>Approve reqs</th><th>Create requisitions</th><th>Manage users</th><th>Salary visible</th></tr></thead>
+                <thead><tr><th>Role</th><th>Scope</th><th>Move applications</th><th>Approve offers</th><th>Approve reqs</th><th>Create requisitions</th><th>Manage users</th><th>Salary visible</th></tr></thead>
                 <tbody>
                   {ROLE_LIST.map(role => {
                     const perms = ROLE_PERMISSIONS[role];
@@ -4746,7 +4746,7 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
             {activeApp && canScheduleInterview && <button className="btn btn-ghost btn-sm" onClick={() => ctx.openModal("scheduleInterview", { applicationId: activeApp.id })}>Schedule interview</button>}
             {activeApp && canCreateOffer && <button className="btn btn-ghost btn-sm" onClick={createOfferForCandidate}>Create offer</button>}
             <a className="btn btn-ghost btn-sm" href={`mailto:${c.email}?subject=Karm ATS follow-up`} style={{ textDecoration: "none" }}>Send email</a>
-            {activeApp && canMoveCandidate && <button className="btn btn-danger btn-sm" onClick={rejectCandidate}>Reject candidate</button>}
+            {activeApp && canMoveCandidate && <button className="btn btn-danger btn-sm" onClick={rejectCandidate}>Reject application</button>}
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 16, marginBottom: 20 }}>
@@ -4789,10 +4789,10 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
           {activeApp && (
             <>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                <div className="form-label" style={{ margin: 0 }}>Current pipeline stage</div>
+                <div className="form-label" style={{ margin: 0 }}>Current application stage</div>
                 <div style={{ display: "flex", gap: 8 }}>
                   {canMoveCandidate && <button className="btn btn-ghost btn-sm" onClick={() => { setMovingJob(!movingJob); setMovingStage(false); }}>
-                    🔀 Change job
+                    🔀 Change requisition
                   </button>}
                   {canMoveCandidate && <button className="btn btn-ghost btn-sm" onClick={() => { setMovingStage(!movingStage); setMovingJob(false); }}>
                     ↕ Move stage
@@ -4837,14 +4837,14 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
               {/* CHANGE JOB PANEL */}
               {movingJob && (
                 <div style={{ background: "var(--bg3)", borderRadius: "var(--radius)", padding: "16px", marginBottom: 16, border: "1px solid var(--border2)" }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", marginBottom: 12 }}>Move candidate to a different job</div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", marginBottom: 12 }}>Move application to a different requisition</div>
                   <div className="alert alert-amber" style={{ marginBottom: 12, fontSize: 12 }}>
-                    <Icon name="alert" size={13} /> Candidate will be moved to the Applied stage of the selected job.
+                    <Icon name="alert" size={13} /> This application will move to the Applied stage of the selected requisition.
                   </div>
                   <div className="form-group" style={{ marginBottom: 10 }}>
-                    <label className="form-label">Select job</label>
+                    <label className="form-label">Select requisition</label>
                     <select className="form-select" value={selectedJobId} onChange={e => setSelectedJobId(e.target.value)}>
-                      <option value="">— Select a job —</option>
+                      <option value="">— Select a requisition —</option>
                       {openJobs.map(j => (
                         <option key={j.id} value={j.id}>{j.title} · {j.dept} · {j.entity}</option>
                       ))}
@@ -4992,7 +4992,7 @@ function MoveStageModal({ data, closeModal, ctx }) {
     <div className="modal-overlay" onClick={closeModal}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <div className="modal-title">Move candidate</div>
+          <div className="modal-title">Move application</div>
           <button className="modal-close" onClick={closeModal}>×</button>
         </div>
         <div className="modal-body">

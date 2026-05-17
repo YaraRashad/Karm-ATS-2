@@ -34,7 +34,7 @@ Inputs:
 ## Safety Rules
 
 - The suite only creates records whose names/titles start with `TEST_`.
-- It may create a `TEST_` candidate, `TEST_` requisition, and `TEST_` application fixture so pipeline and interview flows can be tested without touching production records.
+- It may create a `TEST_` talent profile, `TEST_` requisition, and `TEST_` application fixture so active pipeline and interview flows can be tested without touching production records.
 - Interview scheduling is submitted only against generated or available `TEST_` application fixtures.
 - It does not reset the database.
 - It does not run demo seed scripts.
@@ -50,10 +50,11 @@ Inputs:
 - Hiring Requests workflow audit.
 - Job requisitions open.
 - Job requisition buttons, filters, export/import, TEST_ edit/save, assignment, close/reopen, and delete behavior.
-- Candidate creation.
-- Candidate search and persistence.
-- Candidate buttons, validation, profile, and TEST_ safety behavior.
-- Pipeline page, upload entry point, stuck-candidate summary, cards, and safe TEST_ actions.
+- Talent profile creation.
+- Talent profile search and persistence.
+- Talent profile/application separation: rejecting one TEST_ application must not remove the centralized TEST_ talent profile.
+- Talent Database buttons, validation, profile, and TEST_ safety behavior.
+- Active Hiring Pipeline page, upload entry point, stuck-application summary, cards, and safe TEST_ actions.
 - Interview scheduling flow.
 - Offer page access and create-offer entry point.
 - Role and permission checks.

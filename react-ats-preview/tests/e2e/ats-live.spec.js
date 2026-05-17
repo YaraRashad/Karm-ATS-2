@@ -456,14 +456,17 @@ async function closeModalIfVisible(page) {
   }
 }
 
-async function ensureTestPipelineFixture(page, testInfo, audit, candidate) {
+async function ensureTestPipelineFixture(page, testInfo, audit, candidate, options = {}) {
+  const moduleName = options.moduleName || "Active Hiring Pipeline";
+  const artifactPrefix = options.artifactPrefix || "qa-pipeline";
+
   if (!candidate?.id) {
-    audit.addRecommendation("Pipeline", "Candidate create API response did not include an id, so the QA agent could not create a TEST_ application fixture.");
+    audit.addRecommendation(moduleName, "Talent profile create API response did not include an id, so the QA agent could not create a TEST_ application fixture.");
     return null;
   }
 
   const now = Date.now();
-  const title = `${TEST_PREFIX}QA Pipeline Role ${now}`;
+  const title = `${TEST_PREFIX}${options.title || `QA Active Pipeline Role ${now}`}`;
   const positionCreate = await qaApiRequest(page, "POST", "/positions", {
     title,
     departmentName: "QA",
@@ -474,11 +477,11 @@ async function ensureTestPipelineFixture(page, testInfo, audit, candidate) {
     salaryMin: 1,
     salaryMax: 2,
     priority: "normal",
-    description: `${TEST_PREFIX} QA-only pipeline fixture. Do not use for production recruiting.`,
+    description: `${TEST_PREFIX} QA-only active hiring pipeline fixture. Do not use for production recruiting.`,
     requirements: [],
     headcountRationale: "TEST_ QA fixture",
   });
-  await attachJson(testInfo, "qa-pipeline-position-create-response.json", positionCreate.result);
+  await attachJson(testInfo, `${artifactPrefix}-position-create-response.json`, positionCreate.result);
   if (!positionCreate.response.ok()) {
     throw new Error(`TEST_ pipeline position create API failed (${positionCreate.response.status()}) at ${API_BASE}/positions.\n${positionCreate.result.raw || "No response body"}`);
   }
@@ -490,7 +493,7 @@ async function ensureTestPipelineFixture(page, testInfo, audit, candidate) {
 
   if (position.status !== "open") {
     const statusUpdate = await qaApiRequest(page, "PATCH", `/positions/${position.id}/status`, { status: "open" });
-    await attachJson(testInfo, "qa-pipeline-position-open-response.json", statusUpdate.result);
+    await attachJson(testInfo, `${artifactPrefix}-position-open-response.json`, statusUpdate.result);
     if (!statusUpdate.response.ok()) {
       throw new Error(`TEST_ pipeline position open API failed (${statusUpdate.response.status()}).\n${statusUpdate.result.raw || "No response body"}`);
     }
@@ -501,7 +504,7 @@ async function ensureTestPipelineFixture(page, testInfo, audit, candidate) {
     candidateId: candidate.id,
     positionId: position.id,
   });
-  await attachJson(testInfo, "qa-pipeline-application-create-response.json", applicationCreate.result);
+  await attachJson(testInfo, `${artifactPrefix}-application-create-response.json`, applicationCreate.result);
   if (!applicationCreate.response.ok()) {
     throw new Error(`TEST_ application create API failed (${applicationCreate.response.status()}) at ${API_BASE}/applications.\n${applicationCreate.result.raw || "No response body"}`);
   }
@@ -511,18 +514,20 @@ async function ensureTestPipelineFixture(page, testInfo, audit, candidate) {
     throw new Error(`TEST_ application create response did not include an id.\n${applicationCreate.result.raw || "No response body"}`);
   }
 
-  const stageMove = await qaApiRequest(page, "PATCH", `/applications/${application.id}/stage`, {
-    stage: "assessment",
-    reason: "TEST_ QA pipeline fixture for interview scheduling audit.",
-  });
-  await attachJson(testInfo, "qa-pipeline-application-stage-response.json", stageMove.result);
-  if (stageMove.response.ok()) {
-    application = stageMove.data || application;
-  } else if (!/already|current/i.test(stageMove.result.raw || "")) {
-    throw new Error(`TEST_ application stage move API failed (${stageMove.response.status()}).\n${stageMove.result.raw || "No response body"}`);
+  if (options.moveStage !== false) {
+    const stageMove = await qaApiRequest(page, "PATCH", `/applications/${application.id}/stage`, {
+      stage: "assessment",
+      reason: options.stageReason || "TEST_ QA active hiring pipeline fixture for interview scheduling audit.",
+    });
+    await attachJson(testInfo, `${artifactPrefix}-application-stage-response.json`, stageMove.result);
+    if (stageMove.response.ok()) {
+      application = stageMove.data || application;
+    } else if (!/already|current/i.test(stageMove.result.raw || "")) {
+      throw new Error(`TEST_ application stage move API failed (${stageMove.response.status()}).\n${stageMove.result.raw || "No response body"}`);
+    }
   }
 
-  audit.recordAction("Pipeline", "Create TEST_ application fixture", "tested", `${candidate.name} -> ${position.title}`);
+  audit.recordAction(moduleName, "Create TEST_ application fixture", "tested", `${candidate.name} -> ${position.title}`);
   return { position, application, candidate };
 }
 
@@ -565,7 +570,7 @@ const PRODUCT_AUDIT_CATEGORIES = [
 const PRODUCT_AUDIT_BASELINE = [
   {
     category: "Missing ATS features",
-    module: "Candidates",
+    module: "Talent Database",
     priority: "Critical",
     businessImpact: "High",
     userExperienceImpact: "High",
@@ -609,13 +614,13 @@ const PRODUCT_AUDIT_BASELINE = [
   },
   {
     category: "Recruiter productivity enhancements",
-    module: "Pipeline",
+    module: "Active Hiring Pipeline",
     priority: "Important",
     businessImpact: "High",
     userExperienceImpact: "High",
     technicalComplexity: "Medium",
     recommendation: "Add saved views, recruiter workload filters, bulk actions, next-action reminders, stuck-stage queues, and interview-feedback chase lists.",
-    benchmark: "Recruiter-centered ATS products minimize daily triage time by surfacing priority candidates and overdue follow-ups.",
+    benchmark: "Recruiter-centered ATS products minimize daily triage time by surfacing priority applications and overdue follow-ups.",
     suggestedNextStep: "Introduce a recruiter workbench view with delayed candidates, pending feedback, and unassigned requisitions.",
   },
   {
@@ -642,7 +647,7 @@ const PRODUCT_AUDIT_BASELINE = [
   },
   {
     category: "Automation opportunities",
-    module: "Pipeline / Interviews",
+    module: "Active Hiring Pipeline / Interviews",
     priority: "Important",
     businessImpact: "High",
     userExperienceImpact: "Medium",
@@ -653,7 +658,7 @@ const PRODUCT_AUDIT_BASELINE = [
   },
   {
     category: "Candidate experience improvements",
-    module: "Candidates / Communications",
+    module: "Talent Database / Communications",
     priority: "Important",
     businessImpact: "Medium",
     userExperienceImpact: "High",
@@ -766,7 +771,7 @@ function inferRecommendationMetadata(module, recommendation) {
       businessImpact: "High",
       userExperienceImpact: "Medium",
       technicalComplexity: "Medium",
-      benchmark: "Pipeline boards should support safe stage movement, quick actions, delayed-candidate visibility, and realistic QA fixtures.",
+      benchmark: "Active hiring pipeline boards should support safe stage movement, quick actions, delayed-application visibility, and realistic QA fixtures.",
     };
   }
 
@@ -1202,30 +1207,37 @@ const FLOW = {
     uxRecommendation: "Group row actions consistently and show success/error messages after every saved change.",
   },
   candidateCreate: {
-    name: "Candidate creation",
-    module: "Candidates",
-    reproductionSteps: ["Open Candidate Database.", "Click Add Candidate.", "Create a candidate whose name starts with TEST_.", "Save without assigning to a production job."],
+    name: "Talent profile creation",
+    module: "Talent Database",
+    reproductionSteps: ["Open Talent Database.", "Click Add Candidate.", "Create a talent profile whose name starts with TEST_.", "Save without assigning to a production job."],
     suggestedFix: "Check Add Candidate form validation, POST /candidates response handling, and post-save modal state.",
-    uxRecommendation: "Show a success toast and keep the newly created candidate searchable immediately.",
+    uxRecommendation: "Show a success toast and keep the newly created talent profile searchable immediately.",
   },
   candidatePersistence: {
-    name: "Candidate search and persistence",
-    module: "Candidates",
-    reproductionSteps: ["Search for the TEST_ candidate.", "Verify the row values.", "Reload the page.", "Search again and verify persistence."],
-    suggestedFix: "Verify the candidate is written to the production database and refetched after reload.",
+    name: "Talent profile search and persistence",
+    module: "Talent Database",
+    reproductionSteps: ["Search for the TEST_ talent profile.", "Verify the row values.", "Reload the page.", "Search again and verify persistence."],
+    suggestedFix: "Verify the talent profile is written to the production database and refetched after reload.",
     uxRecommendation: "Make saved records immediately visible and searchable after refresh.",
   },
+  talentApplicationSeparation: {
+    name: "Talent profile and application separation",
+    module: "Talent Database / Active Hiring Pipeline",
+    reproductionSteps: ["Create a TEST_ talent profile.", "Create a TEST_ application for that profile against a TEST_ requisition.", "Reject that TEST_ application.", "Verify the talent profile remains searchable and centralized."],
+    suggestedFix: "Keep talent profile mutations separate from application stage/status updates. Rejection should update only the application/requisition relationship, never delete or hide the person globally.",
+    uxRecommendation: "Use wording that makes rejection clearly apply to one requisition application, while the person profile and history remain reusable.",
+  },
   candidateActions: {
-    name: "Candidate buttons, validation, profile, and TEST_ safety",
-    module: "Candidates",
-    reproductionSteps: ["Open Candidate Database.", "Test export, filters, Add Candidate validation, Referral validation, View Profile, and TEST_ delete availability."],
+    name: "Talent Database buttons, validation, profile, and TEST_ safety",
+    module: "Talent Database",
+    reproductionSteps: ["Open Talent Database.", "Test export, filters, Add Candidate validation, Referral validation, View Profile, and TEST_ delete availability."],
     suggestedFix: "Check candidate form validation, profile behavior, delete action availability, and CV download behavior.",
     uxRecommendation: "Keep CV preview separate from manual download and give admins a safe TEST_ delete path for bad uploads.",
   },
   pipeline: {
-    name: "Pipeline page and card actions audit",
-    module: "Pipeline",
-    reproductionSteps: ["Open Candidate Pipeline.", "Verify search/filters, kanban, upload modal, card quick actions, and bulk actions without moving non-TEST records."],
+    name: "Active Hiring Pipeline page and card actions audit",
+    module: "Active Hiring Pipeline",
+    reproductionSteps: ["Open Active Hiring Pipeline.", "Verify search/filters, kanban, upload modal, card quick actions, and bulk actions without moving non-TEST records."],
     suggestedFix: "Check pipeline page routing, stage rendering, CV upload entry points, TEST_ card action safety, and empty states.",
     uxRecommendation: "Show delayed/empty pipeline states clearly and disable dangerous actions for non-TEST records during QA.",
   },
@@ -1349,6 +1361,7 @@ test.describe("Karm ATS live QA full audit", () => {
     let createdCandidate = null;
     let createdJob = null;
     let testPipelineFixture = null;
+    let separationFixture = null;
 
     await audit.runFlow(page, FLOW.dashboard, async () => {
       await openAts(page, testInfo);
@@ -1370,8 +1383,8 @@ test.describe("Karm ATS live QA full audit", () => {
         ["dashboard", "Karm. ATS Dashboard"],
         ["requests", "Hiring Requests"],
         ["jobs", "Job Requisitions"],
-        ["candidates", "Candidate Database"],
-        ["pipeline", "Candidate Pipeline"],
+        ["candidates", "Talent Database"],
+        ["pipeline", "Active Hiring Pipeline"],
         ["interviews", "Interviews & Scorecards"],
         ["offers", "Offer Approvals"],
         ["settings", "Settings"],
@@ -1639,9 +1652,9 @@ test.describe("Karm ATS live QA full audit", () => {
         throw new Error(`QA-created records must use the configured ${TEST_PREFIX} prefix.`);
       }
 
-      await openNav(page, "candidates", "Candidate Database");
+      await openNav(page, "candidates", "Talent Database");
       await page.getByTestId("open-add-candidate").click();
-      audit.recordAction("Candidates", "Add Candidate button", "tested");
+      audit.recordAction("Talent Database", "Add Candidate button", "tested");
       await expect(page.locator(".modal-title"), "Add Candidate modal should open").toContainText("Add Candidate", { timeout: 10_000 });
 
       await page.getByTestId("candidate-name-input").fill(unique);
@@ -1654,7 +1667,7 @@ test.describe("Karm ATS live QA full audit", () => {
         response.request().method() === "POST",
         { timeout: 30_000 },
       ).catch(error => {
-        throw new Error(`Candidate create API request was not observed after clicking Add Candidate. The UI may not be submitting, may be blocked by validation, or may be using the wrong API base URL.\n${error.message}`);
+        throw new Error(`Talent profile create API request was not observed after clicking Add Candidate. The UI may not be submitting, may be blocked by validation, or may be using the wrong API base URL.\n${error.message}`);
       });
 
       await page.getByTestId("submit-add-candidate").click();
@@ -1663,13 +1676,13 @@ test.describe("Karm ATS live QA full audit", () => {
       await attachJson(testInfo, "candidate-create-response.json", createResult);
 
       if (!createResponse.ok()) {
-        throw new Error(`Candidate create API failed (${createResponse.status()}) at ${createResponse.url()}.\n${createResult.raw || "No response body"}`);
+        throw new Error(`Talent profile create API failed (${createResponse.status()}) at ${createResponse.url()}.\n${createResult.raw || "No response body"}`);
       }
 
       const createdCandidateData = unwrapApiData(createResult);
       createdCandidate = { id: createdCandidateData?.id, name: unique, email, apiStatus: createResponse.status() };
-      audit.recordAction("Candidates", "Create TEST_ candidate", "tested", unique);
-      await audit.check(page, FLOW.candidateCreate, "Candidate modal did not close after successful creation.", async () => {
+      audit.recordAction("Talent Database", "Create TEST_ talent profile", "tested", unique);
+      await audit.check(page, FLOW.candidateCreate, "Add Candidate modal did not close after successful talent profile creation.", async () => {
         await expect(page.locator(".modal")).toHaveCount(0, { timeout: 30_000 });
       });
     });
@@ -1677,48 +1690,81 @@ test.describe("Karm ATS live QA full audit", () => {
     await audit.runFlow(page, FLOW.candidatePersistence, async () => {
       await requireAuthenticated(() => authenticated);
       if (!createdCandidate) {
-        throw new Error("Candidate creation did not produce a TEST_ candidate to verify search and persistence.");
+        throw new Error("Talent profile creation did not produce a TEST_ profile to verify search and persistence.");
       }
 
-      await openNav(page, "candidates", "Candidate Database");
+      await openNav(page, "candidates", "Talent Database");
       await page.locator(".search-input").first().fill(createdCandidate.name);
       const testCandidateRow = page.locator("tbody tr", { hasText: createdCandidate.name });
-      await expect(testCandidateRow, "New TEST_ candidate should appear in Candidate Database").toBeVisible({ timeout: 30_000 });
-      await audit.check(page, FLOW.candidatePersistence, "New TEST_ candidate email does not match submitted email.", async () => {
+      await expect(testCandidateRow, "New TEST_ talent profile should appear in Talent Database").toBeVisible({ timeout: 30_000 });
+      await audit.check(page, FLOW.candidatePersistence, "New TEST_ talent profile email does not match submitted email.", async () => {
         await expect(testCandidateRow).toContainText(createdCandidate.email);
       });
-      await audit.check(page, FLOW.candidatePersistence, "Candidate created without a production job should have zero active apps.", async () => {
+      await audit.check(page, FLOW.candidatePersistence, "Talent profile created without a production job should have zero active applications.", async () => {
         await expect(testCandidateRow.locator("td").nth(4)).toHaveText("0");
       });
 
       await page.reload({ waitUntil: "domcontentloaded" });
-      await waitForAtsShell(page, "after reloading to prove TEST_ candidate persistence");
-      await openNav(page, "candidates", "Candidate Database");
+      await waitForAtsShell(page, "after reloading to prove TEST_ talent profile persistence");
+      await openNav(page, "candidates", "Talent Database");
       await page.locator(".search-input").first().fill(createdCandidate.name);
       const persistedCandidateRow = page.locator("tbody tr", { hasText: createdCandidate.name });
-      await expect(persistedCandidateRow, "New TEST_ candidate should still be searchable after page reload").toBeVisible({ timeout: 30_000 });
-      await audit.check(page, FLOW.candidatePersistence, "Persisted TEST_ candidate email no longer matches after reload.", async () => {
+      await expect(persistedCandidateRow, "New TEST_ talent profile should still be searchable after page reload").toBeVisible({ timeout: 30_000 });
+      await audit.check(page, FLOW.candidatePersistence, "Persisted TEST_ talent profile email no longer matches after reload.", async () => {
         await expect(persistedCandidateRow).toContainText(createdCandidate.email);
       });
-      await audit.check(page, FLOW.candidatePersistence, "Persisted TEST_ candidate active-app count changed after reload.", async () => {
+      await audit.check(page, FLOW.candidatePersistence, "Persisted TEST_ talent profile active-application count changed after reload.", async () => {
         await expect(persistedCandidateRow.locator("td").nth(4)).toHaveText("0");
       });
       await testInfo.attach("candidate-persistence-check.txt", {
-        body: `Created and reloaded TEST_ candidate:\nname=${createdCandidate.name}\nemail=${createdCandidate.email}\napiStatus=${createdCandidate.apiStatus}\n`,
+        body: `Created and reloaded TEST_ talent profile:\nname=${createdCandidate.name}\nemail=${createdCandidate.email}\napiStatus=${createdCandidate.apiStatus}\n`,
         contentType: "text/plain",
       });
-      audit.recordAction("Candidates", "Search/reload persistence", "tested", createdCandidate.name);
+      audit.recordAction("Talent Database", "Search/reload persistence", "tested", createdCandidate.name);
+    });
+
+    await audit.runFlow(page, FLOW.talentApplicationSeparation, async () => {
+      await requireAuthenticated(() => authenticated);
+      if (!createdCandidate?.id) {
+        throw new Error("Talent profile creation did not return an id, so QA could not prove profile/application separation.");
+      }
+
+      separationFixture = await ensureTestPipelineFixture(page, testInfo, audit, createdCandidate, {
+        artifactPrefix: "qa-separation",
+        title: `QA Separation Role ${Date.now()}`,
+        moveStage: false,
+        moduleName: "Talent Database / Active Hiring Pipeline",
+      });
+      if (!separationFixture?.application?.id) {
+        throw new Error("Could not create a TEST_ application fixture for separation validation.");
+      }
+
+      const rejectResponse = await qaApiRequest(page, "POST", `/applications/${separationFixture.application.id}/disqualify`, {
+        reason: "TEST_ QA separation check: reject one requisition application only.",
+      });
+      await attachJson(testInfo, "qa-separation-application-reject-response.json", rejectResponse.result);
+      if (!rejectResponse.response.ok()) {
+        throw new Error(`Rejecting one TEST_ application failed (${rejectResponse.result.status}) at ${rejectResponse.result.url}.\n${rejectResponse.result.raw || "No response body"}`);
+      }
+      audit.recordAction("Talent Database / Active Hiring Pipeline", "Reject one TEST_ application only", "tested", `${createdCandidate.name} -> ${separationFixture.position.title}`);
+
+      await openNav(page, "candidates", "Talent Database");
+      await page.locator(".search-input").first().fill(createdCandidate.name);
+      const row = page.locator("tbody tr", { hasText: createdCandidate.name });
+      await expect(row, "Talent profile should remain after rejecting one requisition application").toBeVisible({ timeout: 30_000 });
+      await expect(row).toContainText(createdCandidate.email);
+      audit.recordAction("Talent Database / Active Hiring Pipeline", "Talent profile remains centralized", "tested", createdCandidate.name);
     });
 
     await audit.runFlow(page, FLOW.candidateActions, async () => {
       await requireAuthenticated(() => authenticated);
-      await openNav(page, "candidates", "Candidate Database");
+      await openNav(page, "candidates", "Talent Database");
 
       await audit.check(page, FLOW.candidateActions, "Candidate Export Excel button did not trigger a download or remain usable.", async () => {
         const exportButton = page.getByRole("button", { name: /export excel/i }).first();
         await expect(exportButton).toBeVisible({ timeout: 10_000 });
         const download = await waitForOptionalDownload(page, () => exportButton.click(), 8_000);
-        audit.recordAction("Candidates", "Export Excel", download.downloaded ? "downloaded" : "clicked", download.suggestedFilename || download.error || "No browser download observed");
+        audit.recordAction("Talent Database", "Export Excel", download.downloaded ? "downloaded" : "clicked", download.suggestedFilename || download.error || "No browser download observed");
       }, {
         severity: "Medium",
       });
@@ -1726,7 +1772,7 @@ test.describe("Karm ATS live QA full audit", () => {
       for (const label of ["Position", "Department", "Source", "Stage"]) {
         await audit.check(page, FLOW.candidateActions, `Candidate ${label} filter is missing.`, async () => {
           await expect(page.getByText(new RegExp(`^${label}$`, "i")).first()).toBeVisible({ timeout: 10_000 });
-          audit.recordAction("Candidates", `${label} filter`, "tested");
+          audit.recordAction("Talent Database", `${label} filter`, "tested");
         });
       }
 
@@ -1736,7 +1782,7 @@ test.describe("Karm ATS live QA full audit", () => {
         await expect(currentModal.locator(".modal-title")).toContainText(/Add Candidate/i, { timeout: 10_000 });
         await page.getByTestId("submit-add-candidate").click();
         await expect(currentModal, "Add Candidate modal should remain open when required name/email are empty").toBeVisible({ timeout: 5_000 });
-        audit.recordAction("Candidates", "Required-field validation", "tested", "Empty Add Candidate form stayed open");
+        audit.recordAction("Talent Database", "Required-field validation", "tested", "Empty Add Candidate form stayed open");
         await closeModalIfVisible(page);
       }, {
         severity: "Medium",
@@ -1749,13 +1795,13 @@ test.describe("Karm ATS live QA full audit", () => {
         await expect(currentModal.getByText(/Referred by/i)).toBeVisible({ timeout: 10_000 });
         const submitButton = page.getByTestId("submit-add-candidate");
         await expect(submitButton).toBeDisabled();
-        audit.recordAction("Candidates", "Referral referred-by validation", "tested");
+        audit.recordAction("Talent Database", "Referral referred-by validation", "tested");
         await closeModalIfVisible(page);
       }, {
         severity: "Medium",
       });
 
-      await openNav(page, "candidates", "Candidate Database");
+      await openNav(page, "candidates", "Talent Database");
       const profileCandidate = createdCandidate?.name || TEST_PREFIX;
       await page.locator(".search-input").first().fill(profileCandidate);
       const profileRow = createdCandidate ? await findFirstRowContaining(page, createdCandidate.name) : await findFirstTestRow(page);
@@ -1768,7 +1814,7 @@ test.describe("Karm ATS live QA full audit", () => {
           if (downloadedFile) {
             throw new Error(`Opening candidate profile automatically downloaded ${downloadedFile}. Users should choose View CV or Download CV manually.`);
           }
-          audit.recordAction("Candidates", "View candidate profile", "tested", "No automatic CV download observed");
+          audit.recordAction("Talent Database", "View candidate profile", "tested", "No automatic CV download observed");
           await closeModalIfVisible(page);
         }, {
           category: "real product bug",
@@ -1777,17 +1823,17 @@ test.describe("Karm ATS live QA full audit", () => {
           uxRecommendation: "Show View CV and Download CV as separate user-controlled actions.",
         });
       } else {
-        audit.addRecommendation("Candidates", "No TEST_ candidate row was available for profile/open/delete checks. Keep test data creation healthy so QA can inspect candidate profiles without touching real records.");
+        audit.addRecommendation("Talent Database", "No TEST_ talent profile row was available for profile/open/delete checks. Keep test data creation healthy so QA can inspect talent profiles without touching real records.");
       }
 
-      await openNav(page, "candidates", "Candidate Database");
+      await openNav(page, "candidates", "Talent Database");
       const deleteCandidateRow = createdCandidate ? await findFirstRowContaining(page, createdCandidate.name) : await findFirstTestRow(page);
       if (deleteCandidateRow) {
         const deleteButton = deleteCandidateRow.getByRole("button", { name: /^delete$/i }).first();
         if (await deleteButton.isVisible().catch(() => false)) {
-          audit.recordAction("Candidates", "Candidate delete button", "available", "Delete action exists on TEST_ row; not executed so later QA flows can reuse the record");
+          audit.recordAction("Talent Database", "Candidate delete button", "available", "Delete action exists on TEST_ row; not executed so later QA flows can reuse the record");
         } else {
-          audit.addRecommendation("Candidates", "Admins need a small Delete action for bad TEST_ candidate uploads and mistaken records, with confirmation and audit logging.");
+          audit.addRecommendation("Talent Database", "Admins need a small Delete action for bad TEST_ talent-profile uploads and mistaken records, with confirmation and audit logging.");
         }
       }
     });
@@ -1797,25 +1843,25 @@ test.describe("Karm ATS live QA full audit", () => {
       if (!testPipelineFixture && createdCandidate?.id) {
         testPipelineFixture = await ensureTestPipelineFixture(page, testInfo, audit, createdCandidate);
       }
-      await openNav(page, "pipeline", "Candidate Pipeline");
-      audit.recordAction("Pipeline", "Open page", "tested");
-      await audit.check(page, FLOW.pipeline, "Pipeline kanban board did not render.", async () => {
+      await openNav(page, "pipeline", "Active Hiring Pipeline");
+      audit.recordAction("Active Hiring Pipeline", "Open page", "tested");
+      await audit.check(page, FLOW.pipeline, "Active Hiring Pipeline kanban board did not render.", async () => {
         await expect(page.locator(".kanban")).toBeVisible({ timeout: 15_000 });
       });
-      await audit.check(page, FLOW.pipeline, "Pipeline search input is missing.", async () => {
+      await audit.check(page, FLOW.pipeline, "Active Hiring Pipeline search input is missing.", async () => {
         await expect(page.locator(".search-input").first()).toBeVisible({ timeout: 10_000 });
       });
-      const delayedSummary = page.getByText(/candidates delayed|delayed/i).first();
+      const delayedSummary = page.getByText(/applications delayed|delayed/i).first();
       if (await delayedSummary.isVisible().catch(() => false)) {
-        audit.recordAction("Pipeline", "Stuck candidates summary", "tested", normalizeText(await delayedSummary.innerText().catch(() => "")));
+        audit.recordAction("Active Hiring Pipeline", "Stuck applications summary", "tested", normalizeText(await delayedSummary.innerText().catch(() => "")));
       } else {
-        audit.addRecommendation("Pipeline", "Add or keep a visible stuck-candidates summary so recruiters can immediately focus on delayed applications.");
+        audit.addRecommendation("Active Hiring Pipeline", "Add or keep a visible stuck-applications summary so recruiters can immediately focus on delayed applications.");
       }
       await audit.check(page, FLOW.pipeline, "Upload CVs button did not open the CV upload workflow.", async () => {
         const uploadButton = page.getByRole("button", { name: /upload cvs/i }).first();
         await expect(uploadButton).toBeVisible({ timeout: 10_000 });
         await uploadButton.click();
-        audit.recordAction("Pipeline", "Upload CVs", "tested", "Opened upload workflow");
+        audit.recordAction("Active Hiring Pipeline", "Upload CVs", "tested", "Opened upload workflow");
         await expect(page.locator(".modal, input[type='file']").first()).toBeVisible({ timeout: 10_000 });
         await closeModalIfVisible(page);
       }, {
@@ -1825,17 +1871,17 @@ test.describe("Karm ATS live QA full audit", () => {
       const testCard = page.locator(".kanban-card", { hasText: TEST_PREFIX }).first();
       if (await testCard.isVisible().catch(() => false)) {
         for (const action of ["View Candidate", "Move", "Shortlist", "Reject"]) {
-          await audit.check(page, FLOW.pipeline, `Pipeline TEST_ card is missing quick action: ${action}.`, async () => {
+          await audit.check(page, FLOW.pipeline, `Active Hiring Pipeline TEST_ card is missing quick action: ${action}.`, async () => {
             await expect(testCard.getByRole("button", { name: new RegExp(action, "i") }).first()).toBeVisible({ timeout: 10_000 });
-            audit.recordAction("Pipeline", `${action} quick action`, "tested", "TEST_ card only");
+            audit.recordAction("Active Hiring Pipeline", `${action} quick action`, "tested", "TEST_ card only");
           }, {
             severity: "Medium",
           });
         }
       } else if (testPipelineFixture) {
-        throw new Error(`TEST_ pipeline fixture was created for ${testPipelineFixture.candidate.name}, but no TEST_ kanban card was visible.`);
+        throw new Error(`TEST_ active hiring pipeline fixture was created for ${testPipelineFixture.candidate.name}, but no TEST_ kanban card was visible.`);
       } else {
-        audit.addRecommendation("Pipeline", "No TEST_ pipeline card was available, so card quick actions and bulk actions were inspected only at page level. Add a dedicated TEST_ application fixture for richer pipeline QA.");
+        audit.addRecommendation("Active Hiring Pipeline", "No TEST_ active hiring pipeline card was available, so card quick actions and bulk actions were inspected only at page level. Add a dedicated TEST_ application fixture for richer pipeline QA.");
       }
     });
 
@@ -1865,9 +1911,9 @@ test.describe("Karm ATS live QA full audit", () => {
       const testOption = optionTexts.find(text => text.includes(TEST_PREFIX));
       if (!testOption) {
         if (testPipelineFixture) {
-          throw new Error(`A TEST_ pipeline fixture exists (${testPipelineFixture.candidate.name}) but Schedule Interview did not offer any TEST_ candidate.`);
+          throw new Error(`A TEST_ active hiring pipeline fixture exists (${testPipelineFixture.candidate.name}) but Schedule Interview did not offer any TEST_ application.`);
         }
-        audit.addRecommendation("Interviews", `No eligible ${TEST_PREFIX} candidate was available in Schedule Interview, so the QA agent opened and inspected the modal but did not submit an interview against a production candidate.`);
+        audit.addRecommendation("Interviews", `No eligible ${TEST_PREFIX} application was available in Schedule Interview, so the QA agent opened and inspected the modal but did not submit an interview against a production application.`);
         await closeModalIfVisible(page);
         return;
       }

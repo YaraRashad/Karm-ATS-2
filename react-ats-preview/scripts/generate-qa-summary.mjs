@@ -129,8 +129,8 @@ function inferModule(row) {
   const title = row.titlePath.join(" ").toLowerCase();
   if (title.includes("login") || title.includes("dashboard")) return "Dashboard/Auth";
   if (title.includes("job") || title.includes("requisition")) return "Job Requisitions";
-  if (title.includes("candidate")) return "Candidates";
-  if (title.includes("pipeline")) return "Pipeline";
+  if (title.includes("candidate") || title.includes("talent")) return "Talent Database";
+  if (title.includes("pipeline")) return "Active Hiring Pipeline";
   if (title.includes("interview")) return "Interviews";
   if (title.includes("offer")) return "Offers";
   if (title.includes("setting") || title.includes("permission") || title.includes("role")) return "Settings/RBAC";
@@ -190,8 +190,8 @@ function classifyFailure(row) {
   if (normalized.includes("candidate created without assigning to a production job should have zero active apps")) {
     return {
       severity: "Medium",
-      bug: "The QA test created a TEST_ candidate successfully but validated the active-app count using concatenated table-row text.",
-      suggestedFix: "Assert the Candidate Database Active Apps table cell directly instead of matching the whole row text, because row text can concatenate values such as source, active-app count, and current stage.",
+      bug: "The QA test created a TEST_ talent profile successfully but validated the active-application count using concatenated table-row text.",
+      suggestedFix: "Assert the Talent Database Active Apps table cell directly instead of matching the whole row text, because row text can concatenate values such as source, active-application count, and current stage.",
       uxRecommendation: "Keep table columns machine-readable with stable cells/test IDs so automated QA can distinguish values that are visually separate to users.",
     };
   }
@@ -268,9 +268,9 @@ function classifyFailure(row) {
   if (normalized.includes("candidate create api request was not observed")) {
     return {
       category: "real product bug",
-      module: "Candidates",
+      module: "Talent Database",
       severity: "High",
-      bug: "Add Candidate UI did not send a candidate-create API request.",
+      bug: "Add Candidate UI did not send a talent-profile create API request.",
       suggestedFix: "Check the Add Candidate button handler, required field validation, modal state, and API base configuration. The QA test now waits for POST /candidates so UI-only failures are isolated.",
       uxRecommendation: "Show inline validation beside the blocked field instead of silently leaving the modal open.",
     };
@@ -288,9 +288,9 @@ function classifyFailure(row) {
   if (normalized.includes("candidate create api failed") || normalized.includes("candidate-create-response")) {
     return {
       category: "real product bug",
-      module: "Candidates",
+      module: "Talent Database",
       severity: "High",
-      bug: "TEST_ candidate creation API failed.",
+      bug: "TEST_ talent profile creation API failed.",
       suggestedFix: "Inspect candidate-create-response.json for the exact HTTP status and backend validation message. Check QA user write permissions, required candidate fields, duplicate email handling, and candidate API response handling.",
       uxRecommendation: "After a failed save, show the backend validation message directly in the Add Candidate modal.",
     };
@@ -298,21 +298,21 @@ function classifyFailure(row) {
   if (normalized.includes("after reloading to prove test_ candidate persistence") || normalized.includes("candidate-persistence")) {
     return {
       category: "real product bug",
-      module: "Candidates",
+      module: "Talent Database",
       severity: "High",
-      bug: "TEST_ candidate was created but did not persist or reload into Candidate Database.",
-      suggestedFix: "Verify the candidate was written to the production database, fetchAtsData reloads candidates after save, and the Candidate Database search includes newly created records after refresh.",
-      uxRecommendation: "Show a post-save success toast and keep the new candidate visible immediately after save and refresh.",
+      bug: "TEST_ talent profile was created but did not persist or reload into Talent Database.",
+      suggestedFix: "Verify the talent profile was written to the production database, fetchAtsData reloads talent profiles after save, and the Talent Database search includes newly created records after refresh.",
+      uxRecommendation: "Show a post-save success toast and keep the new talent profile visible immediately after save and refresh.",
     };
   }
   if (titleIncludes(row, "creates only a test_ candidate") || normalized.includes("candidate")) {
     return {
       category: "real product bug",
-      module: "Candidates",
+      module: "Talent Database",
       severity: "High",
-      bug: "TEST_ candidate creation flow failed or did not prove persistence in Candidate Database.",
+      bug: "TEST_ talent profile creation flow failed or did not prove persistence in Talent Database.",
       suggestedFix: "Validate Add Candidate form submission, backend candidate API response handling, permissions for the QA user, and post-save reload behavior.",
-      uxRecommendation: "After saving a candidate, show a clear success message and keep the candidate searchable immediately.",
+      uxRecommendation: "After saving a talent profile, show a clear success message and keep the profile searchable immediately.",
     };
   }
   if (titleIncludes(row, "opens key operational pages") || normalized.includes("navigation") || normalized.includes("page title")) {
