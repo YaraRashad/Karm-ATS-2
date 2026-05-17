@@ -1370,6 +1370,12 @@ test.describe("Karm ATS live QA full audit", () => {
       await audit.check(page, FLOW.dashboard, "Dashboard title did not prove the authenticated app loaded.", async () => {
         await expect(page.locator(".page-title")).toContainText(/Karm\. ATS Dashboard|Dashboard/i, { timeout: 20_000 });
       });
+      await audit.check(page, FLOW.dashboard, "Enterprise readiness panel did not render on the dashboard.", async () => {
+        await expect(page.getByTestId("enterprise-readiness-panel")).toBeVisible({ timeout: 15_000 });
+        audit.recordAction("Dashboard", "Enterprise readiness panel", "tested");
+      }, {
+        severity: "Medium",
+      });
       for (const navId of ["dashboard", "requests", "jobs", "candidates", "pipeline", "interviews", "offers", "settings"]) {
         await audit.check(page, FLOW.dashboard, `Dashboard shell is missing required navigation item: ${navId}.`, async () => {
           await expect(page.getByTestId(`nav-${navId}`)).toBeVisible({ timeout: 10_000 });
@@ -1653,6 +1659,12 @@ test.describe("Karm ATS live QA full audit", () => {
       }
 
       await openNav(page, "candidates", "Talent Database");
+      await audit.check(page, FLOW.candidateCreate, "Resume intelligence panel did not render in Talent Database.", async () => {
+        await expect(page.getByTestId("resume-intelligence-panel")).toBeVisible({ timeout: 15_000 });
+        audit.recordAction("Talent Database", "Resume intelligence panel", "tested");
+      }, {
+        severity: "Medium",
+      });
       await page.getByTestId("open-add-candidate").click();
       audit.recordAction("Talent Database", "Add Candidate button", "tested");
       await expect(page.locator(".modal-title"), "Add Candidate modal should open").toContainText("Add Candidate", { timeout: 10_000 });
@@ -1845,6 +1857,12 @@ test.describe("Karm ATS live QA full audit", () => {
       }
       await openNav(page, "pipeline", "Active Hiring Pipeline");
       audit.recordAction("Active Hiring Pipeline", "Open page", "tested");
+      await audit.check(page, FLOW.pipeline, "Recruiter workbench panel did not render in the Active Hiring Pipeline.", async () => {
+        await expect(page.getByTestId("recruiter-workbench-panel")).toBeVisible({ timeout: 15_000 });
+        audit.recordAction("Active Hiring Pipeline", "Recruiter workbench panel", "tested");
+      }, {
+        severity: "Medium",
+      });
       await audit.check(page, FLOW.pipeline, "Active Hiring Pipeline kanban board did not render.", async () => {
         await expect(page.locator(".kanban")).toBeVisible({ timeout: 15_000 });
       });
@@ -1892,6 +1910,12 @@ test.describe("Karm ATS live QA full audit", () => {
       }
       await openNav(page, "interviews", "Interviews & Scorecards");
       audit.recordAction("Interviews", "Open page", "tested");
+      await audit.check(page, FLOW.interviews, "Hiring manager workspace panel did not render on Interviews & Scorecards.", async () => {
+        await expect(page.getByTestId("hiring-manager-workspace-panel")).toBeVisible({ timeout: 15_000 });
+        audit.recordAction("Interviews", "Hiring manager workspace panel", "tested");
+      }, {
+        severity: "Medium",
+      });
       for (const tab of ["Scheduled", "Completed"]) {
         await audit.check(page, FLOW.interviews, `Interview ${tab} tab is missing.`, async () => {
           await expect(page.getByText(new RegExp(tab, "i")).first()).toBeVisible({ timeout: 10_000 });
@@ -1973,12 +1997,27 @@ test.describe("Karm ATS live QA full audit", () => {
       await audit.check(page, FLOW.permissions, "Settings users area did not render for QA admin.", async () => {
         await expect(page.getByText(/All team members|Role assignments/i).first()).toBeVisible({ timeout: 15_000 });
       });
-      for (const tab of ["Users", "Permissions", "Approvals", "Audit", "Stages", "Entities"]) {
+      for (const tab of ["Users", "Permissions", "Approvals", "Audit", "Templates", "Automation", "Security", "Roadmap", "Stages", "Entities"]) {
         await audit.check(page, FLOW.permissions, `Settings ${tab} tab did not open.`, async () => {
           const tabLocator = page.getByText(new RegExp(`^${tab}$`, "i")).first();
           await expect(tabLocator).toBeVisible({ timeout: 10_000 });
           await tabLocator.click();
           audit.recordAction("Settings", `${tab} tab`, "tested");
+        }, {
+          severity: "Medium",
+        });
+      }
+      const settingsPanels = [
+        ["Templates", "communication-templates-panel"],
+        ["Automation", "automation-preferences-panel"],
+        ["Security", "audit-security-panel"],
+        ["Roadmap", "enterprise-roadmap-panel"],
+      ];
+      for (const [tab, testId] of settingsPanels) {
+        await audit.check(page, FLOW.permissions, `Settings ${tab} panel did not render its enterprise-readiness content.`, async () => {
+          await page.getByText(new RegExp(`^${tab}$`, "i")).first().click();
+          await expect(page.getByTestId(testId)).toBeVisible({ timeout: 15_000 });
+          audit.recordAction("Settings", `${tab} enterprise panel`, "tested", testId);
         }, {
           severity: "Medium",
         });
