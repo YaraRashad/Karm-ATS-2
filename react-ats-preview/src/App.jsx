@@ -105,8 +105,12 @@ const css = `
   .btn-danger { background: var(--red-soft); color: var(--red); border: 1px solid rgba(248,113,113,0.2); }
   .btn-danger:hover { background: rgba(248,113,113,0.2); }
   .btn-sm { padding: 5px 12px; font-size: 12px; }
+  .btn[disabled] { opacity: 0.55; cursor: not-allowed; }
   .btn-icon { padding: 7px; border-radius: var(--radius); background: var(--bg3); border: 1px solid var(--border); color: var(--text2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all 0.15s; }
   .btn-icon:hover { background: var(--bg4); color: var(--text); }
+  .row-actions { display: flex; flex-direction: column; gap: 6px; align-items: stretch; min-width: 96px; }
+  .row-actions .btn { width: 100%; min-height: 32px; justify-content: center; }
+  .row-action-hint { font-size: 10px; line-height: 1.25; color: var(--text3); text-align: center; }
 
   /* CARDS */
   .card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-lg); }
@@ -2100,6 +2104,9 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
               <tbody>
                 {filtered.map(job => {
                   const appCount = applications.filter(a => a.jobId === job.id && a.status === "Active").length;
+                  const statusActionDisabled = job.status === "Draft";
+                  const statusActionLabel = job.status === "Closed" ? "Reopen" : "Close";
+                  const statusActionReason = statusActionDisabled ? "Open the draft before closing it." : "";
                   return (
                     <tr key={job.id} style={{ cursor: "pointer" }} onClick={() => setSelectedJob(job)}>
                       <td className="strong" style={{ color: "var(--accent)" }}>{job.title}</td>
@@ -2114,20 +2121,33 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
                       <td>{job.recruiter || "Unassigned"}</td>
                       <td><span className={`badge ${jobStatusBadge(job.status)}`}>{job.status}</span></td>
                       <td onClick={e => e.stopPropagation()}>
-                        {canCreate && (
-                          <button className="btn btn-ghost btn-sm" onClick={() => setAssignRecruiterJob(job)}>
-                            Assign recruiter
-                          </button>
-                        )}
-                        {canCreate && job.status !== "Draft" && (
-                          <button className="btn btn-ghost btn-sm" style={job.status === "Closed" ? { color: "var(--teal)", borderColor: "var(--teal-soft)", marginLeft: 6 } : { marginLeft: 6 }} onClick={() => toggleJobStatus(job.id, job.status)}>
-                            {job.status === "Open" ? "Close" : "Reopen"}
-                          </button>
-                        )}
-                        {canDelete && (
-                          <button className="btn btn-danger btn-sm" style={{ marginLeft: 6 }} onClick={() => deleteJob(job)}>
-                            Delete
-                          </button>
+                        {(canCreate || canDelete) && (
+                          <div className="row-actions">
+                            {canCreate && (
+                              <button className="btn btn-ghost btn-sm" onClick={() => setAssignRecruiterJob(job)}>
+                                Assign recruiter
+                              </button>
+                            )}
+                            {canCreate && (
+                              <>
+                                <button
+                                  className="btn btn-ghost btn-sm"
+                                  disabled={statusActionDisabled}
+                                  title={statusActionReason || `${statusActionLabel} this requisition`}
+                                  style={job.status === "Closed" ? { color: "var(--teal)", borderColor: "var(--teal-soft)" } : {}}
+                                  onClick={() => !statusActionDisabled && toggleJobStatus(job.id, job.status)}
+                                >
+                                  {statusActionLabel}
+                                </button>
+                                {statusActionDisabled && <div className="row-action-hint">{statusActionReason}</div>}
+                              </>
+                            )}
+                            {canDelete && (
+                              <button className="btn btn-danger btn-sm" onClick={() => deleteJob(job)}>
+                                Delete
+                              </button>
+                            )}
+                          </div>
                         )}
                       </td>
                     </tr>
