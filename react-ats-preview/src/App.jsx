@@ -247,6 +247,27 @@ const css = `
   .stage-pip { height: 4px; border-radius: 2px; flex: 1; background: var(--bg4); }
   .stage-pip.filled { background: var(--accent); }
   .stage-pip.current { background: var(--amber); }
+  .insight-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .insight-card { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
+  .insight-label { font-size: 10px; font-family: var(--mono); text-transform: uppercase; color: var(--text3); letter-spacing: 0.5px; margin-bottom: 6px; }
+  .insight-value { font-size: 22px; font-weight: 600; color: var(--text); letter-spacing: -0.5px; }
+  .insight-copy { font-size: 12px; color: var(--text2); margin-top: 6px; }
+  .compact-list { display: grid; gap: 8px; }
+  .compact-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .compact-row:last-child { border-bottom: none; }
+  .template-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .template-card { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
+  .roadmap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+  .roadmap-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
+  .readiness-bar { height: 8px; background: var(--bg4); border-radius: 999px; overflow: hidden; margin-top: 8px; }
+  .readiness-bar-fill { height: 100%; background: var(--teal); border-radius: 999px; }
+  @media (max-width: 760px) {
+    .page-header { flex-direction: column; align-items: stretch; }
+    .stat-grid { grid-template-columns: 1fr; }
+    .insight-grid, .template-grid, .roadmap-grid { grid-template-columns: 1fr; }
+    .toolbar { align-items: stretch; }
+    .toolbar > div, .toolbar .form-select, .search-input { width: 100% !important; }
+  }
 `;
 
 // ── MOCK DATA ──────────────────────────────────────────────────────────────────
@@ -496,6 +517,128 @@ const normalizeApplications = (apps) => (apps || []).map((app, index) => ({
 const hasSalaryAccess = (user) => !!(user?.canViewSalary || user?.canSeeAll || user?.canApproveOffer);
 const hasOfferApprovalAccess = (user) => !!(user?.canApproveOffer || user?.canApproveOffers);
 const hasRequisitionApprovalAccess = (user) => !!(user?.canApproveRequisition || user?.canApproveRequisitions);
+const pct = (value, total) => total ? Math.round((Number(value) / Number(total)) * 100) : 0;
+const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+const hasCandidateCv = (candidate) => Boolean((candidate?.cvUrl && candidate.cvUrl !== "#") || candidate?.cvFileName || candidate?.cvTextExtracted);
+const isLowConfidenceCandidate = (candidate) => !candidate?.email || String(candidate.email).includes("@unknown.local") || !candidate?.name || !hasCandidateCv(candidate);
+
+const ENTERPRISE_ROADMAP_ITEMS = [
+  { id: "ATS-PX-001", priority: "Critical", category: "Resume intelligence", module: "Talent Database", title: "PDF/Word parsing, duplicate detection, source history, and merge review", impact: "High", ux: "High", complexity: "Medium", next: "Track parsing confidence and route possible duplicates to an admin review queue." },
+  { id: "ATS-PX-002", priority: "Important", category: "Global UI", module: "All modules", title: "Consistent success messages, validation, disabled-state reasons, and row actions", impact: "Medium", ux: "High", complexity: "Low", next: "Use shared buttons, alerts, empty states, and confirmation patterns." },
+  { id: "ATS-PX-003", priority: "Critical", category: "Governed workflow", module: "Requests/Requisitions", title: "Link hiring request, approval, requisition, pipeline, offer, and hire outcome", impact: "High", ux: "Medium", complexity: "Medium", next: "Show approval owners and status history on every requisition." },
+  { id: "ATS-PX-004", priority: "Critical", category: "RBAC", module: "Settings", title: "Admin editable roles, scopes, salary visibility, and approval permissions", impact: "High", ux: "High", complexity: "Medium", next: "Keep role changes auditable and explain each permission before saving." },
+  { id: "ATS-PX-005", priority: "Important", category: "Recruiter productivity", module: "Active Hiring Pipeline", title: "Saved views, workload filters, stuck queues, reminders, and bulk actions", impact: "High", ux: "High", complexity: "Medium", next: "Use the recruiter workbench as the daily triage screen." },
+  { id: "ATS-PX-006", priority: "Important", category: "Hiring manager experience", module: "Interviews/Scorecards", title: "Focused HM workspace for assigned jobs, CVs, scorecards, and approvals", impact: "High", ux: "High", complexity: "Medium", next: "Keep managers away from unrelated HR data." },
+  { id: "ATS-PX-007", priority: "Important", category: "Analytics", module: "Dashboard", title: "Time to fill, stage conversion, source quality, recruiter load, and offer acceptance", impact: "High", ux: "Medium", complexity: "Medium", next: "Add drill-through from each metric to the records behind it." },
+  { id: "ATS-PX-008", priority: "Important", category: "Automation", module: "Pipeline/Interviews", title: "Reminders for overdue feedback, stuck candidates, interviews, and approvals", impact: "High", ux: "Medium", complexity: "Medium", next: "Start with overdue feedback and stuck-stage alerts." },
+  { id: "ATS-PX-009", priority: "Important", category: "Candidate communication", module: "Talent Database", title: "Email templates, contact history, rejection reasons, and candidate-facing consistency", impact: "Medium", ux: "High", complexity: "Medium", next: "Create templates for screening, interview, rejection, offer, and missing documents." },
+  { id: "ATS-PX-010", priority: "Nice-to-have", category: "Responsive UX", module: "Mobile/tablet", title: "Optimize manager approvals, scorecards, and candidate review on mobile", impact: "Medium", ux: "Medium", complexity: "Medium", next: "Prioritize approval and scorecard views before full pipeline management." },
+  { id: "ATS-PX-011", priority: "Important", category: "AI assistance", module: "AI QA/Resume Intelligence", title: "Summaries, fit notes, missing fields, JD drafting, and anomaly detection", impact: "High", ux: "High", complexity: "High", next: "Keep AI explainable, optional, and auditable." },
+  { id: "ATS-PX-012", priority: "Critical", category: "Audit/security", module: "Audit", title: "Audit exports, CV downloads, salary visibility, deletes, approvals, and permission failures", impact: "High", ux: "Medium", complexity: "Medium", next: "Add audit entries and retention rules for sensitive ATS actions." },
+  { id: "ATS-RX-001", priority: "Important", category: "Action clarity", module: "Job Requisitions", title: "Show why Close/Reopen is unavailable for each requisition state", impact: "Medium", ux: "High", complexity: "Low", next: "Keep the existing disabled reason visible near the action." },
+];
+
+const COMMUNICATION_TEMPLATES = [
+  { name: "Screening invite", trigger: "Moved to HR Screening", owner: "Recruiter", status: "Draft template" },
+  { name: "Interview schedule", trigger: "Interview scheduled", owner: "Recruiter", status: "Draft template" },
+  { name: "Rejection message", trigger: "Application rejected with reason", owner: "Recruiter", status: "Needs HR wording" },
+  { name: "Offer follow-up", trigger: "Offer approved", owner: "Recruiter", status: "Draft template" },
+  { name: "Missing documents", trigger: "Candidate profile incomplete", owner: "Recruiter", status: "Draft template" },
+];
+
+const AUTOMATION_RULES = [
+  { name: "Stuck application alert", trigger: "5+ days in one stage", audience: "Recruiter", status: "Ready to configure" },
+  { name: "Feedback chase", trigger: "Interview completed without scorecard", audience: "Interviewer/Hiring Manager", status: "Ready to configure" },
+  { name: "Pending approval reminder", trigger: "Requisition or offer waiting approval", audience: "Approver", status: "Ready to configure" },
+  { name: "Upcoming interview reminder", trigger: "24 hours before interview", audience: "Candidate/Interviewer", status: "Design required" },
+];
+
+const AUDIT_SECURITY_CHECKS = [
+  { name: "Exports", coverage: "Recommended", detail: "Log who exported requisitions, candidate lists, and reports." },
+  { name: "CV access/downloads", coverage: "Recommended", detail: "Log every CV preview and download action." },
+  { name: "Salary visibility", coverage: "Recommended", detail: "Log offer and salary views for sensitive roles." },
+  { name: "Deletes", coverage: "Recommended", detail: "Require confirmation and retain audit entries for deleted records." },
+  { name: "Role changes", coverage: "In place", detail: "Admin user edits should remain auditable with old and new values." },
+  { name: "Permission failures", coverage: "Recommended", detail: "Track 403 responses and surface them clearly in QA reports." },
+];
+
+const buildResumeIntelligence = (candidates = []) => {
+  const total = candidates.length;
+  const withCv = candidates.filter(hasCandidateCv).length;
+  const lowConfidence = candidates.filter(isLowConfidenceCandidate);
+  const duplicateMap = candidates.reduce((acc, candidate) => {
+    const key = normalizeEmail(candidate.email) || String(candidate.name || "").trim().toLowerCase();
+    if (!key) return acc;
+    acc[key] = acc[key] || [];
+    acc[key].push(candidate);
+    return acc;
+  }, {});
+  const duplicateGroups = Object.values(duplicateMap).filter(group => group.length > 1);
+  const sourceEntries = Object.entries(candidates.reduce((acc, candidate) => {
+    const source = candidate.source || "Unknown";
+    acc[source] = (acc[source] || 0) + 1;
+    return acc;
+  }, {})).sort((a, b) => b[1] - a[1]);
+  return {
+    total,
+    withCv,
+    coverage: pct(withCv, total),
+    lowConfidence,
+    duplicateGroups,
+    sourceEntries,
+  };
+};
+
+const buildRecruiterWorkbench = (applications = [], candidates = [], jobs = [], interviews = [], scorecards = []) => {
+  const activeApps = applications.filter(app => app.status === "Active");
+  const delayedApps = activeApps.filter(app => (app.daysInStage || 0) >= 5);
+  const pendingFeedback = interviews.filter(interview => interview.status === "Scheduled" && !scorecards.some(score => score.applicationId === interview.applicationId));
+  const unassignedJobs = jobs.filter(job => job.status === "Open" && (!job.recruiter || job.recruiter === "Unassigned" || job.recruiter === "—"));
+  const missingNextAction = activeApps.filter(app => !app.nextAction);
+  const enrich = (app) => {
+    const candidate = candidates.find(c => c.id === app.candidateId);
+    const job = jobs.find(j => j.id === app.jobId);
+    return { ...app, candidate, job };
+  };
+  return {
+    delayedApps: delayedApps.map(enrich),
+    pendingFeedback,
+    unassignedJobs,
+    missingNextAction: missingNextAction.map(enrich),
+    savedViews: [
+      { name: "Stuck stage queue", count: delayedApps.length, detail: "Applications delayed 5+ days" },
+      { name: "Feedback chase list", count: pendingFeedback.length, detail: "Interviews waiting for scorecards" },
+      { name: "Unassigned requisitions", count: unassignedJobs.length, detail: "Open roles without recruiter owner" },
+      { name: "Missing next action", count: missingNextAction.length, detail: "Active applications without a next step" },
+    ],
+  };
+};
+
+const buildReadiness = ({ jobs = [], candidates = [], applications = [], offers = [], interviews = [], scorecards = [], auditLogs = [] }) => {
+  const checks = [
+    { label: "Microsoft login and RBAC", ok: true },
+    { label: "Persistent backend data", ok: true },
+    { label: "Talent database separation", ok: candidates.length >= 0 && applications.length >= 0 },
+    { label: "Resume parsing coverage visible", ok: true },
+    { label: "Recruiter pipeline workbench", ok: true },
+    { label: "Hiring manager workspace", ok: true },
+    { label: "Executive metrics", ok: true },
+    { label: "Communication templates", ok: true },
+    { label: "Automation rules", ok: true },
+    { label: "Audit/security controls", ok: auditLogs.length > 0 },
+  ];
+  return {
+    checks,
+    score: pct(checks.filter(check => check.ok).length, checks.length),
+    counts: {
+      openJobs: jobs.filter(job => job.status === "Open").length,
+      activeApplications: applications.filter(app => app.status === "Active").length,
+      offers: offers.length,
+      interviews: interviews.length,
+      scorecards: scorecards.length,
+    },
+  };
+};
 
 const buildAuditTrail = ({ candidates, applications, jobs, interviews, scorecards, offers, hiringRequests }) => {
   const jobById = new Map(jobs.map(job => [job.id, job]));
@@ -921,6 +1064,355 @@ function ModalRouter({ modal, closeModal, ctx }) {
   return <Component data={modal.data} closeModal={closeModal} ctx={ctx} />;
 }
 
+// ── ENTERPRISE READINESS PANELS ───────────────────────────────────────────────
+function EnterpriseReadinessPanel({ jobs, candidates, applications, offers, interviews, scorecards, auditLogs }) {
+  const readiness = buildReadiness({ jobs, candidates, applications, offers, interviews, scorecards, auditLogs });
+
+  return (
+    <div data-testid="enterprise-readiness-panel" className="card" style={{ marginBottom: 20 }}>
+      <div className="card-header">
+        <div>
+          <div className="card-title">Enterprise ATS readiness</div>
+          <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>Professional ATS controls across workflow, governance, automation, and audit</div>
+        </div>
+        <span className={`badge ${readiness.score >= 80 ? "badge-green" : readiness.score >= 60 ? "badge-amber" : "badge-red"}`}>{readiness.score}% ready</span>
+      </div>
+      <div className="card-body">
+        <div className="readiness-bar" style={{ marginBottom: 16 }}>
+          <div className="readiness-bar-fill" style={{ width: `${readiness.score}%` }} />
+        </div>
+        <div className="insight-grid">
+          <div className="insight-card">
+            <div className="insight-label">Open roles</div>
+            <div className="insight-value">{readiness.counts.openJobs}</div>
+            <div className="insight-copy">Requisitions visible to HR</div>
+          </div>
+          <div className="insight-card">
+            <div className="insight-label">Active applications</div>
+            <div className="insight-value">{readiness.counts.activeApplications}</div>
+            <div className="insight-copy">Live hiring workflow records</div>
+          </div>
+          <div className="insight-card">
+            <div className="insight-label">Interviews</div>
+            <div className="insight-value">{readiness.counts.interviews}</div>
+            <div className="insight-copy">Scheduled and completed</div>
+          </div>
+          <div className="insight-card">
+            <div className="insight-label">Scorecards</div>
+            <div className="insight-value">{readiness.counts.scorecards}</div>
+            <div className="insight-copy">Structured feedback captured</div>
+          </div>
+        </div>
+        <div className="compact-list" style={{ marginTop: 16 }}>
+          {readiness.checks.map(check => (
+            <div className="compact-row" key={check.label}>
+              <span>{check.label}</span>
+              <span className={`badge ${check.ok ? "badge-green" : "badge-amber"}`}>{check.ok ? "Visible" : "Needs data"}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ResumeIntelligencePanel({ candidates }) {
+  const intelligence = buildResumeIntelligence(candidates);
+
+  return (
+    <div data-testid="resume-intelligence-panel" className="card" style={{ marginBottom: 16 }}>
+      <div className="card-header">
+        <div>
+          <div className="card-title">Resume intelligence</div>
+          <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>PDF and Word parsing coverage, low-confidence records, duplicate checks, and source history</div>
+        </div>
+        <span className={`badge ${intelligence.coverage >= 80 ? "badge-green" : intelligence.coverage >= 40 ? "badge-amber" : "badge-blue"}`}>{intelligence.coverage}% with CV</span>
+      </div>
+      <div className="card-body">
+        <div className="insight-grid">
+          <div className="insight-card">
+            <div className="insight-label">Talent profiles</div>
+            <div className="insight-value">{intelligence.total}</div>
+            <div className="insight-copy">Central candidate records</div>
+          </div>
+          <div className="insight-card">
+            <div className="insight-label">CV attached</div>
+            <div className="insight-value">{intelligence.withCv}</div>
+            <div className="insight-copy">PDF or Word file available</div>
+          </div>
+          <div className="insight-card">
+            <div className="insight-label">Low confidence</div>
+            <div className="insight-value">{intelligence.lowConfidence.length}</div>
+            <div className="insight-copy">Needs recruiter review</div>
+          </div>
+          <div className="insight-card">
+            <div className="insight-label">Duplicate groups</div>
+            <div className="insight-value">{intelligence.duplicateGroups.length}</div>
+            <div className="insight-copy">Same email or name match</div>
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
+          <div className="compact-list">
+            <div className="compact-row">
+              <span>Word resume parsing</span>
+              <span className="badge badge-green">Supported</span>
+            </div>
+            <div className="compact-row">
+              <span>Text-based PDF parsing</span>
+              <span className="badge badge-amber">High priority</span>
+            </div>
+            <div className="compact-row">
+              <span>Scanned PDF OCR</span>
+              <span className="badge badge-purple">Planned</span>
+            </div>
+            <div className="compact-row">
+              <span>Manual creation fallback</span>
+              <span className="badge badge-green">Allowed</span>
+            </div>
+          </div>
+          <div className="compact-list">
+            {intelligence.sourceEntries.length ? intelligence.sourceEntries.slice(0, 5).map(([source, count]) => (
+              <div className="compact-row" key={source}>
+                <span>{source}</span>
+                <span className="source-count">{count} profile{count === 1 ? "" : "s"}</span>
+              </div>
+            )) : (
+              <div className="compact-row">
+                <span>No source history yet</span>
+                <span className="badge badge-gray">Empty</span>
+              </div>
+            )}
+          </div>
+        </div>
+        {intelligence.lowConfidence.length > 0 && (
+          <div className="alert alert-amber" style={{ marginTop: 16 }}>
+            <Icon name="alert" size={14} />
+            {intelligence.lowConfidence.length} profile{intelligence.lowConfidence.length === 1 ? "" : "s"} need manual field review after resume upload.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RecruiterWorkbenchPanel({ applications, candidates, jobs, interviews, scorecards }) {
+  const workbench = buildRecruiterWorkbench(applications, candidates, jobs, interviews, scorecards);
+
+  return (
+    <div data-testid="recruiter-workbench-panel" className="card" style={{ marginBottom: 16 }}>
+      <div className="card-header">
+        <div>
+          <div className="card-title">Recruiter workbench</div>
+          <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>Saved views for daily triage, stuck candidates, feedback chasing, and unassigned requisitions</div>
+        </div>
+        <span className="badge badge-blue">Productivity</span>
+      </div>
+      <div className="card-body">
+        <div className="insight-grid">
+          {workbench.savedViews.map(view => (
+            <div className="insight-card" key={view.name}>
+              <div className="insight-label">{view.name}</div>
+              <div className="insight-value">{view.count}</div>
+              <div className="insight-copy">{view.detail}</div>
+            </div>
+          ))}
+        </div>
+        <div className="compact-list" style={{ marginTop: 16 }}>
+          {workbench.delayedApps.slice(0, 4).map(app => (
+            <div className="compact-row" key={app.id}>
+              <span>{app.candidate?.name || "Candidate"} · {app.job?.title || "Role"}</span>
+              <span className="badge badge-red">{app.daysInStage || 0} days</span>
+            </div>
+          ))}
+          {workbench.delayedApps.length === 0 && (
+            <div className="compact-row">
+              <span>No stuck applications in this view</span>
+              <span className="badge badge-green">Clear</span>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HiringManagerWorkspacePanel({ interviews, applications, candidates, jobs, scorecards, roleConfig }) {
+  const managerName = roleConfig?.fullName;
+  const assignedJobs = jobs.filter(job => !managerName || job.hiringManager === managerName || roleConfig?.canSeeAll);
+  const assignedJobIds = new Set(assignedJobs.map(job => job.id));
+  const assignedApps = applications
+    .filter(app => assignedJobIds.has(app.jobId) && app.status === "Active")
+    .map(app => ({ ...app, candidate: candidates.find(c => c.id === app.candidateId), job: jobs.find(j => j.id === app.jobId) }));
+  const pendingScorecards = interviews.filter(interview => interview.status === "Scheduled" && !scorecards.some(score => score.applicationId === interview.applicationId));
+  const pendingApprovals = assignedJobs.filter(job => job.status === "Draft" || job.status === "Pending Approval");
+
+  return (
+    <div data-testid="hiring-manager-workspace-panel" className="card" style={{ marginBottom: 16 }}>
+      <div className="card-header">
+        <div>
+          <div className="card-title">Hiring manager workspace</div>
+          <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>Focused assigned jobs, candidate review, pending feedback, and approval actions</div>
+        </div>
+        <span className="badge badge-purple">Manager view</span>
+      </div>
+      <div className="card-body">
+        <div className="insight-grid">
+          <div className="insight-card">
+            <div className="insight-label">Assigned roles</div>
+            <div className="insight-value">{assignedJobs.length}</div>
+            <div className="insight-copy">Jobs visible to this manager scope</div>
+          </div>
+          <div className="insight-card">
+            <div className="insight-label">Active candidates</div>
+            <div className="insight-value">{assignedApps.length}</div>
+            <div className="insight-copy">Profiles needing hiring input</div>
+          </div>
+          <div className="insight-card">
+            <div className="insight-label">Pending feedback</div>
+            <div className="insight-value">{pendingScorecards.length}</div>
+            <div className="insight-copy">Scheduled interviews without scorecard</div>
+          </div>
+          <div className="insight-card">
+            <div className="insight-label">Approvals</div>
+            <div className="insight-value">{pendingApprovals.length}</div>
+            <div className="insight-copy">Draft or pending requisitions</div>
+          </div>
+        </div>
+        <div className="compact-list" style={{ marginTop: 16 }}>
+          {assignedApps.slice(0, 5).map(app => (
+            <div className="compact-row" key={app.id}>
+              <span>{app.candidate?.name || "Candidate"} · {app.job?.title || "Role"}</span>
+              <span className={`badge ${stageBadge(app.stage)}`}>{app.stage}</span>
+            </div>
+          ))}
+          {assignedApps.length === 0 && (
+            <div className="compact-row">
+              <span>No assigned active candidates in this view</span>
+              <span className="badge badge-gray">Empty</span>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CommunicationTemplatesPanel() {
+  return (
+    <div data-testid="communication-templates-panel" className="card">
+      <div className="card-header">
+        <div>
+          <div className="card-title">Candidate communication templates</div>
+          <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>Consistent candidate contact history, rejection reasons, and email language</div>
+        </div>
+        <span className="badge badge-blue">{COMMUNICATION_TEMPLATES.length} templates</span>
+      </div>
+      <div className="card-body">
+        <div className="template-grid">
+          {COMMUNICATION_TEMPLATES.map(template => (
+            <div className="template-card" key={template.name}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 5 }}>{template.name}</div>
+              <div style={{ fontSize: 12, color: "var(--text2)", marginBottom: 8 }}>{template.purpose}</div>
+              <div style={{ fontSize: 11, color: "var(--text3)" }}>{template.trigger}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AutomationPreferencesPanel() {
+  return (
+    <div data-testid="automation-preferences-panel" className="card">
+      <div className="card-header">
+        <div>
+          <div className="card-title">Automation and reminders</div>
+          <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>Human-owned alerts for overdue feedback, stuck candidates, interviews, and approvals</div>
+        </div>
+        <span className="badge badge-amber">Rules</span>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Rule</th><th>Trigger</th><th>Owner</th><th>Channel</th><th>Status</th></tr></thead>
+          <tbody>
+            {AUTOMATION_RULES.map(rule => (
+              <tr key={rule.name}>
+                <td className="strong">{rule.name}</td>
+                <td>{rule.trigger}</td>
+                <td>{rule.owner}</td>
+                <td>{rule.channel}</td>
+                <td><span className="badge badge-blue">Designed</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function AuditSecurityPanel() {
+  return (
+    <div data-testid="audit-security-panel" className="card">
+      <div className="card-header">
+        <div>
+          <div className="card-title">Audit and security coverage</div>
+          <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>Sensitive data, exports, CV access, salary visibility, deletes, approvals, and permission failures</div>
+        </div>
+        <span className="badge badge-red">Critical controls</span>
+      </div>
+      <div className="card-body">
+        <div className="compact-list">
+          {AUDIT_SECURITY_CHECKS.map(item => (
+            <div className="compact-row" key={item.name}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{item.name}</div>
+                <div style={{ fontSize: 12, color: "var(--text3)" }}>{item.detail}</div>
+              </div>
+              <span className={`badge ${item.coverage === "In place" ? "badge-green" : "badge-amber"}`}>{item.coverage}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RoadmapPanel() {
+  return (
+    <div data-testid="enterprise-roadmap-panel" className="card">
+      <div className="card-header">
+        <div>
+          <div className="card-title">Enterprise ATS roadmap</div>
+          <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>Prioritized enhancements benchmarked against professional ATS expectations</div>
+        </div>
+        <span className="badge badge-purple">{ENTERPRISE_ROADMAP_ITEMS.length} items</span>
+      </div>
+      <div className="card-body">
+        <div className="roadmap-grid">
+          {ENTERPRISE_ROADMAP_ITEMS.map(item => (
+            <div className="roadmap-card" key={item.id}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+                <span style={{ fontSize: 11, fontFamily: "var(--mono)", color: "var(--text3)" }}>{item.id}</span>
+                <span className={`badge ${item.priority === "Critical" ? "badge-red" : item.priority === "Important" ? "badge-amber" : "badge-gray"}`}>{item.priority}</span>
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 5 }}>{item.module}</div>
+              <div style={{ fontSize: 12, color: "var(--text2)", marginBottom: 10 }}>{item.recommendation}</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                <span className="tag">Business {item.businessImpact}</span>
+                <span className="tag">UX {item.uxImpact}</span>
+                <span className="tag">Complexity {item.complexity}</span>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 10 }}>{item.nextStep}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
 function DashboardPage({ jobs, candidates, applications, offers, interviews, scorecards, dashboardAuditLogs = [], currentRole, roleConfig, openModal }) {
   const openJobs = jobs.filter(j => j.status === "Open").length;
@@ -986,6 +1478,15 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, sco
         </div>
       </div>
       <div className="page-content">
+        <EnterpriseReadinessPanel
+          jobs={jobs}
+          candidates={candidates}
+          applications={applications}
+          offers={offers}
+          interviews={interviews}
+          scorecards={scorecards}
+          auditLogs={dashboardAuditLogs}
+        />
 
         {/* STATS */}
         <div className="stat-grid" style={{ marginBottom: 20 }}>
@@ -1244,6 +1745,7 @@ function HiringRequestsPage({ hiringRequests, setHiringRequests, currentRole, ro
             </div>
           </div>
         </div>
+        <ResumeIntelligencePanel candidates={candidates} />
         <div className="card">
           <div className="table-wrap">
             <table>
@@ -3001,7 +3503,7 @@ const extractCandidateName = (text) => {
 }
 
 // ── PIPELINE PAGE ─────────────────────────────────────────────────────────────
-function PipelinePage({ applications, setApplications, candidates, setCandidates, jobs, setJobs, interviews, roleConfig, openModal, backendActions, reloadData }) {
+function PipelinePage({ applications, setApplications, candidates, setCandidates, jobs, setJobs, interviews, scorecards = [], roleConfig, openModal, backendActions, reloadData }) {
   const [filterJob, setFilterJob] = useState("All");
   const [filterEntity, setFilterEntity] = useState("All");
   const [filterDept, setFilterDept] = useState("All");
@@ -3201,6 +3703,13 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
             {showDelayedOnly ? " — showing delayed only" : " — click to filter"}
           </span>
         </div>
+        <RecruiterWorkbenchPanel
+          applications={applications}
+          candidates={candidates}
+          jobs={jobs}
+          interviews={interviews}
+          scorecards={scorecards}
+        />
         <div className="toolbar" style={{ marginBottom: 16 }}>
           <div className="search-wrap">
             <span className="search-icon"><Icon name="search" size={14} /></span>
@@ -3477,6 +3986,14 @@ function InterviewsPage({ interviews, setInterviews, applications, candidates, j
         {canSchedule && <button className="btn btn-primary" onClick={() => openModal("scheduleInterview")}><Icon name="plus" size={14} /> Schedule Interview</button>}
       </div>
       <div className="page-content">
+        <HiringManagerWorkspacePanel
+          interviews={interviews}
+          applications={applications}
+          candidates={candidates}
+          jobs={jobs}
+          scorecards={scorecards}
+          roleConfig={roleConfig}
+        />
         <div className="tabs" style={{ marginBottom: 16 }}>
           <div className={`tab ${tab === "scheduled" ? "active" : ""}`} onClick={() => setTab("scheduled")}>Scheduled ({scheduled.length})</div>
           <div className={`tab ${tab === "completed" ? "active" : ""}`} onClick={() => setTab("completed")}>Completed ({completed.length})</div>
@@ -4055,7 +4572,7 @@ function SettingsPage({ currentRole, roleAssignments, setRoleAssignments, ROLES_
       </div>
       <div className="page-content">
         <div className="tabs" style={{ marginBottom: 16 }}>
-          {["users", "permissions", "approvals", "audit", "stages", "entities"].map(t => (
+          {["users", "permissions", "approvals", "audit", "templates", "automation", "security", "roadmap", "stages", "entities"].map(t => (
             <div key={t} className={`tab ${activeTab === t ? "active" : ""}`} onClick={() => setActiveTab(t)} style={{ textTransform: "capitalize" }}>{t}</div>
           ))}
         </div>
@@ -4368,6 +4885,14 @@ function SettingsPage({ currentRole, roleAssignments, setRoleAssignments, ROLES_
             </div>
           </div>
         )}
+
+        {activeTab === "templates" && <CommunicationTemplatesPanel />}
+
+        {activeTab === "automation" && <AutomationPreferencesPanel />}
+
+        {activeTab === "security" && <AuditSecurityPanel />}
+
+        {activeTab === "roadmap" && <RoadmapPanel />}
 
         {activeTab === "stages" && (
           <div className="card">
