@@ -255,6 +255,8 @@ const css = `
   .compact-list { display: grid; gap: 8px; }
   .compact-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
   .compact-row:last-child { border-bottom: none; }
+  .dashboard-work-grid { display: grid; grid-template-columns: 1.1fr 1fr 1fr; gap: 16px; margin-top: 16px; }
+  .dashboard-breakdown-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
   .template-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
   .template-card { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
   .roadmap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
@@ -264,7 +266,7 @@ const css = `
   @media (max-width: 760px) {
     .page-header { flex-direction: column; align-items: stretch; }
     .stat-grid { grid-template-columns: 1fr; }
-    .insight-grid, .template-grid, .roadmap-grid { grid-template-columns: 1fr; }
+    .insight-grid, .template-grid, .roadmap-grid, .dashboard-work-grid, .dashboard-breakdown-grid { grid-template-columns: 1fr; }
     .toolbar { align-items: stretch; }
     .toolbar > div, .toolbar .form-select, .search-input { width: 100% !important; }
   }
@@ -1072,8 +1074,8 @@ function EnterpriseReadinessPanel({ jobs, candidates, applications, offers, inte
     <div data-testid="enterprise-readiness-panel" className="card" style={{ marginBottom: 20 }}>
       <div className="card-header">
         <div>
-          <div className="card-title">Enterprise ATS readiness</div>
-          <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>Professional ATS controls across workflow, governance, automation, and audit</div>
+          <div className="card-title">QA/Product readiness</div>
+          <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>Internal admin diagnostic for workflow, governance, automation, and audit coverage</div>
         </div>
         <span className={`badge ${readiness.score >= 80 ? "badge-green" : readiness.score >= 60 ? "badge-amber" : "badge-red"}`}>{readiness.score}% ready</span>
       </div>
@@ -1110,6 +1112,206 @@ function EnterpriseReadinessPanel({ jobs, candidates, applications, offers, inte
               <span className={`badge ${check.ok ? "badge-green" : "badge-amber"}`}>{check.ok ? "Visible" : "Needs data"}</span>
             </div>
           ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OperationalDashboardPanel({ jobs = [], candidates = [], applications = [], offers = [], interviews = [], scorecards = [], hiringRequests = [] }) {
+  const candidateById = new Map(candidates.map(candidate => [candidate.id, candidate]));
+  const jobById = new Map(jobs.map(job => [job.id, job]));
+  const activeApplications = applications.filter(app => app.status === "Active");
+  const delayedApplications = activeApplications
+    .filter(app => (app.daysInStage || 0) >= 5)
+    .sort((a, b) => (b.daysInStage || 0) - (a.daysInStage || 0))
+    .slice(0, 4);
+  const pendingOffers = offers.filter(offer => offer.status === "Pending Approval");
+  const pendingRequests = hiringRequests.filter(request => String(request.status || "").toLowerCase().includes("pending"));
+  const pendingFeedback = interviews.filter(interview => {
+    const hasScorecard = scorecards.some(scorecard => scorecard.applicationId === interview.applicationId);
+    return interview.status === "Completed" && !hasScorecard;
+  });
+  const toDateKey = (value) => {
+    if (!value) return "";
+    const parsed = new Date(String(value).replace(" ", "T"));
+    return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString().slice(0, 10);
+  };
+  const todayKey = todayISO();
+  const todaysInterviews = interviews
+    .filter(interview => toDateKey(interview.scheduledAt) === todayKey && interview.status !== "Cancelled")
+    .sort((a, b) => String(a.scheduledAt).localeCompare(String(b.scheduledAt)));
+  const upcomingInterviews = interviews
+    .filter(interview => toDateKey(interview.scheduledAt) >= todayKey && interview.status === "Scheduled")
+    .sort((a, b) => String(a.scheduledAt).localeCompare(String(b.scheduledAt)))
+    .slice(0, 4);
+  const recruiterEntries = Object.entries(activeApplications.reduce((acc, app) => {
+    const recruiter = app.recruiter || jobById.get(app.jobId)?.recruiter || "Unassigned";
+    acc[recruiter] = (acc[recruiter] || 0) + 1;
+    return acc;
+  }, {})).sort((a, b) => b[1] - a[1]).slice(0, 4);
+  const sourceEntries = Object.entries(candidates.reduce((acc, candidate) => {
+    const source = candidate.source || "Unknown";
+    acc[source] = (acc[source] || 0) + 1;
+    return acc;
+  }, {})).sort((a, b) => b[1] - a[1]).slice(0, 4);
+  const maxRecruiterLoad = Math.max(...recruiterEntries.map(([, count]) => count), 1);
+  const maxSourceCount = Math.max(...sourceEntries.map(([, count]) => count), 1);
+  const avgDaysInStage = activeApplications.length
+    ? Math.round(activeApplications.reduce((sum, app) => sum + (Number(app.daysInStage) || 0), 0) / activeApplications.length)
+    : 0;
+  const openRoles = jobs.filter(job => job.status === "Open").length;
+  const actionTotal = delayedApplications.length + pendingOffers.length + pendingRequests.length + pendingFeedback.length;
+
+  const appLabel = (app) => {
+    const candidate = candidateById.get(app.candidateId);
+    const job = jobById.get(app.jobId);
+    return {
+      candidateName: candidate?.name || "Candidate",
+      jobTitle: job?.title || "Unassigned role",
+    };
+  };
+
+  const interviewLabel = (interview) => {
+    const app = applications.find(item => item.id === interview.applicationId);
+    const candidate = app ? candidateById.get(app.candidateId) : null;
+    const job = app ? jobById.get(app.jobId) : null;
+    return `${candidate?.name || "Candidate"} · ${job?.title || interview.type}`;
+  };
+
+  return (
+    <div data-testid="operational-dashboard-panel" className="card" style={{ marginBottom: 20 }}>
+      <div className="card-header">
+        <div>
+          <div className="card-title">Recruiter action center</div>
+          <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>Daily work queue, pipeline health, approvals, interviews, workload, and hiring velocity</div>
+        </div>
+        <span className={`badge ${actionTotal > 0 ? "badge-amber" : "badge-green"}`}>{actionTotal} pending action{actionTotal === 1 ? "" : "s"}</span>
+      </div>
+      <div className="card-body">
+        <div className="insight-grid">
+          <div className="insight-card">
+            <div className="insight-label">Delayed candidates</div>
+            <div className="insight-value" style={{ color: delayedApplications.length ? "var(--red)" : "var(--text)" }}>{delayedApplications.length}</div>
+            <div className="insight-copy">5+ days in current stage</div>
+          </div>
+          <div className="insight-card">
+            <div className="insight-label">Interviews today</div>
+            <div className="insight-value">{todaysInterviews.length}</div>
+            <div className="insight-copy">{upcomingInterviews.length} upcoming scheduled</div>
+          </div>
+          <div className="insight-card">
+            <div className="insight-label">Pending approvals</div>
+            <div className="insight-value">{pendingOffers.length + pendingRequests.length}</div>
+            <div className="insight-copy">Offers and hiring requests</div>
+          </div>
+          <div className="insight-card">
+            <div className="insight-label">Hiring velocity</div>
+            <div className="insight-value">{avgDaysInStage}d</div>
+            <div className="insight-copy">Average days in stage</div>
+          </div>
+          <div className="insight-card">
+            <div className="insight-label">Open roles</div>
+            <div className="insight-value">{openRoles}</div>
+            <div className="insight-copy">Active requisitions to staff</div>
+          </div>
+          <div className="insight-card">
+            <div className="insight-label">Feedback due</div>
+            <div className="insight-value">{pendingFeedback.length}</div>
+            <div className="insight-copy">Completed interviews missing scorecards</div>
+          </div>
+        </div>
+
+        <div className="dashboard-work-grid">
+          <div className="compact-list">
+            <div className="compact-row">
+              <strong style={{ fontSize: 12, color: "var(--text)" }}>Priority follow-up</strong>
+              <span className="badge badge-red">{delayedApplications.length} delayed</span>
+            </div>
+            {delayedApplications.length === 0 ? (
+              <div style={{ padding: "12px 14px", fontSize: 12, color: "var(--text3)" }}>No delayed active applications.</div>
+            ) : delayedApplications.map(app => {
+              const { candidateName, jobTitle } = appLabel(app);
+              return (
+                <div key={app.id} className="compact-row">
+                  <span>{candidateName}<br /><small style={{ color: "var(--text3)" }}>{jobTitle}</small></span>
+                  <span className="badge badge-red">{app.daysInStage || 0}d</span>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="compact-list">
+            <div className="compact-row">
+              <strong style={{ fontSize: 12, color: "var(--text)" }}>Upcoming interviews</strong>
+              <span className="badge badge-blue">{upcomingInterviews.length}</span>
+            </div>
+            {upcomingInterviews.length === 0 ? (
+              <div style={{ padding: "12px 14px", fontSize: 12, color: "var(--text3)" }}>No interviews scheduled today or ahead.</div>
+            ) : upcomingInterviews.map(interview => (
+              <div key={interview.id} className="compact-row">
+                <span>{interviewLabel(interview)}<br /><small style={{ color: "var(--text3)" }}>{interview.type}</small></span>
+                <span className="badge badge-teal">{formatDisplayDate(interview.scheduledAt)}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="compact-list">
+            <div className="compact-row">
+              <strong style={{ fontSize: 12, color: "var(--text)" }}>Approval queue</strong>
+              <span className="badge badge-amber">{pendingOffers.length + pendingRequests.length}</span>
+            </div>
+            <div className="compact-row">
+              <span>Offer approvals</span>
+              <span className={`badge ${pendingOffers.length ? "badge-amber" : "badge-green"}`}>{pendingOffers.length}</span>
+            </div>
+            <div className="compact-row">
+              <span>Hiring requests</span>
+              <span className={`badge ${pendingRequests.length ? "badge-amber" : "badge-green"}`}>{pendingRequests.length}</span>
+            </div>
+            <div className="compact-row">
+              <span>Interview feedback</span>
+              <span className={`badge ${pendingFeedback.length ? "badge-amber" : "badge-green"}`}>{pendingFeedback.length}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="dashboard-breakdown-grid">
+          <div className="compact-list">
+            <div className="compact-row">
+              <strong style={{ fontSize: 12, color: "var(--text)" }}>Recruiter workload</strong>
+              <span className="badge badge-blue">{activeApplications.length} active</span>
+            </div>
+            {recruiterEntries.map(([recruiter, count]) => (
+              <div key={recruiter} style={{ padding: "10px 14px" }}>
+                <div className="source-row" style={{ marginBottom: 6 }}>
+                  <span className="source-name">{recruiter}</span>
+                  <span className="source-count">{count}</span>
+                </div>
+                <div className="mini-bar">
+                  <div className="mini-bar-fill" style={{ width: `${(count / maxRecruiterLoad) * 100}%`, background: "var(--teal)" }} />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="compact-list">
+            <div className="compact-row">
+              <strong style={{ fontSize: 12, color: "var(--text)" }}>Source quality</strong>
+              <span className="badge badge-blue">{candidates.length} profiles</span>
+            </div>
+            {sourceEntries.map(([source, count]) => (
+              <div key={source} style={{ padding: "10px 14px" }}>
+                <div className="source-row" style={{ marginBottom: 6 }}>
+                  <span className="source-name">{source}</span>
+                  <span className="source-count">{count}</span>
+                </div>
+                <div className="mini-bar">
+                  <div className="mini-bar-fill" style={{ width: `${(count / maxSourceCount) * 100}%`, background: "var(--accent)" }} />
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
@@ -1414,7 +1616,7 @@ function RoadmapPanel() {
 }
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
-function DashboardPage({ jobs, candidates, applications, offers, interviews, scorecards, dashboardAuditLogs = [], currentRole, roleConfig, openModal }) {
+function DashboardPage({ jobs, candidates, applications, offers, interviews, scorecards, hiringRequests = [], dashboardAuditLogs = [], currentRole, roleConfig, openModal }) {
   const openJobs = jobs.filter(j => j.status === "Open").length;
   const activeApps = applications.filter(a => a.status === "Active").length;
   const hiredApps = applications.filter(a => a.stage === "Hired").length;
@@ -1478,14 +1680,14 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, sco
         </div>
       </div>
       <div className="page-content">
-        <EnterpriseReadinessPanel
+        <OperationalDashboardPanel
           jobs={jobs}
           candidates={candidates}
           applications={applications}
           offers={offers}
           interviews={interviews}
           scorecards={scorecards}
-          auditLogs={dashboardAuditLogs}
+          hiringRequests={hiringRequests}
         />
 
         {/* STATS */}
@@ -4419,7 +4621,7 @@ function OffersPage({ offers, setOffers, applications, candidates, jobs, roleCon
 }
 
 // ── SETTINGS PAGE ─────────────────────────────────────────────────────────────
-function SettingsPage({ currentRole, roleAssignments, setRoleAssignments, ROLES_CONFIG, auditLogs, backendUsers = [], backendActions, reloadData }) {
+function SettingsPage({ currentRole, roleAssignments, setRoleAssignments, ROLES_CONFIG, auditLogs, backendUsers = [], backendActions, reloadData, jobs = [], candidates = [], applications = [], offers = [], interviews = [], scorecards = [] }) {
   const defaultAccessScopeForRole = (role) => role === "admin"
     ? "all_data"
     : role === "recruiter"
@@ -4572,7 +4774,7 @@ function SettingsPage({ currentRole, roleAssignments, setRoleAssignments, ROLES_
       </div>
       <div className="page-content">
         <div className="tabs" style={{ marginBottom: 16 }}>
-          {["users", "permissions", "approvals", "audit", "templates", "automation", "security", "roadmap", "stages", "entities"].map(t => (
+          {["users", "permissions", "approvals", "audit", "product audit", "templates", "automation", "security", "roadmap", "stages", "entities"].map(t => (
             <div key={t} className={`tab ${activeTab === t ? "active" : ""}`} onClick={() => setActiveTab(t)} style={{ textTransform: "capitalize" }}>{t}</div>
           ))}
         </div>
@@ -4883,6 +5085,21 @@ function SettingsPage({ currentRole, roleAssignments, setRoleAssignments, ROLES_
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+
+        {activeTab === "product audit" && (
+          <div data-testid="product-audit-page">
+            <EnterpriseReadinessPanel
+              jobs={jobs}
+              candidates={candidates}
+              applications={applications}
+              offers={offers}
+              interviews={interviews}
+              scorecards={scorecards}
+              auditLogs={auditLogs}
+            />
+            <RoadmapPanel />
           </div>
         )}
 
