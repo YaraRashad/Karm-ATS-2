@@ -1370,9 +1370,9 @@ test.describe("Karm ATS live QA full audit", () => {
       await audit.check(page, FLOW.dashboard, "Dashboard title did not prove the authenticated app loaded.", async () => {
         await expect(page.locator(".page-title")).toContainText(/Karm\. ATS Dashboard|Dashboard/i, { timeout: 20_000 });
       });
-      await audit.check(page, FLOW.dashboard, "Enterprise readiness panel did not render on the dashboard.", async () => {
-        await expect(page.getByTestId("enterprise-readiness-panel")).toBeVisible({ timeout: 15_000 });
-        audit.recordAction("Dashboard", "Enterprise readiness panel", "tested");
+      await audit.check(page, FLOW.dashboard, "Operational recruiter action center did not render on the dashboard.", async () => {
+        await expect(page.getByTestId("operational-dashboard-panel")).toBeVisible({ timeout: 15_000 });
+        audit.recordAction("Dashboard", "Recruiter action center", "tested");
       }, {
         severity: "Medium",
       });
@@ -1997,7 +1997,7 @@ test.describe("Karm ATS live QA full audit", () => {
       await audit.check(page, FLOW.permissions, "Settings users area did not render for QA admin.", async () => {
         await expect(page.getByText(/All team members|Role assignments/i).first()).toBeVisible({ timeout: 15_000 });
       });
-      for (const tab of ["Users", "Permissions", "Approvals", "Audit", "Templates", "Automation", "Security", "Roadmap", "Stages", "Entities"]) {
+      for (const tab of ["Users", "Permissions", "Approvals", "Audit", "Product Audit", "Templates", "Automation", "Security", "Roadmap", "Stages", "Entities"]) {
         await audit.check(page, FLOW.permissions, `Settings ${tab} tab did not open.`, async () => {
           const tabLocator = page.getByText(new RegExp(`^${tab}$`, "i")).first();
           await expect(tabLocator).toBeVisible({ timeout: 10_000 });
@@ -2008,6 +2008,7 @@ test.describe("Karm ATS live QA full audit", () => {
         });
       }
       const settingsPanels = [
+        ["Product Audit", "product-audit-page"],
         ["Templates", "communication-templates-panel"],
         ["Automation", "automation-preferences-panel"],
         ["Security", "audit-security-panel"],
