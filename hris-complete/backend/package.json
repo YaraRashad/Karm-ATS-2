@@ -14,7 +14,10 @@
     "db:seed": "node prisma/seed.js",
     "db:seed:admin": "node prisma/seed-production-admin.js",
     "db:studio": "prisma studio",
-    "db:reset": "prisma migrate reset --force && node prisma/seed.js"
+    "db:reset": "prisma migrate reset --force && node prisma/seed.js",
+    "ops:cleanup:preview": "node scripts/operational-cleanup.mjs preview",
+    "ops:cleanup:backup": "node scripts/operational-cleanup.mjs backup",
+    "ops:cleanup:execute": "node scripts/operational-cleanup.mjs execute"
   },
   "dependencies": {
     "@prisma/client": "^5.13.0",
