@@ -8,6 +8,7 @@ import { rateLimit } from 'express-rate-limit';
 
 import { authRouter }         from './routes/auth.js';
 import { positionsRouter }    from './routes/positions.js';
+import { hiringRequestsRouter } from './routes/hiringRequests.js';
 import { candidatesRouter }   from './routes/candidates.js';
 import { applicationsRouter } from './routes/applications.js';
 import { interviewsRouter }   from './routes/interviews.js';
@@ -98,6 +99,7 @@ app.get('/health', (req, res) => {
 const v1 = '/api/v1';
 
 app.use(`${v1}/auth`,         authRouter);
+app.use(`${v1}/hiring-requests`, hiringRequestsRouter);
 app.use(`${v1}/positions`,    positionsRouter);
 app.use(`${v1}/candidates`,   candidatesRouter);
 app.use(`${v1}/applications`, applicationsRouter);

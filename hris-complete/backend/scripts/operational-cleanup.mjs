@@ -60,47 +60,7 @@ const OPERATIONAL_TABLES = [
     key: 'hiringRequests',
     findManyArgs: { orderBy: { createdAt: 'asc' } },
   }),
-  optionalTable('position', 'Job requisitions / positions', {
-    key: 'positions',
-    required: true,
-    findManyArgs: { orderBy: { createdAt: 'asc' } },
-  }),
-  optionalTable('candidate', 'Talent profiles / candidates', {
-    key: 'candidates',
-    required: true,
-    findManyArgs: { orderBy: { createdAt: 'asc' } },
-  }),
-  optionalTable('application', 'Applications / active hiring pipeline records', {
-    key: 'applications',
-    required: true,
-    findManyArgs: { orderBy: { createdAt: 'asc' } },
-  }),
-  optionalTable('applicationStageHistory', 'Application stage history', {
-    key: 'applicationStageHistory',
-    findManyArgs: { orderBy: { movedAt: 'asc' } },
-  }),
-  optionalTable('applicationNote', 'Candidate/application notes', {
-    key: 'applicationNotes',
-    findManyArgs: { orderBy: { createdAt: 'asc' } },
-  }),
-  optionalTable('interview', 'Interviews', {
-    key: 'interviews',
-    required: true,
-    findManyArgs: { orderBy: { createdAt: 'asc' } },
-  }),
-  optionalTable('scorecard', 'Scorecards', {
-    key: 'scorecards',
-    required: true,
-    findManyArgs: { orderBy: { createdAt: 'asc' } },
-  }),
-  optionalTable('scorecardRating', 'Scorecard ratings', {
-    key: 'scorecardRatings',
-  }),
-  optionalTable('offer', 'Offers', {
-    key: 'offers',
-    required: true,
-    findManyArgs: { orderBy: { createdAt: 'asc' } },
-  }),
+  // Delete operational children first, then parent workflow records.
   optionalTable('approvalStep', 'Offer approval steps', {
     key: 'approvalSteps',
     findManyArgs: { orderBy: [{ offerId: 'asc' }, { stepOrder: 'asc' }] },
@@ -113,8 +73,49 @@ const OPERATIONAL_TABLES = [
     key: 'offerHistory',
     findManyArgs: { orderBy: { createdAt: 'asc' } },
   }),
+  optionalTable('offer', 'Offers', {
+    key: 'offers',
+    required: true,
+    findManyArgs: { orderBy: { createdAt: 'asc' } },
+  }),
+  optionalTable('interview', 'Interviews', {
+    key: 'interviews',
+    required: true,
+    findManyArgs: { orderBy: { createdAt: 'asc' } },
+  }),
+  optionalTable('scorecardRating', 'Scorecard ratings', {
+    key: 'scorecardRatings',
+  }),
+  optionalTable('scorecard', 'Scorecards', {
+    key: 'scorecards',
+    required: true,
+    findManyArgs: { orderBy: { createdAt: 'asc' } },
+  }),
+  optionalTable('applicationStageHistory', 'Application stage history', {
+    key: 'applicationStageHistory',
+    findManyArgs: { orderBy: { movedAt: 'asc' } },
+  }),
+  optionalTable('applicationNote', 'Candidate/application notes', {
+    key: 'applicationNotes',
+    findManyArgs: { orderBy: { createdAt: 'asc' } },
+  }),
+  optionalTable('application', 'Applications / active hiring pipeline records', {
+    key: 'applications',
+    required: true,
+    findManyArgs: { orderBy: { createdAt: 'asc' } },
+  }),
   optionalTable('fileObject', 'CV/resume file metadata', {
     key: 'fileObjects',
+    required: true,
+    findManyArgs: { orderBy: { createdAt: 'asc' } },
+  }),
+  optionalTable('candidate', 'Talent profiles / candidates', {
+    key: 'candidates',
+    required: true,
+    findManyArgs: { orderBy: { createdAt: 'asc' } },
+  }),
+  optionalTable('position', 'Job requisitions / positions', {
+    key: 'positions',
     required: true,
     findManyArgs: { orderBy: { createdAt: 'asc' } },
   }),
