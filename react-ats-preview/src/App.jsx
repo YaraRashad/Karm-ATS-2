@@ -471,11 +471,12 @@ const stageColor = (stage) => {
 
 const jobStatusBadge = (s) => s === "Open" ? "badge-green" : s === "Draft" ? "badge-amber" : "badge-gray";
 
-const POSITION_TYPES = ["Manpower", "Additional R.", "Replacement"];
+const POSITION_TYPES = ["Manpower", "Additional R.", "Replacement", "Project Hire"];
 
 const positionTypeBadge = (t) => {
   if (t === "Additional R.") return "badge-coral";
   if (t === "Replacement") return "badge-amber";
+  if (t === "Project Hire") return "badge-purple";
   return "badge-blue";
 };
 
