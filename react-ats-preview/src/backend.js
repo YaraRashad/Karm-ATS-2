@@ -270,7 +270,7 @@ export function mapBackendData({ positions = [], candidates = [], applications =
     title: p.title,
     dept: p.department?.name || "",
     entity: p.entity,
-    positionType: p.positionType || "Manpower",
+    positionType: p.headcountRationale || p.positionType || "Manpower",
     status: statusLabel[p.status] || p.status,
     level: p.seniority || "",
     headcount: p.headcount || 1,
