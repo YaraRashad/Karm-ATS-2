@@ -35,6 +35,13 @@ const entityToApi = {
   tunisia: "tunisia",
 };
 
+const entityLabel = {
+  egypt: "Karm Egypt",
+  cyprus: "Karm Cyprus",
+  uk: "HoldCo. (UK)",
+  tunisia: "Karm Tunisia",
+};
+
 const sourceToApi = {
   LinkedIn: "linkedin",
   Referral: "referral",
@@ -257,7 +264,7 @@ function mapUser(user) {
   };
 }
 
-export function mapBackendData({ positions = [], candidates = [], applications = [], interviews = [], offers = [], scorecards = [], audit = [], users = [] }) {
+export function mapBackendData({ positions = [], candidates = [], applications = [], interviews = [], offers = [], scorecards = [], hiringRequests = [], audit = [], users = [] }) {
   const jobs = positions.map(p => ({
     id: p.id,
     title: p.title,
@@ -345,6 +352,22 @@ export function mapBackendData({ positions = [], candidates = [], applications =
     submittedDate: s.submittedAt?.slice?.(0, 10) || "",
   }));
 
+  const hiringRequestRows = hiringRequests.map(r => ({
+    id: r.id,
+    title: r.title,
+    dept: r.dept || r.department?.name || "",
+    departmentId: r.departmentId || "",
+    entity: entityLabel[r.entity] || r.entity || "",
+    requestedBy: r.requestedBy || "",
+    requestedById: r.requestedById || "",
+    reason: r.reason || "",
+    status: r.status || "",
+    managerApproved: !!r.managerApproved,
+    hrApproved: !!r.hrApproved,
+    ceoApproved: !!r.ceoApproved,
+    requestDate: r.requestDate?.slice?.(0, 10) || r.createdAt?.slice?.(0, 10) || "",
+  }));
+
   return {
     jobs,
     candidates: candidateRows,
@@ -352,20 +375,21 @@ export function mapBackendData({ positions = [], candidates = [], applications =
     interviews: interviewRows,
     offers: offerRows,
     scorecards: scorecardRows,
-    hiringRequests: [],
+    hiringRequests: hiringRequestRows,
     auditLogs: audit.map(mapAuditLog),
     users: users.map(mapUser),
   };
 }
 
 export async function fetchAtsData({ includeAudit = false, includeUsers = false } = {}) {
-  const [positions, candidates, applications, interviews, offers, scorecards, audit, users] = await Promise.all([
+  const [positions, candidates, applications, interviews, offers, scorecards, hiringRequests, audit, users] = await Promise.all([
     api("/positions?pageSize=200"),
     api("/candidates?pageSize=500"),
     api("/applications?pageSize=500"),
     api("/interviews"),
     api("/offers?pageSize=200"),
     api("/scorecards?pageSize=500"),
+    api("/hiring-requests").catch(() => []),
     includeAudit ? api("/audit?pageSize=200").catch(() => []) : Promise.resolve([]),
     includeUsers ? api("/users").catch(() => []) : Promise.resolve([]),
   ]);
@@ -377,6 +401,7 @@ export async function fetchAtsData({ includeAudit = false, includeUsers = false 
     interviews: interviews || [],
     offers: offers?.data || offers || [],
     scorecards: scorecards?.data || scorecards || [],
+    hiringRequests: hiringRequests?.data || hiringRequests || [],
     audit: audit?.data || audit || [],
     users: users?.data || users || [],
   });
@@ -444,6 +469,20 @@ export const backendActions = {
   addNote: (id, payload) => api(`/applications/${id}/notes`, { method: "POST", body: JSON.stringify(payload) }),
   createInterview: (payload) => api("/interviews", { method: "POST", body: JSON.stringify(payload) }),
   createOffer: (payload) => api("/offers", { method: "POST", body: JSON.stringify(payload) }),
+  createHiringRequest: (payload) => api("/hiring-requests", {
+    method: "POST",
+    body: JSON.stringify({
+      title: payload.title,
+      departmentId: payload.departmentId || undefined,
+      departmentName: payload.dept,
+      entity: entityToApi[payload.entity] || payload.entity || "egypt",
+      reason: payload.reason,
+    }),
+  }),
+  approveHiringRequestStep: (id, payload = {}) => api(`/hiring-requests/${id}/approve-step`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  }),
   uploadCv: (payload) => api("/files/cv", { method: "POST", body: JSON.stringify(payload) }),
   createUser: (payload) => api("/users", { method: "POST", body: JSON.stringify(payload) }),
   updateUser: (id, payload) => api(`/users/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),

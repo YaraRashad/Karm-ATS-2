@@ -1906,17 +1906,32 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, sco
 }
 
 // ── HIRING REQUESTS ───────────────────────────────────────────────────────────
-function HiringRequestsPage({ hiringRequests, setHiringRequests, currentRole, roleConfig, openModal }) {
+function HiringRequestsPage({ hiringRequests, setHiringRequests, currentRole, roleConfig, openModal, backendActions, reloadData, candidates = [] }) {
   const canRequest = currentRole === "Admin" || currentRole === "Recruiter" || currentRole === "Hiring Manager";
   const canApprove = hasRequisitionApprovalAccess(roleConfig);
-  const approveStep = (id) => {
-    setHiringRequests(prev => prev.map(req => {
-      if (req.id !== id) return req;
-      if (!req.managerApproved) return { ...req, managerApproved: true, status: "Pending HR Approval" };
-      if (!req.hrApproved) return { ...req, hrApproved: true, status: "Pending Admin Approval" };
-      if (!req.ceoApproved) return { ...req, ceoApproved: true, status: "Approved" };
-      return req;
-    }));
+  const [savingId, setSavingId] = useState("");
+
+  const approveStep = async (id) => {
+    try {
+      setSavingId(id);
+      if (backendActions?.approveHiringRequestStep) {
+        const updated = await backendActions.approveHiringRequestStep(id);
+        setHiringRequests(prev => prev.map(req => (req.id === id ? { ...req, ...updated } : req)));
+        await reloadData?.();
+        return;
+      }
+      setHiringRequests(prev => prev.map(req => {
+        if (req.id !== id) return req;
+        if (!req.managerApproved) return { ...req, managerApproved: true, status: "Pending HR Approval" };
+        if (!req.hrApproved) return { ...req, hrApproved: true, status: "Pending Admin Approval" };
+        if (!req.ceoApproved) return { ...req, ceoApproved: true, status: "Approved" };
+        return req;
+      }));
+    } catch (error) {
+      window.alert(error.message || "Could not approve this hiring request.");
+    } finally {
+      setSavingId("");
+    }
   };
 
   return (
@@ -1965,7 +1980,7 @@ function HiringRequestsPage({ hiringRequests, setHiringRequests, currentRole, ro
                       <span className={`badge ${req.ceoApproved ? "badge-green" : "badge-amber"}`}>Admin</span>
                     </td>
                     <td><span className={`badge ${req.status === "Approved" ? "badge-green" : "badge-amber"}`}>{req.status}</span></td>
-                    <td>{canApprove && req.status !== "Approved" && <button className="btn btn-ghost btn-sm" onClick={() => approveStep(req.id)}>Approve step</button>}</td>
+                    <td>{canApprove && req.status !== "Approved" && <button className="btn btn-ghost btn-sm" onClick={() => approveStep(req.id)} disabled={savingId === req.id}>{savingId === req.id ? "Saving..." : "Approve step"}</button>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -5158,22 +5173,37 @@ function SettingsPage({ currentRole, roleAssignments, setRoleAssignments, ROLES_
 // ── MODALS ────────────────────────────────────────────────────────────────────
 function AddHiringRequestModal({ data, closeModal, ctx }) {
   const [form, setForm] = useState({ title: "", dept: DEPARTMENTS[0], entity: ENTITIES[0], reason: "" });
+  const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
-  const submit = () => {
+  const submit = async () => {
     if (!form.title || !form.reason) return;
-    const newRequest = {
-      ...form,
-      id: Date.now(),
-      requestedBy: ctx.roleConfig.fullName,
-      status: "Pending HR Approval",
-      managerApproved: true,
-      hrApproved: false,
-      ceoApproved: false,
-      requestDate: new Date().toISOString().split("T")[0],
-    };
-    ctx.setHiringRequests(prev => [newRequest, ...prev]);
-    closeModal();
+    try {
+      setSaving(true);
+      if (ctx.backendActions?.createHiringRequest) {
+        const created = await ctx.backendActions.createHiringRequest(form);
+        ctx.setHiringRequests(prev => [created, ...prev.filter(req => req.id !== created.id)]);
+        await ctx.reloadData?.();
+        closeModal();
+        return;
+      }
+      const newRequest = {
+        ...form,
+        id: Date.now(),
+        requestedBy: ctx.roleConfig.fullName,
+        status: "Pending HR Approval",
+        managerApproved: true,
+        hrApproved: false,
+        ceoApproved: false,
+        requestDate: new Date().toISOString().split("T")[0],
+      };
+      ctx.setHiringRequests(prev => [newRequest, ...prev]);
+      closeModal();
+    } catch (error) {
+      window.alert(error.message || "Could not create the hiring request.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -5193,7 +5223,7 @@ function AddHiringRequestModal({ data, closeModal, ctx }) {
         </div>
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={closeModal}>Cancel</button>
-          <button className="btn btn-primary" onClick={submit}>Submit Request</button>
+          <button className="btn btn-primary" onClick={submit} disabled={saving}>{saving ? "Saving..." : "Submit Request"}</button>
         </div>
       </div>
     </div>
