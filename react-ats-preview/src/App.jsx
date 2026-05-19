@@ -2699,7 +2699,14 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
   const [selectedJob, setSelectedJob] = useState(null);
   const [assignRecruiterJob, setAssignRecruiterJob] = useState(null);
   const normalizeFilterValue = value => String(value || "").trim().toLowerCase();
-  const statusOptions = Array.from(new Set(jobs.map(j => j.status).filter(Boolean))).sort();
+  const requisitionStatusOptions = ["Open", "Draft", "Closed"];
+  const liveStatusOptions = Array.from(new Set(jobs.map(j => j.status).filter(Boolean)));
+  const statusOptions = [
+    ...requisitionStatusOptions,
+    ...liveStatusOptions.filter(
+      status => !requisitionStatusOptions.some(base => normalizeFilterValue(base) === normalizeFilterValue(status)),
+    ),
+  ];
   const entityOptions = Array.from(new Set(jobs.map(j => j.entity).filter(Boolean))).sort();
   const deptOptions = Array.from(new Set(jobs.map(j => j.dept).filter(Boolean))).sort();
   const positionTypeOptions = Array.from(new Set(jobs.map(j => j.positionType).filter(Boolean))).sort();
