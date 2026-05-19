@@ -2693,17 +2693,27 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
   const [filterStatus, setFilterStatus] = useState("All");
   const [filterEntity, setFilterEntity] = useState("All");
   const [filterDept, setFilterDept] = useState("All");
+  const [filterPositionType, setFilterPositionType] = useState("All");
+  const [filterRecruiter, setFilterRecruiter] = useState("All");
   const [showImporter, setShowImporter] = useState(false);
   const [selectedJob, setSelectedJob] = useState(null);
   const [assignRecruiterJob, setAssignRecruiterJob] = useState(null);
+  const normalizeFilterValue = value => String(value || "").trim().toLowerCase();
+  const statusOptions = Array.from(new Set(jobs.map(j => j.status).filter(Boolean))).sort();
+  const entityOptions = Array.from(new Set(jobs.map(j => j.entity).filter(Boolean))).sort();
   const deptOptions = Array.from(new Set(jobs.map(j => j.dept).filter(Boolean))).sort();
+  const positionTypeOptions = Array.from(new Set(jobs.map(j => j.positionType).filter(Boolean))).sort();
+  const recruiterOptions = Array.from(new Set(jobs.map(j => j.recruiter).filter(Boolean))).sort();
 
-  const filtered = jobs.filter(j =>
-    (filterStatus === "All" || j.status === filterStatus) &&
-    (filterEntity === "All" || j.entity === filterEntity) &&
-    (filterDept === "All" || j.dept === filterDept) &&
-    j.title.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = jobs.filter(j => {
+    const matchesStatus = filterStatus === "All" || normalizeFilterValue(j.status) === normalizeFilterValue(filterStatus);
+    const matchesEntity = filterEntity === "All" || normalizeFilterValue(j.entity) === normalizeFilterValue(filterEntity);
+    const matchesDept = filterDept === "All" || normalizeFilterValue(j.dept) === normalizeFilterValue(filterDept);
+    const matchesPositionType = filterPositionType === "All" || normalizeFilterValue(j.positionType || "Manpower") === normalizeFilterValue(filterPositionType);
+    const matchesRecruiter = filterRecruiter === "All" || normalizeFilterValue(j.recruiter || "Unassigned") === normalizeFilterValue(filterRecruiter);
+    const matchesSearch = j.title.toLowerCase().includes(search.toLowerCase());
+    return matchesStatus && matchesEntity && matchesDept && matchesPositionType && matchesRecruiter && matchesSearch;
+  });
 
   const canCreate = !!roleConfig.canCreateRequisitions;
   const canDelete = !!roleConfig.canDeleteRecords;
@@ -2801,19 +2811,31 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
           <div>
             <label className="form-label">Status</label>
             <select className="form-select" style={{ width: "auto" }} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-              <option>All</option><option>Open</option><option>Draft</option><option>Closed</option>
+              <option>All</option>{statusOptions.map(status => <option key={status}>{status}</option>)}
             </select>
           </div>
           <div>
             <label className="form-label">Entity</label>
             <select className="form-select" style={{ width: "auto" }} value={filterEntity} onChange={e => setFilterEntity(e.target.value)}>
-              <option>All</option>{ENTITIES.map(e => <option key={e}>{e}</option>)}
+              <option>All</option>{entityOptions.map(entity => <option key={entity}>{entity}</option>)}
             </select>
           </div>
           <div>
             <label className="form-label">Department</label>
             <select className="form-select" style={{ width: "auto" }} value={filterDept} onChange={e => setFilterDept(e.target.value)}>
               <option>All</option>{deptOptions.map(d => <option key={d}>{d}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="form-label">Position type</label>
+            <select className="form-select" style={{ width: "auto" }} value={filterPositionType} onChange={e => setFilterPositionType(e.target.value)}>
+              <option>All</option>{positionTypeOptions.map(type => <option key={type}>{type}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="form-label">Recruiter</label>
+            <select className="form-select" style={{ width: "auto" }} value={filterRecruiter} onChange={e => setFilterRecruiter(e.target.value)}>
+              <option>All</option>{recruiterOptions.map(name => <option key={name}>{name}</option>)}
             </select>
           </div>
         </div>
