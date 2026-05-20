@@ -71,7 +71,6 @@ positionsRouter.get('/', async (req, res, next) => {
     const where = {
       ...entityFilter,
       ...buildPositionScopeWhere(req.user),
-      isActive: true,
       ...(entity        && { entity }),
       ...(department    && { department: { name: { contains: department, mode: 'insensitive' } } }),
       ...(status        && { status }),
