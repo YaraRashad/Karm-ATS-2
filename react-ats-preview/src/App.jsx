@@ -2699,22 +2699,58 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
   const [selectedJob, setSelectedJob] = useState(null);
   const [assignRecruiterJob, setAssignRecruiterJob] = useState(null);
   const normalizeFilterValue = value => String(value || "").trim().toLowerCase();
+  const canonicalStatus = value => {
+    const normalized = normalizeFilterValue(value);
+    if (!normalized) return "";
+    if (normalized === "open") return "open";
+    if (normalized === "draft") return "draft";
+    if (normalized === "closed" || normalized === "close") return "closed";
+    if (normalized === "on hold" || normalized === "on_hold") return "on_hold";
+    if (normalized === "pending approval" || normalized === "pending_approval") return "pending_approval";
+    return normalized;
+  };
+  const canonicalEntity = value => {
+    const normalized = normalizeFilterValue(value);
+    if (!normalized) return "";
+    if (normalized === "egypt" || normalized === "karm egypt") return "egypt";
+    if (normalized === "cyprus" || normalized === "karm cyprus") return "cyprus";
+    if (normalized === "tunisia" || normalized === "karm tunisia") return "tunisia";
+    if (normalized === "holdco. (uk)" || normalized === "uk") return "uk";
+    if (normalized === "sub holdco. (nl)" || normalized === "nl" || normalized === "netherlands") return "nl";
+    return normalized;
+  };
+  const statusDisplayLabel = value => {
+    const canonical = canonicalStatus(value);
+    if (canonical === "open") return "Open";
+    if (canonical === "draft") return "Draft";
+    if (canonical === "closed") return "Closed";
+    if (canonical === "on_hold") return "On Hold";
+    if (canonical === "pending_approval") return "Pending Approval";
+    return value || "";
+  };
+  const entityDisplayLabel = value => {
+    const canonical = canonicalEntity(value);
+    if (canonical === "egypt") return "Karm Egypt";
+    if (canonical === "cyprus") return "Karm Cyprus";
+    if (canonical === "tunisia") return "Karm Tunisia";
+    if (canonical === "uk") return "HoldCo. (UK)";
+    if (canonical === "nl") return "Sub HoldCo. (NL)";
+    return value || "";
+  };
   const requisitionStatusOptions = ["Open", "Draft", "Closed"];
-  const liveStatusOptions = Array.from(new Set(jobs.map(j => j.status).filter(Boolean)));
-  const statusOptions = [
+  const liveStatusOptions = Array.from(new Set(jobs.map(j => statusDisplayLabel(j.status)).filter(Boolean)));
+  const statusOptions = Array.from(new Set([
     ...requisitionStatusOptions,
-    ...liveStatusOptions.filter(
-      status => !requisitionStatusOptions.some(base => normalizeFilterValue(base) === normalizeFilterValue(status)),
-    ),
-  ];
-  const entityOptions = Array.from(new Set(jobs.map(j => j.entity).filter(Boolean))).sort();
+    ...liveStatusOptions,
+  ]));
+  const entityOptions = Array.from(new Set(jobs.map(j => entityDisplayLabel(j.entity)).filter(Boolean))).sort();
   const deptOptions = Array.from(new Set(jobs.map(j => j.dept).filter(Boolean))).sort();
   const positionTypeOptions = Array.from(new Set(jobs.map(j => j.positionType).filter(Boolean))).sort();
   const recruiterOptions = Array.from(new Set(jobs.map(j => j.recruiter).filter(Boolean))).sort();
 
   const filtered = jobs.filter(j => {
-    const matchesStatus = filterStatus === "All" || normalizeFilterValue(j.status) === normalizeFilterValue(filterStatus);
-    const matchesEntity = filterEntity === "All" || normalizeFilterValue(j.entity) === normalizeFilterValue(filterEntity);
+    const matchesStatus = filterStatus === "All" || canonicalStatus(j.status) === canonicalStatus(filterStatus);
+    const matchesEntity = filterEntity === "All" || canonicalEntity(j.entity) === canonicalEntity(filterEntity);
     const matchesDept = filterDept === "All" || normalizeFilterValue(j.dept) === normalizeFilterValue(filterDept);
     const matchesPositionType = filterPositionType === "All" || normalizeFilterValue(j.positionType || "Manpower") === normalizeFilterValue(filterPositionType);
     const matchesRecruiter = filterRecruiter === "All" || normalizeFilterValue(j.recruiter || "Unassigned") === normalizeFilterValue(filterRecruiter);
@@ -2860,7 +2896,7 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
                     <tr key={job.id} style={{ cursor: "pointer" }} onClick={() => setSelectedJob(job)}>
                       <td className="strong" style={{ color: "var(--accent)" }}>{job.title}</td>
                       <td>{job.dept}</td>
-                      <td><span className="tag">{job.entity}</span></td>
+                      <td><span className="tag">{entityDisplayLabel(job.entity)}</span></td>
                       <td><span className={`badge ${positionTypeBadge(job.positionType)}`}>{job.positionType || "Manpower"}</span></td>
                       <td style={{ fontFamily: "var(--mono)", color: "var(--text2)" }}>{canViewSalary ? `${(job.salaryMin || 0).toLocaleString()}–${(job.salaryMax || 0).toLocaleString()}` : "Restricted"}</td>
                       <td>{job.approvedBy || "—"}</td>
@@ -2868,7 +2904,7 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
                       <td style={{ fontFamily: "var(--mono)" }}>{job.headcount}</td>
                       <td style={{ fontFamily: "var(--mono)", color: "var(--accent)", fontWeight: 600 }}>{appCount}</td>
                       <td>{job.recruiter || "Unassigned"}</td>
-                      <td><span className={`badge ${jobStatusBadge(job.status)}`}>{job.status}</span></td>
+                      <td><span className={`badge ${jobStatusBadge(statusDisplayLabel(job.status))}`}>{statusDisplayLabel(job.status)}</span></td>
                       <td onClick={e => e.stopPropagation()}>
                         {(canCreate || canDelete) && (
                           <div className="row-actions">
