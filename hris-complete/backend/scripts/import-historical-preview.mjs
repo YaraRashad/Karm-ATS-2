@@ -198,6 +198,7 @@ function summarizeIssueMap(issueMap) {
 function summarizeConflictMap(conflictMap) {
   const blockedRows = new Set();
   const reviewRows = new Set();
+  const safeRows = new Set();
   const conflictCounts = {};
   for (const [key, entries] of Object.entries(conflictMap)) {
     conflictCounts[key] = {
@@ -206,10 +207,11 @@ function summarizeConflictMap(conflictMap) {
     };
     for (const entry of entries) {
       if (entry.severity === "blocked") blockedRows.add(entry.rowNumber);
+      else if (entry.severity === "safe") safeRows.add(entry.rowNumber);
       else reviewRows.add(entry.rowNumber);
     }
   }
-  return { conflictCounts, blockedRows, reviewRows };
+  return { conflictCounts, blockedRows, reviewRows, safeRows };
 }
 
 function finalizeSection(summary, issueMap, createCounts = {}, conflictMap = null) {
@@ -539,6 +541,10 @@ function makeApplicationConflictKey(candidateId, positionId) {
   return `${candidateId}||${positionId}`;
 }
 
+function makeWorkbookApplicationKey(candidateName, positionTitle, department) {
+  return `${normalize(candidateName)}||${makeRequisitionConflictKey(positionTitle, department)}`;
+}
+
 function makeInterviewConflictKey(candidateId, positionId, interviewType, dateKey) {
   return `${candidateId}||${positionId}||${normalize(interviewType)}||${dateKey || ""}`;
 }
@@ -792,6 +798,59 @@ function applyRequisitionConflicts(rows, sectionResult, atsState) {
   );
 }
 
+function buildWorkbookImportState(requisitionRows, talentRows, pipelineRows, workbookOnly) {
+  const safeTalentRows = new Set(workbookOnly.talentDatabase.summary.readyRowNumbers);
+  const safeRequisitionRows = new Set(
+    workbookOnly.hiringRequestsRequisitions.summary.readyRowNumbers,
+  );
+  const safePipelineRows = new Set(workbookOnly.activeHiringPipeline.summary.readyRowNumbers);
+
+  const safeTalentByEmail = new Map();
+  const safeTalentByMobile = new Map();
+  const safeTalentByName = new Map();
+  const safeRequisitionKeys = new Set();
+  const safeWorkbookApplicationKeys = new Set();
+
+  talentRows.forEach((row, index) => {
+    const rowNumber = rowRef(index, row);
+    if (!safeTalentRows.has(rowNumber)) return;
+    bucketBy(safeTalentByEmail, normalize(row.Email), { rowNumber, row });
+    bucketBy(safeTalentByMobile, normalize(row.Mobile), { rowNumber, row });
+    bucketBy(safeTalentByName, normalize(row.Candidate_Name), { rowNumber, row });
+  });
+
+  requisitionRows.forEach((row, index) => {
+    const rowNumber = rowRef(index, row);
+    if (!safeRequisitionRows.has(rowNumber)) return;
+    safeRequisitionKeys.add(
+      makeRequisitionConflictKey(
+        row["ATS Positions"] || row.Position_Title,
+        row.ATS_Department_Matched,
+      ),
+    );
+  });
+
+  pipelineRows.forEach((row, index) => {
+    const rowNumber = rowRef(index, row);
+    if (!safePipelineRows.has(rowNumber)) return;
+    safeWorkbookApplicationKeys.add(
+      makeWorkbookApplicationKey(
+        row.Candidate_Name,
+        row.Position_Title,
+        row.ATS_Department_Matched,
+      ),
+    );
+  });
+
+  return {
+    safeTalentByEmail,
+    safeTalentByMobile,
+    safeTalentByName,
+    safeRequisitionKeys,
+    safeWorkbookApplicationKeys,
+  };
+}
+
 function resolveWorkbookCandidate(row, atsState) {
   const email = normalize(row.Email);
   const mobile = normalize(row.Mobile);
@@ -821,6 +880,27 @@ function resolveWorkbookCandidate(row, atsState) {
   return { resolved: null, ambiguous: false };
 }
 
+function resolveWorkbookCandidateAvailability(row, workbookState) {
+  const email = normalize(row.Email);
+  const mobile = normalize(row.Mobile);
+  const name = normalize(row.Candidate_Name);
+
+  const emailMatches = email ? workbookState.safeTalentByEmail.get(email) || [] : [];
+  const mobileMatches = mobile ? workbookState.safeTalentByMobile.get(mobile) || [] : [];
+  const nameMatches = name ? workbookState.safeTalentByName.get(name) || [] : [];
+
+  const uniqueRows = new Set([
+    ...emailMatches.map((item) => item.rowNumber),
+    ...mobileMatches.map((item) => item.rowNumber),
+    ...nameMatches.map((item) => item.rowNumber),
+  ]);
+
+  return {
+    available: uniqueRows.size > 0,
+    ambiguous: uniqueRows.size > 1,
+  };
+}
+
 function buildWorkbookTalentRowMap(rows) {
   const map = new Map();
   for (const [index, row] of rows.entries()) {
@@ -831,7 +911,7 @@ function buildWorkbookTalentRowMap(rows) {
   return map;
 }
 
-function applyPipelineConflicts(rows, talentRows, sectionResult, atsState) {
+function applyPipelineConflicts(rows, talentRows, sectionResult, atsState, workbookState) {
   const conflicts = {
     existingApplicationForSameCandidateRequisition: [],
     duplicateApplicationNeedsReview: [],
@@ -858,13 +938,18 @@ function applyPipelineConflicts(rows, talentRows, sectionResult, atsState) {
       talentRow?.row || row,
       atsState,
     );
+    const workbookCandidateResolution = resolveWorkbookCandidateAvailability(
+      talentRow?.row || row,
+      workbookState,
+    );
     const requisitionKey = makeRequisitionConflictKey(
       row.Position_Title,
       row.ATS_Department_Matched,
     );
     const positions = atsState.lookups.requisitionByKey.get(requisitionKey) || [];
+    const requisitionAvailableInWorkbook = workbookState.safeRequisitionKeys.has(requisitionKey);
 
-    if (positions.length === 0) {
+    if (positions.length === 0 && !requisitionAvailableInWorkbook) {
       addConflict(conflicts, "blockedBecauseRequisitionUnmatched", rowNumber, {
         severity: "blocked",
         positionTitle: row.Position_Title,
@@ -872,11 +957,17 @@ function applyPipelineConflicts(rows, talentRows, sectionResult, atsState) {
       return;
     }
 
-    if (!candidateResolution.resolved || candidateResolution.ambiguous) {
+    if (!candidateResolution.resolved && !workbookCandidateResolution.available) {
       addConflict(conflicts, "blockedBecauseCandidateUnmatched", rowNumber, {
         severity: "blocked",
         candidateName: row.Candidate_Name,
-        ambiguous: candidateResolution.ambiguous,
+      });
+      return;
+    }
+    if (candidateResolution.ambiguous || workbookCandidateResolution.ambiguous) {
+      addConflict(conflicts, "duplicateApplicationNeedsReview", rowNumber, {
+        severity: "review",
+        reason: "Candidate match is ambiguous across ATS or workbook-safe talent rows.",
       });
       return;
     }
@@ -911,7 +1002,7 @@ function applyPipelineConflicts(rows, talentRows, sectionResult, atsState) {
   );
 }
 
-function applyInterviewConflicts(rows, talentRows, sectionResult, atsState) {
+function applyInterviewConflicts(rows, talentRows, sectionResult, atsState, workbookState) {
   const conflicts = {
     existingInterviewForSameCandidateRequisitionTypeDate: [],
     duplicateInterviewNeedsReview: [],
@@ -937,18 +1028,24 @@ function applyInterviewConflicts(rows, talentRows, sectionResult, atsState) {
       talentRow?.row || row,
       atsState,
     );
+    const workbookCandidateResolution = resolveWorkbookCandidateAvailability(
+      talentRow?.row || row,
+      workbookState,
+    );
     const requisitionKey = makeRequisitionConflictKey(
       row.Position_Title,
       row.ATS_Department_Matched,
     );
     const positions = atsState.lookups.requisitionByKey.get(requisitionKey) || [];
+    const requisitionAvailableInWorkbook = workbookState.safeRequisitionKeys.has(requisitionKey);
     const interviewType = normalizeInterviewTypeForAts(row.Interview_Type);
     const interviewDateKey = toDateKey(row.Interview_Date);
 
     if (
-      positions.length === 0 ||
-      !candidateResolution.resolved ||
-      candidateResolution.ambiguous
+      (positions.length === 0 && !requisitionAvailableInWorkbook) ||
+      (!candidateResolution.resolved && !workbookCandidateResolution.available) ||
+      candidateResolution.ambiguous ||
+      workbookCandidateResolution.ambiguous
     ) {
       addConflict(conflicts, "blockedBecauseCandidateRequisitionApplicationUnmatched", rowNumber, {
         severity: "blocked",
@@ -963,8 +1060,19 @@ function applyInterviewConflicts(rows, talentRows, sectionResult, atsState) {
         makeApplicationConflictKey(candidateResolution.resolved.id, position.id),
       ) || [],
     );
+    const workbookApplicationAvailable = workbookState.safeWorkbookApplicationKeys.has(
+      makeWorkbookApplicationKey(
+        row.Candidate_Name,
+        row.Position_Title,
+        row.ATS_Department_Matched,
+      ),
+    );
 
-    if (applicationMatches.length === 0 || !interviewType || !interviewDateKey) {
+    if (
+      (applicationMatches.length === 0 && !workbookApplicationAvailable) ||
+      !interviewType ||
+      !interviewDateKey
+    ) {
       addConflict(conflicts, "blockedBecauseCandidateRequisitionApplicationUnmatched", rowNumber, {
         severity: "blocked",
         reason: "Candidate, requisition, application, type, or date could not be resolved.",
@@ -1007,7 +1115,7 @@ function applyInterviewConflicts(rows, talentRows, sectionResult, atsState) {
   );
 }
 
-function applyOfferConflicts(rows, talentRows, sectionResult, atsState) {
+function applyOfferConflicts(rows, talentRows, sectionResult, atsState, workbookState) {
   const conflicts = {
     existingOfferOutcomeForSameCandidateRequisition: [],
     duplicateNeedsReview: [],
@@ -1033,16 +1141,22 @@ function applyOfferConflicts(rows, talentRows, sectionResult, atsState) {
       talentRow?.row || row,
       atsState,
     );
+    const workbookCandidateResolution = resolveWorkbookCandidateAvailability(
+      talentRow?.row || row,
+      workbookState,
+    );
     const requisitionKey = makeRequisitionConflictKey(
       row.Position_Title,
       row.ATS_Department_Matched,
     );
     const positions = atsState.lookups.requisitionByKey.get(requisitionKey) || [];
+    const requisitionAvailableInWorkbook = workbookState.safeRequisitionKeys.has(requisitionKey);
 
     if (
-      positions.length === 0 ||
-      !candidateResolution.resolved ||
-      candidateResolution.ambiguous
+      (positions.length === 0 && !requisitionAvailableInWorkbook) ||
+      (!candidateResolution.resolved && !workbookCandidateResolution.available) ||
+      candidateResolution.ambiguous ||
+      workbookCandidateResolution.ambiguous
     ) {
       addConflict(conflicts, "blockedBecauseCandidateRequisitionApplicationUnmatched", rowNumber, {
         severity: "blocked",
@@ -1052,11 +1166,34 @@ function applyOfferConflicts(rows, talentRows, sectionResult, atsState) {
       return;
     }
 
+    const workbookApplicationAvailable = workbookState.safeWorkbookApplicationKeys.has(
+      makeWorkbookApplicationKey(
+        row.Candidate_Name,
+        row.Position_Title,
+        row.ATS_Department_Matched,
+      ),
+    );
     const offerMatches = positions.flatMap((position) =>
       atsState.lookups.offerByKey.get(
         makeOfferConflictKey(candidateResolution.resolved.id, position.id),
       ) || [],
     );
+
+    const applicationMatches = candidateResolution.resolved
+      ? positions.flatMap((position) =>
+          atsState.lookups.applicationByKey.get(
+            makeApplicationConflictKey(candidateResolution.resolved.id, position.id),
+          ) || [],
+        )
+      : [];
+
+    if (applicationMatches.length === 0 && !workbookApplicationAvailable) {
+      addConflict(conflicts, "blockedBecauseCandidateRequisitionApplicationUnmatched", rowNumber, {
+        severity: "blocked",
+        reason: "Candidate, requisition, or application could not be resolved.",
+      });
+      return;
+    }
 
     if (offerMatches.length > 0) {
       addConflict(conflicts, "existingOfferOutcomeForSameCandidateRequisition", rowNumber, {
@@ -1163,6 +1300,12 @@ async function main() {
     interviewsScorecards: classifyInterviewRows(interviewRows, requisitionLookup),
     offersOutcomes: classifyOfferRows(offerRows, requisitionLookup),
   };
+  const workbookState = buildWorkbookImportState(
+    requisitionRows,
+    talentRows,
+    pipelineRows,
+    workbookOnly,
+  );
 
   let atsState;
   try {
@@ -1190,18 +1333,21 @@ async function main() {
       talentRows,
       workbookOnly.activeHiringPipeline,
       atsState,
+      workbookState,
     ),
     interviewsScorecards: applyInterviewConflicts(
       interviewRows,
       talentRows,
       workbookOnly.interviewsScorecards,
       atsState,
+      workbookState,
     ),
     offersOutcomes: applyOfferConflicts(
       offerRows,
       talentRows,
       workbookOnly.offersOutcomes,
       atsState,
+      workbookState,
     ),
   };
 
