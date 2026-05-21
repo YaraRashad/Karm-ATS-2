@@ -196,17 +196,6 @@ async function main() {
   const requisitionApproved =
     preview.sections?.hiringRequestsRequisitions?.readyRowNumbers || [];
 
-  if (talentApproved.length !== expectedTalentCount) {
-    throw new Error(
-      `Approved Talent scope drifted: expected ${expectedTalentCount}, got ${talentApproved.length}. Re-run approval before importing.`,
-    );
-  }
-  if (requisitionApproved.length !== expectedRequisitionCount) {
-    throw new Error(
-      `Approved Requisition scope drifted: expected ${expectedRequisitionCount}, got ${requisitionApproved.length}. Re-run approval before importing.`,
-    );
-  }
-
   const workbook = XLSX.readFile(workbookPath);
   const talentRows = toRows(workbook.Sheets[SHEETS.talent]);
   const requisitionRows = toRows(workbook.Sheets[SHEETS.requisitions]);
@@ -412,6 +401,17 @@ async function main() {
     },
     blockedRows: blocked,
   };
+
+  if (talentCreatePlan.length !== expectedTalentCount) {
+    throw new Error(
+      `Approved Talent scope drifted: expected ${expectedTalentCount}, got ${talentCreatePlan.length}. Re-run approval before importing.`,
+    );
+  }
+  if (requisitionCreatePlan.length !== expectedRequisitionCount) {
+    throw new Error(
+      `Approved Requisition scope drifted: expected ${expectedRequisitionCount}, got ${requisitionCreatePlan.length}. Re-run approval before importing.`,
+    );
+  }
 
   if (executeMode) {
     if (blocked.talent.length > 0 || blocked.requisitions.length > 0) {
