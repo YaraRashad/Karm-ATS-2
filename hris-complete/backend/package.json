@@ -15,6 +15,7 @@
     "db:seed:admin": "node prisma/seed-production-admin.js",
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset --force && node prisma/seed.js",
+    "import:historical:preview": "node scripts/import-historical-preview.mjs",
     "ops:cleanup:preview": "node scripts/operational-cleanup.mjs preview",
     "ops:cleanup:backup": "node scripts/operational-cleanup.mjs backup",
     "ops:cleanup:execute": "node scripts/operational-cleanup.mjs execute"
@@ -30,6 +31,7 @@
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
+    "xlsx": "^0.18.5",
     "zod": "^3.23.4"
   },
   "devDependencies": {
