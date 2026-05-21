@@ -972,11 +972,13 @@ function applyPipelineConflicts(rows, talentRows, sectionResult, atsState, workb
       return;
     }
 
-    const matches = positions.flatMap((position) =>
-      atsState.lookups.applicationByKey.get(
-        makeApplicationConflictKey(candidateResolution.resolved.id, position.id),
-      ) || [],
-    );
+    const matches = candidateResolution.resolved
+      ? positions.flatMap((position) =>
+          atsState.lookups.applicationByKey.get(
+            makeApplicationConflictKey(candidateResolution.resolved.id, position.id),
+          ) || [],
+        )
+      : [];
 
     if (matches.length > 0) {
       addConflict(conflicts, "existingApplicationForSameCandidateRequisition", rowNumber, {
@@ -1055,11 +1057,13 @@ function applyInterviewConflicts(rows, talentRows, sectionResult, atsState, work
       return;
     }
 
-    const applicationMatches = positions.flatMap((position) =>
-      atsState.lookups.applicationByKey.get(
-        makeApplicationConflictKey(candidateResolution.resolved.id, position.id),
-      ) || [],
-    );
+    const applicationMatches = candidateResolution.resolved
+      ? positions.flatMap((position) =>
+          atsState.lookups.applicationByKey.get(
+            makeApplicationConflictKey(candidateResolution.resolved.id, position.id),
+          ) || [],
+        )
+      : [];
     const workbookApplicationAvailable = workbookState.safeWorkbookApplicationKeys.has(
       makeWorkbookApplicationKey(
         row.Candidate_Name,
@@ -1080,16 +1084,18 @@ function applyInterviewConflicts(rows, talentRows, sectionResult, atsState, work
       return;
     }
 
-    const interviewMatches = positions.flatMap((position) =>
-      atsState.lookups.interviewByKey.get(
-        makeInterviewConflictKey(
-          candidateResolution.resolved.id,
-          position.id,
-          interviewType,
-          interviewDateKey,
-        ),
-      ) || [],
-    );
+    const interviewMatches = candidateResolution.resolved
+      ? positions.flatMap((position) =>
+          atsState.lookups.interviewByKey.get(
+            makeInterviewConflictKey(
+              candidateResolution.resolved.id,
+              position.id,
+              interviewType,
+              interviewDateKey,
+            ),
+          ) || [],
+        )
+      : [];
 
     if (interviewMatches.length > 0) {
       addConflict(conflicts, "existingInterviewForSameCandidateRequisitionTypeDate", rowNumber, {
@@ -1173,11 +1179,13 @@ function applyOfferConflicts(rows, talentRows, sectionResult, atsState, workbook
         row.ATS_Department_Matched,
       ),
     );
-    const offerMatches = positions.flatMap((position) =>
-      atsState.lookups.offerByKey.get(
-        makeOfferConflictKey(candidateResolution.resolved.id, position.id),
-      ) || [],
-    );
+    const offerMatches = candidateResolution.resolved
+      ? positions.flatMap((position) =>
+          atsState.lookups.offerByKey.get(
+            makeOfferConflictKey(candidateResolution.resolved.id, position.id),
+          ) || [],
+        )
+      : [];
 
     const applicationMatches = candidateResolution.resolved
       ? positions.flatMap((position) =>
