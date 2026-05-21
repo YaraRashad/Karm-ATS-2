@@ -16,6 +16,7 @@
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset --force && node prisma/seed.js",
     "import:historical:preview": "node scripts/import-historical-preview.mjs",
+    "import:historical:wave1": "node scripts/import-historical-wave1.mjs",
     "ops:cleanup:preview": "node scripts/operational-cleanup.mjs preview",
     "ops:cleanup:backup": "node scripts/operational-cleanup.mjs backup",
     "ops:cleanup:execute": "node scripts/operational-cleanup.mjs execute"
