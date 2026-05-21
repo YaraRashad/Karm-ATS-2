@@ -414,9 +414,15 @@ async function main() {
   }
 
   if (executeMode) {
-    if (blocked.talent.length > 0 || blocked.requisitions.length > 0) {
+    const unexpectedTalentBlocks = Math.max(0, expectedTalentCount - talentCreatePlan.length);
+    const unexpectedRequisitionBlocks = Math.max(
+      0,
+      expectedRequisitionCount - requisitionCreatePlan.length,
+    );
+
+    if (unexpectedTalentBlocks > 0 || unexpectedRequisitionBlocks > 0) {
       throw new Error(
-        `Wave 1 execution aborted: ${blocked.talent.length} talent rows and ${blocked.requisitions.length} requisition rows are still blocked.`,
+        `Wave 1 execution aborted: ${unexpectedTalentBlocks} talent rows and ${unexpectedRequisitionBlocks} requisition rows from the approved scope are still blocked.`,
       );
     }
 
