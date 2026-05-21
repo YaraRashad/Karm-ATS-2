@@ -184,6 +184,8 @@ const currencyByEntity = {
 };
 
 const OUTPUT_DIRNAME = "historical-import-output";
+const HISTORICAL_TAG = "Historical Import";
+const HISTORICAL_NEEDS_REVIEW_TAG = "Historical Import - Needs Review";
 
 function normalize(value) {
   return String(value ?? "")
@@ -262,6 +264,49 @@ function normalizePriority(value) {
 
 function normalizeSource(value) {
   return sourceMap.get(normalize(value)) || "other";
+}
+
+function mergeTags(...groups) {
+  return uniqueValues(groups.flat().filter(Boolean));
+}
+
+function buildSourceTag(sheetName, sourceRow) {
+  return `historical-source:${sheetName}:${sourceRow}`;
+}
+
+function buildMissingFieldTag(field) {
+  return `historical-missing:${field}`;
+}
+
+function makeHistoricalPlaceholderEmail(sheetName, sourceRow) {
+  const safeSheet = normalize(sheetName).replace(/[^a-z0-9]+/g, "-");
+  return `historical-import+${safeSheet}-${sourceRow}@needs-review.local`;
+}
+
+function buildNeedsReviewCandidateTags(sheetName, sourceRow, row) {
+  const tags = [HISTORICAL_TAG, HISTORICAL_NEEDS_REVIEW_TAG, buildSourceTag(sheetName, sourceRow)];
+  if (!hasValue(row.Email)) tags.push(buildMissingFieldTag("email"));
+  if (!hasValue(row.Mobile)) tags.push(buildMissingFieldTag("mobile"));
+  return mergeTags(tags);
+}
+
+function buildHistoricalReviewNoteContent({
+  sourceSheet,
+  sourceRow,
+  candidateName,
+  position,
+  summary,
+  details,
+}) {
+  const lines = [
+    `${HISTORICAL_NEEDS_REVIEW_TAG}`,
+    `Source: ${sourceSheet} row ${sourceRow}`,
+    candidateName ? `Candidate: ${candidateName}` : null,
+    position ? `Position: ${position}` : null,
+    `Summary: ${summary}`,
+    ...details.filter(Boolean),
+  ].filter(Boolean);
+  return lines.join("\n");
 }
 
 function uniqueValues(values) {
@@ -402,26 +447,6 @@ function getTalentWorkbookIssues(row, diagnostics) {
       ),
     );
   }
-  if (!email && !mobile) {
-    issues.push(
-      makeIssue(
-        "missing_email_mobile",
-        "Candidate is missing both email and mobile.",
-        "Add at least one reliable candidate identifier, preferably email.",
-        "candidate_match",
-      ),
-    );
-  }
-  if (!email) {
-    issues.push(
-      makeIssue(
-        "missing_email",
-        "Candidate email is missing, and the ATS candidate schema requires email for safe creation.",
-        "Add a valid email address or manually merge this candidate into an existing ATS profile.",
-        "candidate_match",
-      ),
-    );
-  }
   if (hasValue(row.Review_Flag)) {
     issues.push(
       makeIssue(
@@ -463,6 +488,31 @@ function getTalentWorkbookIssues(row, diagnostics) {
     );
   }
 
+  return issues;
+}
+
+function getTalentNeedsReviewIssues(row) {
+  const issues = [];
+  if (!hasValue(row.Email)) {
+    issues.push(
+      makeIssue(
+        "missing_email",
+        "Candidate email is missing and will be imported with a placeholder email for follow-up.",
+        "Update the candidate with a real email address and confirm duplicate safety.",
+        "candidate_match",
+      ),
+    );
+  }
+  if (!hasValue(row.Mobile)) {
+    issues.push(
+      makeIssue(
+        "missing_mobile",
+        "Candidate mobile number is missing.",
+        "Add the candidate mobile number if available during review.",
+        "candidate_match",
+      ),
+    );
+  }
   return issues;
 }
 
@@ -624,26 +674,6 @@ function getInterviewWorkbookIssues(row, requisitionLookup) {
       ),
     );
   }
-  if (!parseDateOrNull(row.Interview_Date)) {
-    issues.push(
-      makeIssue(
-        "invalid_interview_date",
-        "Interview date is missing or invalid.",
-        "Correct the interview date format/value before reprocessing.",
-        "interview_date_fix",
-      ),
-    );
-  }
-  if (!hasValue(row.Interviewer)) {
-    issues.push(
-      makeIssue(
-        "missing_interviewer",
-        "Interviewer value is blank.",
-        "Fill in the interviewer name or email with an active ATS user before reprocessing.",
-        "interviewer_value",
-      ),
-    );
-  }
   if (position && !requisitionLookup.has(position)) {
     issues.push(
       makeIssue(
@@ -655,6 +685,31 @@ function getInterviewWorkbookIssues(row, requisitionLookup) {
     );
   }
 
+  return issues;
+}
+
+function getInterviewNeedsReviewIssues(row) {
+  const issues = [];
+  if (!parseDateOrNull(row.Interview_Date)) {
+    issues.push(
+      makeIssue(
+        "invalid_interview_date",
+        "Interview date is missing or invalid.",
+        "Add or correct the interview date during review.",
+        "interview_date_fix",
+      ),
+    );
+  }
+  if (!hasValue(row.Interviewer)) {
+    issues.push(
+      makeIssue(
+        "missing_interviewer",
+        "Interviewer value is blank.",
+        "Assign the correct interviewer during review.",
+        "interviewer_value",
+      ),
+    );
+  }
   return issues;
 }
 
@@ -728,7 +783,7 @@ async function loadRuntimeState() {
       }),
       prisma.user.findMany({
         where: { isActive: true },
-        select: { id: true, firstName: true, lastName: true, email: true },
+        select: { id: true, firstName: true, lastName: true, email: true, role: true },
       }),
       prisma.candidate.findMany({
         select: {
@@ -871,6 +926,11 @@ async function loadRuntimeState() {
     applicationsByKey,
     interviewsByKey,
     offersByKey,
+    historicalReviewAuthorId:
+      users.find((user) => user.role === "admin")?.id ||
+      users.find((user) => user.role === "recruiter")?.id ||
+      users[0]?.id ||
+      null,
   };
 }
 
@@ -977,6 +1037,7 @@ function buildSummaryBase(workbookPath, databaseCounts) {
       applications: 0,
       interviews: 0,
       offers: 0,
+      reviewNotes: 0,
     },
     resolvedInAts: {
       talent: 0,
@@ -984,6 +1045,7 @@ function buildSummaryBase(workbookPath, databaseCounts) {
       applications: 0,
       interviews: 0,
       offers: 0,
+      reviewNotes: 0,
     },
     importable: {
       talent: 0,
@@ -991,6 +1053,7 @@ function buildSummaryBase(workbookPath, databaseCounts) {
       applications: 0,
       interviews: 0,
       offers: 0,
+      reviewNotes: 0,
     },
     exceptions: [],
     exceptionQueue: {
@@ -1084,6 +1147,7 @@ async function main() {
   const applicationPlans = [];
   const interviewPlans = [];
   const offerPlans = [];
+  const reviewNotePlans = [];
 
   for (const [index, row] of talentRows.entries()) {
     const workbookIssues = getTalentWorkbookIssues(row, talentDiagnostics);
@@ -1117,15 +1181,18 @@ async function main() {
     }
 
     const { firstName, lastName } = splitName(row.Candidate_Name);
+    const sourceRow = rowRef(index, row);
+    const candidateNeedsReviewIssues = getTalentNeedsReviewIssues(row);
     const token = `plan:candidate:${sheetRow}`;
     const plan = {
       token,
       worksheetRow: sheetRow,
-      sourceRow: rowRef(index, row),
+      sourceRow,
+      needsReview: candidateNeedsReviewIssues.length > 0,
       data: {
         firstName,
         lastName,
-        email,
+        email: email || makeHistoricalPlaceholderEmail(SHEETS.talent, sourceRow),
         phone: hasValue(row.Mobile) ? String(row.Mobile).trim() : null,
         currentTitle: hasValue(row.Current_Title) ? String(row.Current_Title).trim() : null,
         currentCompany: hasValue(row.Current_Company) ? String(row.Current_Company).trim() : null,
@@ -1135,7 +1202,10 @@ async function main() {
         location: hasValue(row.Location) ? String(row.Location).trim() : null,
         nationality: hasValue(row.Nationality) ? String(row.Nationality).trim() : null,
         source: normalizeSource(row.Source),
-        tags: [],
+        tags:
+          candidateNeedsReviewIssues.length > 0
+            ? buildNeedsReviewCandidateTags(SHEETS.talent, sourceRow, row)
+            : mergeTags(HISTORICAL_TAG, buildSourceTag(SHEETS.talent, sourceRow)),
       },
     };
 
@@ -1490,24 +1560,48 @@ async function main() {
       continue;
     }
 
+    const interviewNeedsReviewIssues = getInterviewNeedsReviewIssues(row);
     const interviewerMatch = resolveUserIdentifier(row.Interviewer, state);
-    if (interviewerMatch.ambiguous || !interviewerMatch.value) {
-      addException(
-        summary,
-        "interviews",
-        SHEETS.interviews,
-        row,
-        index,
+    if (!hasValue(row.Interviewer)) {
+      // handled as needs-review import note below
+    } else if (interviewerMatch.ambiguous || !interviewerMatch.value) {
+      interviewNeedsReviewIssues.push(
         makeIssue(
           "interviewer_not_resolved",
           "Interviewer could not be uniquely matched to an active ATS user.",
-          "Set the interviewer to an active ATS user email or full name before reprocessing.",
+          "Set the interviewer to an active ATS user email or full name during review.",
           "interviewer_value",
         ),
-        {
-          interviewer: row.Interviewer,
-        },
       );
+    }
+
+    if (interviewNeedsReviewIssues.length > 0) {
+      reviewNotePlans.push({
+        token: `plan:review-note:interview:${sheetRow}`,
+        worksheetRow: sheetRow,
+        sourceRow: rowRef(index, row),
+        applicationToken,
+        candidateName: String(row.Candidate_Name || "").trim(),
+        position: String(row.Position_Title || "").trim(),
+        data: {
+          content: buildHistoricalReviewNoteContent({
+            sourceSheet: SHEETS.interviews,
+            sourceRow: rowRef(index, row),
+            candidateName: String(row.Candidate_Name || "").trim(),
+            position: String(row.Position_Title || "").trim(),
+            summary: "Historical interview imported as Needs Review.",
+            details: [
+              `Interview type: ${String(row.Interview_Type || "").trim() || "(blank)"}`,
+              `Interview status: ${String(row.Interview_Status || "").trim() || "(blank)"}`,
+              `Interview date: ${String(row.Interview_Date || "").trim() || "(blank)"}`,
+              `Interviewer: ${String(row.Interviewer || "").trim() || "(blank)"}`,
+              hasValue(row.Comments) ? `Comments: ${String(row.Comments).trim()}` : "Comments: (blank)",
+              `Missing / review items: ${summarizeIssues(interviewNeedsReviewIssues).issueCodes.join(", ")}`,
+            ],
+          }),
+          isInternal: true,
+        },
+      });
       continue;
     }
 
@@ -1719,6 +1813,7 @@ async function main() {
     applications: applicationPlans.length,
     interviews: interviewPlans.length,
     offers: offerPlans.length,
+    reviewNotes: reviewNotePlans.length,
   };
 
   if (executeMode) {
@@ -1731,7 +1826,14 @@ async function main() {
       applications: 0,
       interviews: 0,
       offers: 0,
+      reviewNotes: 0,
     };
+
+    if (reviewNotePlans.length > 0 && !state.historicalReviewAuthorId) {
+      throw new Error(
+        "Cannot create Historical Import - Needs Review notes because no active ATS user exists to own the note records.",
+      );
+    }
 
     await prisma.$transaction(async (tx) => {
       for (const plan of candidatePlans) {
@@ -1800,6 +1902,44 @@ async function main() {
         actualCreated.interviews += 1;
       }
 
+      for (const plan of reviewNotePlans) {
+        const applicationId = resolveApplicationIdForWrite(
+          plan.applicationToken,
+          state,
+          createdApplicationIds,
+        );
+        if (!applicationId) {
+          addException(
+            summary,
+            "interviews",
+            SHEETS.interviews,
+            {
+              Candidate_Name: plan.candidateName,
+              Position_Title: plan.position,
+              Source_Row: plan.sourceRow,
+            },
+            plan.worksheetRow - 2,
+            makeIssue(
+              "write_time_review_note_resolution_failed",
+              "Needs Review interview note could not be linked to a concrete ATS application at write time.",
+              "Resolve the candidate/requisition/application path, then reprocess this historical interview note.",
+              "application_match",
+            ),
+          );
+          continue;
+        }
+
+        await tx.applicationNote.create({
+          data: {
+            applicationId,
+            authorId: state.historicalReviewAuthorId,
+            content: plan.data.content,
+            isInternal: true,
+          },
+        });
+        actualCreated.reviewNotes += 1;
+      }
+
       for (const plan of offerPlans) {
         const applicationId = resolveApplicationIdForWrite(
           plan.applicationToken,
@@ -1859,12 +1999,14 @@ async function main() {
     `Importable application rows: ${summary.importable.applications}`,
     `Importable interview rows: ${summary.importable.interviews}`,
     `Importable offer rows: ${summary.importable.offers}`,
+    `Importable needs-review notes: ${summary.importable.reviewNotes}`,
     "",
     `Resolved in ATS talent rows: ${summary.resolvedInAts.talent}`,
     `Resolved in ATS requisition rows: ${summary.resolvedInAts.requisitions}`,
     `Resolved in ATS application rows: ${summary.resolvedInAts.applications}`,
     `Resolved in ATS interview rows: ${summary.resolvedInAts.interviews}`,
     `Resolved in ATS offer rows: ${summary.resolvedInAts.offers}`,
+    `Resolved in ATS review notes: ${summary.resolvedInAts.reviewNotes}`,
     "",
     `Blocked talent rows: ${summary.blocked.talent.length}`,
     `Blocked requisition rows: ${summary.blocked.requisitions.length}`,
@@ -1876,7 +2018,7 @@ async function main() {
     `Exception queue CSV: ${summary.exceptionQueue.csvPath}`,
     "",
     executeMode
-      ? `Writes performed: talent=${summary.created.talent}, requisitions=${summary.created.requisitions}, applications=${summary.created.applications}, interviews=${summary.created.interviews}, offers=${summary.created.offers}`
+      ? `Writes performed: talent=${summary.created.talent}, requisitions=${summary.created.requisitions}, applications=${summary.created.applications}, interviews=${summary.created.interviews}, offers=${summary.created.offers}, reviewNotes=${summary.created.reviewNotes}`
       : "Dry-run only, no writes performed.",
   ].join("\n");
 
