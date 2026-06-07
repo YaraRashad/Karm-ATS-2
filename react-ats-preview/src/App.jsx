@@ -6632,6 +6632,7 @@ function ScheduleInterviewModal({ data, closeModal, ctx }) {
     "Panel Interview": "panel",
     "Final Interview": "final",
   };
+  const interviewTypeLabel = Object.fromEntries(Object.entries(interviewTypeMap).map(([label, value]) => [value, label]));
   const interviewerOptions = (ctx.allUsers?.length ? ctx.allUsers : TEAM.map(t => ({
     id: t.email,
     email: t.email,
@@ -6653,16 +6654,29 @@ function ScheduleInterviewModal({ data, closeModal, ctx }) {
       return;
     }
     try {
-      await ctx.backendActions.createInterview({
+      const createdInterview = await ctx.backendActions.createInterview({
         applicationId: form.applicationId,
-        interviewerId: selectedInterviewer.id,
+        ...(selectedInterviewer.id ? { interviewerId: selectedInterviewer.id } : {}),
         interviewerEmail: selectedInterviewer.email,
-        interviewerName: selectedInterviewer.fullName,
         type: interviewTypeMap[form.type] || "technical",
         scheduledAt: form.scheduledAt,
         location: form.format === "In-person" ? "Office" : "",
         meetingLink: form.format === "Video call" ? "TBD" : "",
       });
+      ctx.setInterviews(prev => [
+        ...prev.filter(interview => String(interview.id) !== String(createdInterview?.id)),
+        {
+          id: createdInterview?.id || Date.now(),
+          applicationId: createdInterview?.applicationId || form.applicationId,
+          type: interviewTypeLabel[createdInterview?.type] || form.type,
+          scheduledAt: createdInterview?.scheduledAt || form.scheduledAt,
+          format: createdInterview?.meetingLink ? "Video call" : createdInterview?.location ? "In-person" : form.format,
+          interviewerId: selectedInterviewer.fullName,
+          interviewerUserId: selectedInterviewer.id || "",
+          interviewerEmail: selectedInterviewer.email || "",
+          status: createdInterview?.status === "completed" ? "Completed" : "Scheduled",
+        },
+      ]);
       await ctx.reloadData?.();
       closeModal();
       return;
