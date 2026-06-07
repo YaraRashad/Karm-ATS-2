@@ -1714,6 +1714,23 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
   const avgTimeToFill = fillDurations.length
     ? Math.round(fillDurations.reduce((sum, days) => sum + days, 0) / fillDurations.length)
     : null;
+  const totalPlannedVacancies = jobs.reduce((sum, job) => sum + (Number(job.headcount) || 1), 0);
+  const totalFilledVacancies = hiredApplications.length;
+  const hiringVsPlanRate = totalPlannedVacancies > 0
+    ? Math.min(100, Math.round((totalFilledVacancies / totalPlannedVacancies) * 100))
+    : totalFilledVacancies > 0 ? 100 : null;
+  const acceptedOffers = offers.filter(offer => {
+    const candidateStatus = String(offer.candidateStatus || "").toLowerCase();
+    const status = String(offer.status || "").toLowerCase();
+    return candidateStatus === "accepted" || status === "accepted";
+  }).length;
+  const declinedOffers = offers.filter(offer => {
+    const candidateStatus = String(offer.candidateStatus || "").toLowerCase();
+    const status = String(offer.status || "").toLowerCase();
+    return ["rejected", "declined"].includes(candidateStatus) || ["rejected", "declined", "withdrawn"].includes(status);
+  }).length;
+  const decidedOffers = acceptedOffers + declinedOffers;
+  const offerAcceptanceRate = decidedOffers > 0 ? Math.round((acceptedOffers / decidedOffers) * 100) : null;
 
   const health = {
     green: { label: "Healthy", className: "health-green" },
@@ -1726,6 +1743,8 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
   const offersHealth = pendingOfferCount >= 5 ? health.red : pendingOfferCount > 0 ? health.yellow : health.green;
   const hiresHealth = openJobs.length > 0 && hiresThisMonth.length === 0 ? health.yellow : health.green;
   const fillHealth = avgTimeToFill === null ? health.yellow : avgTimeToFill > 60 ? health.red : avgTimeToFill > 45 ? health.yellow : health.green;
+  const hiringVsPlanHealth = hiringVsPlanRate === null ? health.yellow : hiringVsPlanRate >= 80 ? health.green : hiringVsPlanRate >= 50 ? health.yellow : health.red;
+  const offerAcceptanceHealth = offerAcceptanceRate === null ? health.yellow : offerAcceptanceRate >= 80 ? health.green : offerAcceptanceRate >= 50 ? health.yellow : health.red;
 
   const kpis = [
     { label: "Open requisitions", value: openJobs.length, note: `${jobs.length} total requisitions`, action: openJobs.length === 0 ? "Confirm whether hiring plan is current." : "Click to view open requisitions.", health: openReqHealth, modalType: "openRequisitions" },
@@ -1734,6 +1753,8 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
     { label: "Pending offers", value: pendingOfferCount, note: `${offerStageApplications.length} in Offer stage · ${pendingOfferRecords.length} pending records`, action: pendingOfferCount > 0 ? "Click to view pending offers." : "No offer approvals waiting.", health: offersHealth, modalType: "pendingOffers" },
     { label: "Hires this month", value: hiresThisMonth.length, note: `${hiredApplications.length} total hired records`, action: hiresThisMonth.length === 0 && openJobs.length > 0 ? "Check final stages and offer readiness." : "Click to view new joiners.", health: hiresHealth, modalType: "newJoiners" },
     { label: "Average time to fill", value: avgTimeToFill === null ? "N/A" : `${avgTimeToFill}d`, note: avgTimeToFill === null ? "Shown after dated hires exist" : "Applied date to hire date", action: avgTimeToFill === null ? "Historical dates can be incomplete." : avgTimeToFill > 45 ? "Review slow stages and handoffs." : "Hiring cycle is within target.", health: fillHealth },
+    { label: "Hiring vs plan", value: hiringVsPlanRate === null ? "N/A" : `${hiringVsPlanRate}%`, note: `${totalFilledVacancies}/${totalPlannedVacancies || 0} vacancies filled`, action: hiringVsPlanRate === null ? "No hiring plan data yet." : `${Math.max((totalPlannedVacancies || 0) - totalFilledVacancies, 0)} vacancies still open.`, health: hiringVsPlanHealth },
+    { label: "Offer acceptance rate", value: offerAcceptanceRate === null ? "N/A" : `${offerAcceptanceRate}%`, note: `${acceptedOffers} accepted · ${declinedOffers} declined`, action: offerAcceptanceRate === null ? "Awaiting accepted or declined offers." : "Accepted offers divided by decided offers.", health: offerAcceptanceHealth },
   ];
 
   const funnelDefinitions = [
