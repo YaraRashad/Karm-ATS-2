@@ -1612,6 +1612,10 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
     const normalized = String(value || "").trim().toLowerCase();
     return !normalized || normalized === "recruiter" || normalized === "unassigned" || normalized === "—";
   };
+  const isPlaceholderOfferValue = (value) => {
+    const normalized = String(value || "").trim().toLowerCase();
+    return !normalized || normalized === "candidate" || normalized === "unassigned" || normalized.startsWith("unassigned ");
+  };
   const resolveRecruiterName = (app, job) => {
     if (!isPlaceholderName(app?.recruiter)) return app.recruiter;
     if (!isPlaceholderName(job?.recruiter)) return job.recruiter;
@@ -1743,35 +1747,33 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
   const hiringVsPlanRate = totalPlannedVacancies > 0
     ? Math.min(100, Math.round((totalFilledVacancies / totalPlannedVacancies) * 100))
     : totalFilledVacancies > 0 ? 100 : null;
-  const acceptedOfferRecords = offers.filter(offer => {
-    const candidateStatus = String(offer.candidateStatus || "").toLowerCase();
-    const status = String(offer.status || "").toLowerCase();
-    return candidateStatus === "accepted" || status === "accepted";
-  });
-  const declinedOfferRecords = offers.filter(offer => {
-    const candidateStatus = String(offer.candidateStatus || "").toLowerCase();
-    const status = String(offer.status || "").toLowerCase();
-    return ["rejected", "declined"].includes(candidateStatus) || ["rejected", "declined", "withdrawn"].includes(status);
-  });
-  const acceptedOffers = acceptedOfferRecords.length;
-  const declinedOffers = declinedOfferRecords.length;
-  const decidedOffers = acceptedOffers + declinedOffers;
-  const offerAcceptanceRate = decidedOffers > 0 ? Math.round((acceptedOffers / decidedOffers) * 100) : null;
-  const offerAcceptanceRows = [...acceptedOfferRecords, ...declinedOfferRecords]
+  const offerAcceptanceRows = offers
     .map((offer, index) => {
       const app = applications.find(item => item.id === offer.applicationId);
       const candidate = app ? candidateById.get(app.candidateId) : offer.cand || offer.candidate || null;
       const job = app ? jobById.get(app.jobId) : offer.job || null;
       const candidateStatus = String(offer.candidateStatus || "").toLowerCase();
       const offerStatus = String(offer.status || "").toLowerCase();
-      const decision = candidateStatus === "accepted" || offerStatus === "accepted" ? "Accepted" : "Declined";
+      const isAccepted = candidateStatus === "accepted" || offerStatus === "accepted";
+      const isDeclined = ["rejected", "declined"].includes(candidateStatus) || ["rejected", "declined", "withdrawn"].includes(offerStatus);
+      if (!isAccepted && !isDeclined) return null;
+      const decision = isAccepted ? "Accepted" : "Declined";
+      const candidateName = candidate?.name || offer.candidateName || "";
+      const roleTitle = job?.title || offer.jobTitle || offer.roleTitle || "";
+      const department = job?.dept || offer.department || "";
+      const entity = job?.entity || offer.entity || "";
+      const recruiter = resolveRecruiterName(app, job);
+      const isOrphanTestOffer =
+        String(recruiter || "").trim().toLowerCase() === "ai testing" ||
+        (!app && isPlaceholderOfferValue(candidateName) && isPlaceholderOfferValue(roleTitle) && isPlaceholderOfferValue(department) && isPlaceholderOfferValue(entity));
+      if (isOrphanTestOffer) return null;
       return {
-        id: offer.id || offer.applicationId || `${decision}-${offer.candidateName || offer.candidateId || index}`,
-        candidateName: candidate?.name || offer.candidateName || "Candidate",
-        roleTitle: job?.title || offer.jobTitle || offer.roleTitle || "Unassigned role",
-        department: job?.dept || offer.department || "Unassigned department",
-        entity: job?.entity || offer.entity || "Unassigned entity",
-        recruiter: resolveRecruiterName(app, job),
+        id: offer.id || offer.applicationId || `${decision}-${candidateName || offer.candidateId || index}`,
+        candidateName: candidateName || "Candidate",
+        roleTitle: roleTitle || "Unassigned role",
+        department: department || "Unassigned department",
+        entity: entity || "Unassigned entity",
+        recruiter,
         decision,
         offerStatus: offer.status || decision,
         candidateStatus: offer.candidateStatus || decision,
@@ -1782,7 +1784,12 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
         offer,
       };
     })
+    .filter(Boolean)
     .sort((a, b) => String(b.decisionDate || "").localeCompare(String(a.decisionDate || "")) || a.candidateName.localeCompare(b.candidateName));
+  const acceptedOffers = offerAcceptanceRows.filter(row => row.decision === "Accepted").length;
+  const declinedOffers = offerAcceptanceRows.filter(row => row.decision === "Declined").length;
+  const decidedOffers = acceptedOffers + declinedOffers;
+  const offerAcceptanceRate = decidedOffers > 0 ? Math.round((acceptedOffers / decidedOffers) * 100) : null;
 
   const health = {
     green: { label: "Healthy", className: "health-green" },
