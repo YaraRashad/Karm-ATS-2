@@ -1880,7 +1880,6 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
       progress: row.plannedRoles ? Math.min(100, Math.round((row.filled / row.plannedRoles) * 100)) : row.filled > 0 ? 100 : 0,
     }))
     .sort((a, b) => a.department.localeCompare(b.department));
-  const maxOpenVacancies = Math.max(...planRows.map(row => row.remaining), 1);
   const achievementStatus = progress => progress >= 80
     ? { label: "Green", className: "achievement-green", dotClass: "dot-green" }
     : progress >= 50
@@ -2029,8 +2028,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
               <div className="dashboard-section-body">
                 <div className="achievement-chart">
                   {planRows.map(row => {
-                    const status = achievementStatus(row.progress);
-                    const openVacancyWidth = row.remaining === 0 ? 0 : Math.max(4, Math.round((row.remaining / maxOpenVacancies) * 100));
+                    const achievementWidth = row.progress === 0 ? 0 : Math.max(4, row.progress);
                     return (
                       <div className="achievement-row" key={row.department}>
                         <div className="achievement-row-top">
@@ -2039,8 +2037,8 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
                             {row.progress}% achieved
                           </div>
                         </div>
-                        <div className="achievement-track" aria-label={`${row.department} ${row.remaining} open vacancies and ${row.progress}% achieved`}>
-                          <div className={`achievement-fill ${status.className}`} style={{ width: `${openVacancyWidth}%` }} />
+                        <div className="achievement-track" aria-label={`${row.department} ${row.progress}% achievement and ${row.remaining} open vacancies`}>
+                          <div className="achievement-fill achievement-green" style={{ width: `${achievementWidth}%` }} />
                         </div>
                         <div className="achievement-row-meta">
                           <span>{row.progress}% achievement</span>
