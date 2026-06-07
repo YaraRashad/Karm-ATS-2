@@ -242,6 +242,8 @@ const css = `
   .source-count { font-size: 12px; font-family: var(--mono); color: var(--text3); }
   .chip { display: inline-flex; align-items: center; gap: 5px; background: var(--bg3); border: 1px solid var(--border); border-radius: 20px; padding: 3px 10px; font-size: 11px; color: var(--text2); }
   .chip-remove { background: none; border: none; color: var(--text3); cursor: pointer; font-size: 14px; line-height: 1; display: flex; align-items: center; }
+  .btn-reset { appearance: none; border: 0; background: transparent; color: inherit; font: inherit; text-align: inherit; cursor: pointer; }
+  .btn-reset:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: var(--radius); }
 
   .alert { padding: 12px 16px; border-radius: var(--radius); font-size: 13px; display: flex; gap: 10px; align-items: flex-start; }
   .alert-info { background: var(--accent-soft); border: 1px solid rgba(79,142,247,0.2); color: var(--accent); }
@@ -289,6 +291,43 @@ const css = `
   .achievement-fill.achievement-red { background: var(--red); }
   .achievement-row-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 11px; color: var(--text3); }
   .achievement-status { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); text-transform: uppercase; letter-spacing: .4px; }
+  .chart-dashboard-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; }
+  .chart-card { grid-column: span 4; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: 18px; min-width: 0; overflow: hidden; }
+  .chart-card-wide { grid-column: span 8; }
+  .chart-card-full { grid-column: 1 / -1; }
+  .chart-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  .chart-card-title { font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: 0; }
+  .chart-card-sub { font-size: 12px; color: var(--text3); margin-top: 4px; line-height: 1.35; }
+  .chart-metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 16px; }
+  .chart-metric { text-align: center; padding: 4px 12px; border-right: 1px solid var(--border); min-width: 0; }
+  .chart-metric:last-child { border-right: 0; }
+  .chart-metric-value { font-size: 30px; line-height: 1; font-weight: 800; letter-spacing: 0; color: var(--text); }
+  .chart-metric-label { font-size: 11px; color: var(--text2); margin-top: 6px; line-height: 1.3; }
+  .chart-hero-number { text-align: center; padding: 8px 0 2px; }
+  .chart-hero-value { font-size: 32px; line-height: 1; font-weight: 800; color: var(--text); }
+  .chart-hero-label { color: var(--text2); font-size: 12px; margin-top: 6px; }
+  .donut-wrap { display: grid; justify-items: center; gap: 12px; }
+  .donut-chart { width: 172px; aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center; box-shadow: inset 0 0 0 1px rgba(15, 23, 42, .04); }
+  .donut-center { width: 110px; aspect-ratio: 1; border-radius: 50%; background: var(--bg2); display: grid; place-items: center; text-align: center; box-shadow: 0 0 0 1px var(--border); }
+  .donut-value { font-size: 30px; line-height: 1; font-weight: 800; color: var(--text); }
+  .donut-label { font-size: 11px; color: var(--text3); margin-top: 4px; }
+  .chart-legend { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; color: var(--text3); font-size: 11px; }
+  .chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .pie-chart { width: 180px; aspect-ratio: 1; border-radius: 50%; margin: 4px auto 12px; box-shadow: inset 0 0 0 1px rgba(15, 23, 42, .06); }
+  .chart-bars { display: grid; gap: 13px; }
+  .chart-bar-row { display: grid; gap: 7px; }
+  .chart-bar-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .chart-bar-label { font-size: 13px; font-weight: 700; color: var(--text); }
+  .chart-bar-value { font-size: 12px; color: var(--text2); text-align: right; }
+  .chart-bar-track { height: 12px; border-radius: 999px; background: var(--bg4); overflow: hidden; }
+  .chart-bar-fill { height: 100%; border-radius: 999px; background: var(--green); min-width: 3px; }
+  .chart-bar-meta { display: flex; justify-content: space-between; gap: 12px; color: var(--text3); font-size: 11px; }
+  .funnel-stack { display: grid; gap: 11px; }
+  .funnel-stack-row { display: grid; grid-template-columns: 155px 1fr 54px; gap: 12px; align-items: center; }
+  .funnel-stack-stage { font-size: 12px; font-weight: 700; color: var(--text); }
+  .funnel-stack-track { height: 12px; border-radius: 999px; background: var(--bg4); overflow: hidden; }
+  .funnel-stack-fill { height: 100%; border-radius: 999px; background: var(--accent); }
+  .funnel-stack-count { font-size: 12px; font-family: var(--mono); color: var(--text2); text-align: right; }
   .health-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
   .health-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; background: var(--bg2); min-width: 0; }
   .health-card.clickable { cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s; }
@@ -319,6 +358,7 @@ const css = `
   .empty-panel { padding: 28px 18px; text-align: center; color: var(--text3); font-size: 13px; line-height: 1.5; }
   @media (max-width: 1180px) {
     .health-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .chart-card, .chart-card-wide { grid-column: span 6; }
   }
   @media (max-width: 760px) {
     .page-header { flex-direction: column; align-items: stretch; }
@@ -327,6 +367,13 @@ const css = `
     .health-grid { grid-template-columns: 1fr; }
     .funnel-row { grid-template-columns: 1fr; gap: 6px; }
     .funnel-count { text-align: left; }
+    .chart-dashboard-grid { grid-template-columns: 1fr; }
+    .chart-card, .chart-card-wide, .chart-card-full { grid-column: 1; }
+    .chart-metric-grid { grid-template-columns: 1fr; gap: 12px; }
+    .chart-metric { border-right: 0; border-bottom: 1px solid var(--border); padding-bottom: 12px; }
+    .chart-metric:last-child { border-bottom: 0; }
+    .funnel-stack-row { grid-template-columns: 1fr; gap: 6px; }
+    .funnel-stack-count { text-align: left; }
     .insight-grid, .template-grid, .roadmap-grid, .dashboard-work-grid, .dashboard-breakdown-grid { grid-template-columns: 1fr; }
     .toolbar { align-items: stretch; }
     .toolbar-summary { margin-left: 0; justify-content: stretch; }
@@ -1790,6 +1837,27 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
   const declinedOffers = offerAcceptanceRows.filter(row => row.decision === "Declined").length;
   const decidedOffers = acceptedOffers + declinedOffers;
   const offerAcceptanceRate = decidedOffers > 0 ? Math.round((acceptedOffers / decidedOffers) * 100) : null;
+  const chartColors = ["#fbbf24", "#10b981", "#3b82f6", "#f87171", "#8b5cf6", "#14b8a6", "#f97316"];
+  const sourceMap = new Map();
+  const sourceApplications = hiredApplications.length ? hiredApplications : activeApplications;
+  sourceApplications.forEach(app => {
+    const candidate = candidateById.get(app.candidateId);
+    const source = candidate?.source || "Unknown";
+    sourceMap.set(source, (sourceMap.get(source) || 0) + 1);
+  });
+  const sourceRows = [...sourceMap.entries()]
+    .map(([source, count], index) => ({ source, count, color: chartColors[index % chartColors.length] }))
+    .sort((a, b) => b.count - a.count || a.source.localeCompare(b.source));
+  const sourceTotal = sourceRows.reduce((sum, row) => sum + row.count, 0);
+  let sourceOffset = 0;
+  const sourcePieGradient = sourceRows.length
+    ? `conic-gradient(${sourceRows.map(row => {
+        const start = sourceOffset;
+        const end = sourceOffset + (row.count / sourceTotal) * 100;
+        sourceOffset = end;
+        return `${row.color} ${start}% ${end}%`;
+      }).join(", ")})`
+    : "var(--bg4)";
 
   const health = {
     green: { label: "Healthy", className: "health-green" },
@@ -1951,134 +2019,172 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
         </div>
       </div>
       <div className="page-content">
-        <div className="dashboard-stack">
-          <section className="dashboard-section">
-            <div className="dashboard-section-body">
-              <div className="health-grid">
-                {kpis.map(item => (
-                  <div
-                    className={`health-card ${item.modalType ? "clickable" : ""}`}
-                    key={item.label}
-                    role={item.modalType ? "button" : undefined}
-                    tabIndex={item.modalType ? 0 : undefined}
-                    onClick={item.modalType ? () => openKpiModal(item) : undefined}
-                    onKeyDown={item.modalType ? (event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        openKpiModal(item);
-                      }
-                    } : undefined}
-                    title={kpiTitle(item)}
-                  >
-                    <div className="health-card-top">
-                      <div className="health-label">{item.label}</div>
-                      {renderHealth(item)}
-                    </div>
-                    <div className="health-value">{item.value}</div>
-                    <div className="health-note">{item.note}</div>
-                    <div className="health-action">{item.action}</div>
-                  </div>
-                ))}
+        <div className="chart-dashboard-grid">
+          <section className="chart-card chart-card-wide">
+            <div className="chart-card-head">
+              <div>
+                <div className="chart-card-title">Overall Progress Tracking</div>
+                <div className="chart-card-sub">Live hiring signals from current requisitions, interviews, offers, and hires.</div>
               </div>
-              <div className="health-legend" aria-label="Health indicator legend">
-                <span><i className="health-dot health-green" /> Green healthy</span>
-                <span><i className="health-dot health-yellow" /> Yellow attention</span>
-                <span><i className="health-dot health-red" /> Red critical</span>
+              <span className="badge badge-blue">{openJobs.length} open roles</span>
+            </div>
+            <div className="chart-metric-grid">
+              <button className="chart-metric btn-reset" onClick={() => openKpiModal(kpis[1])} title="View scheduled interviews">
+                <div className="chart-metric-value" style={{ color: "var(--amber)" }}>{scheduledInterviews.length}</div>
+                <div className="chart-metric-label">Scheduled interviews</div>
+              </button>
+              <button className="chart-metric btn-reset" onClick={() => openKpiModal(kpis[2])} title="View pending offers">
+                <div className="chart-metric-value" style={{ color: "var(--green)" }}>{pendingOfferCount}</div>
+                <div className="chart-metric-label">Pending offers</div>
+              </button>
+              <button className="chart-metric btn-reset" onClick={() => openKpiModal(kpis[3])} title="View new joiners">
+                <div className="chart-metric-value" style={{ color: "var(--accent)" }}>{hiresThisMonth.length}</div>
+                <div className="chart-metric-label">Hires this month</div>
+              </button>
+              <div className="chart-metric">
+                <div className="chart-metric-value" style={{ color: "var(--text)" }}>{avgTimeToFill === null ? "N/A" : `${avgTimeToFill}d`}</div>
+                <div className="chart-metric-label">Average time to fill</div>
               </div>
+            </div>
+            <div className="chart-hero-number">
+              <div className="chart-hero-value">{hiringVsPlanRate === null ? "N/A" : `${hiringVsPlanRate}%`}</div>
+              <div className="chart-hero-label">Hiring vs plan · {totalFilledVacancies}/{openPlannedVacancies || 0} vacancies filled</div>
             </div>
           </section>
 
-          <section className="dashboard-section">
-            <div className="dashboard-section-head">
+          <section className="chart-card">
+            <div className="chart-card-head">
               <div>
-                <div className="dashboard-section-title">Recruitment Funnel</div>
-                <div className="dashboard-section-sub">Candidate counts by stage to spot bottlenecks quickly.</div>
+                <div className="chart-card-title">Offer Acceptance</div>
+                <div className="chart-card-sub">{acceptedOffers} accepted · {declinedOffers} declined</div>
               </div>
-              {bottleneck.count > 0 && <span className="badge badge-amber">Largest stage: {bottleneck.label}</span>}
+              {renderHealth(kpis[6])}
             </div>
-            <div className="dashboard-section-body">
-              {applications.length === 0 ? (
-                <div className="empty-panel">No candidate pipeline records are available yet. Stage counts will appear as applications are created or imported.</div>
-              ) : (
-                <div className="funnel-list">
-                  {funnelRows.map(row => (
-                    <div className="funnel-row" key={row.label}>
-                      <div className="funnel-stage">{row.label}</div>
-                      <div className="funnel-bar">
-                        <div className="funnel-fill" style={{ width: row.count === 0 ? 0 : `${Math.max(4, Math.round((row.count / maxFunnel) * 100))}%`, background: row.label === "Hired" ? "var(--teal)" : "var(--accent)" }} />
-                      </div>
-                      <div className="funnel-count">{row.count} candidate{row.count === 1 ? "" : "s"}</div>
+            <button className="btn-reset donut-wrap" onClick={() => openKpiModal(kpis[6])} title="View offer acceptance details">
+              <div className="donut-chart" style={{ background: offerAcceptanceRate === null ? "var(--bg4)" : `conic-gradient(var(--green) 0 ${offerAcceptanceRate}%, var(--red) ${offerAcceptanceRate}% 100%)` }}>
+                <div className="donut-center">
+                  <div>
+                    <div className="donut-value">{offerAcceptanceRate === null ? "N/A" : `${offerAcceptanceRate}%`}</div>
+                    <div className="donut-label">Accepted</div>
+                  </div>
+                </div>
+              </div>
+              <div className="chart-legend">
+                <span><i className="dot dot-green" /> Accepted</span>
+                <span><i className="dot dot-red" /> Declined</span>
+              </div>
+            </button>
+          </section>
+
+          <section className="chart-card">
+            <div className="chart-card-head">
+              <div>
+                <div className="chart-card-title">Talent Source Mix</div>
+                <div className="chart-card-sub">{hiredApplications.length ? "Hired candidates by source" : "Active candidates by source"}</div>
+              </div>
+            </div>
+            {sourceRows.length === 0 ? (
+              <div className="empty-panel">No source data yet.</div>
+            ) : (
+              <>
+                <div className="pie-chart" style={{ background: sourcePieGradient }} />
+                <div className="compact-list">
+                  {sourceRows.slice(0, 5).map(row => (
+                    <div className="compact-row" key={row.source}>
+                      <span className="source-name"><i className="dot" style={{ background: row.color }} /> {row.source}</span>
+                      <span className="source-count">{Math.round((row.count / sourceTotal) * 100)}%</span>
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
+              </>
+            )}
           </section>
 
-          <section className="dashboard-section">
-            <div className="dashboard-section-head">
+          <section className="chart-card chart-card-full">
+            <div className="chart-card-head">
               <div>
-                <div className="dashboard-section-title">Hiring Plan Achievement by Department</div>
-                <div className="dashboard-section-sub">Achievement percentage vs open vacancies by department.</div>
+                <div className="chart-card-title">Hiring Plan Achievement by Department</div>
+                <div className="chart-card-sub">Green bars show percentage of vacancies filled; labels show open vacancies.</div>
               </div>
+              <span className="badge badge-green">Achievement %</span>
             </div>
             {planRows.length === 0 ? (
               <div className="empty-panel">No hiring plan data yet. Achievement will appear once requisitions or hires exist.</div>
             ) : (
-              <div className="dashboard-section-body">
-                <div className="achievement-chart">
-                  {planRows.map(row => {
-                    const achievementWidth = row.progress === 0 ? 0 : Math.max(4, row.progress);
-                    return (
-                      <div className="achievement-row" key={row.department}>
-                        <div className="achievement-row-top">
-                          <div className="achievement-dept">{row.department}</div>
-                          <div className="achievement-summary">
-                            {row.progress}% achieved
-                          </div>
-                        </div>
-                        <div className="achievement-track" aria-label={`${row.department} ${row.progress}% achievement and ${row.remaining} open vacancies`}>
-                          <div className="achievement-fill achievement-green" style={{ width: `${achievementWidth}%` }} />
-                        </div>
-                        <div className="achievement-row-meta">
-                          <span>{row.progress}% achievement</span>
-                          <span>{row.remaining} open vacanc{row.remaining === 1 ? "y" : "ies"}</span>
-                        </div>
+              <div className="chart-bars">
+                {planRows.map(row => {
+                  const achievementWidth = row.progress === 0 ? 0 : Math.max(4, row.progress);
+                  return (
+                    <div className="chart-bar-row" key={row.department}>
+                      <div className="chart-bar-top">
+                        <div className="chart-bar-label">{row.department}</div>
+                        <div className="chart-bar-value">{row.progress}% achieved · {row.filled}/{row.plannedRoles} filled</div>
                       </div>
-                    );
-                  })}
-                </div>
+                      <div className="chart-bar-track" aria-label={`${row.department} ${row.progress}% achievement`}>
+                        <div className="chart-bar-fill" style={{ width: `${achievementWidth}%` }} />
+                      </div>
+                      <div className="chart-bar-meta">
+                        <span>{row.plannedRoles} total vacanc{row.plannedRoles === 1 ? "y" : "ies"}</span>
+                        <span>{row.remaining} open vacanc{row.remaining === 1 ? "y" : "ies"}</span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </section>
 
-          <section className="dashboard-section">
-            <div className="dashboard-section-head">
+          <section className="chart-card chart-card-wide">
+            <div className="chart-card-head">
               <div>
-                <div className="dashboard-section-title">Recruiter Workload</div>
-                <div className="dashboard-section-sub">Ownership view for open requisitions, active candidates, interviews, and hires.</div>
+                <div className="chart-card-title">Recruitment Funnel</div>
+                <div className="chart-card-sub">Stage volume highlights where candidates are collecting.</div>
+              </div>
+              {bottleneck.count > 0 && <span className="badge badge-amber">Largest: {bottleneck.label}</span>}
+            </div>
+            {applications.length === 0 ? (
+              <div className="empty-panel">No candidate pipeline records are available yet.</div>
+            ) : (
+              <div className="funnel-stack">
+                {funnelRows.map((row, index) => (
+                  <div className="funnel-stack-row" key={row.label}>
+                    <div className="funnel-stack-stage">{row.label}</div>
+                    <div className="funnel-stack-track">
+                      <div
+                        className="funnel-stack-fill"
+                        style={{
+                          width: row.count === 0 ? 0 : `${Math.max(4, Math.round((row.count / maxFunnel) * 100))}%`,
+                          background: row.label === "Hired" ? "var(--teal)" : chartColors[index % chartColors.length],
+                        }}
+                      />
+                    </div>
+                    <div className="funnel-stack-count">{row.count}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="chart-card">
+            <div className="chart-card-head">
+              <div>
+                <div className="chart-card-title">Recruiter Workload</div>
+                <div className="chart-card-sub">Top ownership load by active candidates.</div>
               </div>
             </div>
             {recruiterRows.length === 0 ? (
-              <div className="empty-panel">No recruiter workload is available yet. Assign recruiters to requisitions or applications to populate this view.</div>
+              <div className="empty-panel">No recruiter workload is available yet.</div>
             ) : (
-              <div className="table-wrap">
-                <table className="table-compact">
-                  <thead>
-                    <tr><th>Recruiter</th><th>Assigned open requisitions</th><th>Active candidates</th><th>Scheduled interviews</th><th>Hires this month</th></tr>
-                  </thead>
-                  <tbody>
-                    {recruiterRows.map(row => (
-                      <tr key={row.recruiter}>
-                        <td className="strong">{row.recruiter}</td>
-                        <td>{row.openReqs}</td>
-                        <td>{row.activeCandidates}</td>
-                        <td>{row.interviewsThisWeek}</td>
-                        <td>{row.hiresThisMonth}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="compact-list">
+                {recruiterRows.slice(0, 5).map(row => (
+                  <div className="compact-row" key={row.recruiter}>
+                    <div>
+                      <div className="strong">{row.recruiter}</div>
+                      <div className="source-name">{row.openReqs} open reqs · {row.interviewsThisWeek} interviews</div>
+                    </div>
+                    <span className="badge badge-blue">{row.activeCandidates} candidates</span>
+                  </div>
+                ))}
               </div>
             )}
           </section>
