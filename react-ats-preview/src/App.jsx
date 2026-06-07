@@ -4451,7 +4451,7 @@ function InterviewsPage({ interviews, setInterviews, applications, candidates, j
   const canScore = true;
   const canDelete = !!roleConfig.canDeleteRecords;
 
-  const enrichedInterviews = interviews.map(i => {
+  const enrichedInterviews = interviews.filter(i => i.status !== "Cancelled").map(i => {
     const app = applications.find(a => a.id === i.applicationId);
     const cand = app ? candidates.find(c => c.id === app.candidateId) : null;
     const job = app ? jobs.find(j => j.id === app.jobId) : null;

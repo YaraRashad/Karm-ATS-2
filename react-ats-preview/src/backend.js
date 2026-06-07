@@ -332,17 +332,20 @@ export function mapBackendData({ positions = [], candidates = [], applications =
     lastActivityAt: a.updatedAt || a.stageEnteredAt,
   }));
 
-  const interviewRows = interviews.map(i => ({
-    id: i.id,
-    applicationId: i.applicationId,
-    type: i.type,
-    scheduledAt: i.scheduledAt,
-    format: i.meetingLink ? "Video call" : i.location ? "In-person" : "Phone",
-    interviewerId: fullName(i.interviewer),
-    interviewerUserId: i.interviewer?.id || "",
-    interviewerEmail: i.interviewer?.email || "",
-    status: i.status === "completed" ? "Completed" : "Scheduled",
-  }));
+  const interviewRows = interviews.map(i => {
+    const rawStatus = String(i.status || "").toLowerCase();
+    return {
+      id: i.id,
+      applicationId: i.applicationId,
+      type: i.type,
+      scheduledAt: i.scheduledAt,
+      format: i.meetingLink ? "Video call" : i.location ? "In-person" : "Phone",
+      interviewerId: fullName(i.interviewer),
+      interviewerUserId: i.interviewer?.id || "",
+      interviewerEmail: i.interviewer?.email || "",
+      status: rawStatus === "completed" ? "Completed" : rawStatus === "cancelled" ? "Cancelled" : "Scheduled",
+    };
+  });
 
   const offerRows = offers.map(o => ({
     id: o.id,
