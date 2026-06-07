@@ -2011,7 +2011,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
             <div className="dashboard-section-head">
               <div>
                 <div className="dashboard-section-title">Hiring Plan Achievement by Department</div>
-                <div className="dashboard-section-sub">Filled vacancies against planned hiring by department.</div>
+                <div className="dashboard-section-sub">Open vacancies by department.</div>
               </div>
             </div>
             {planRows.length === 0 ? (
@@ -2026,16 +2026,14 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
                         <div className="achievement-row-top">
                           <div className="achievement-dept">{row.department}</div>
                           <div className="achievement-summary">
-                            {row.progress}% achieved · {row.filled}/{row.plannedRoles} filled
+                            {row.remaining} open vacanc{row.remaining === 1 ? "y" : "ies"}
                           </div>
                         </div>
                         <div className="achievement-track" aria-label={`${row.department} ${row.progress}% achieved`}>
                           <div className={`achievement-fill ${status.className}`} style={{ width: `${Math.max(row.progress, row.filled > 0 ? 3 : 0)}%` }} />
                         </div>
                         <div className="achievement-row-meta">
-                          <span>{row.plannedRoles} total vacancies · {row.plannedReqs} planned requisition{row.plannedReqs === 1 ? "" : "s"}</span>
                           <span>{row.remaining} open vacanc{row.remaining === 1 ? "y" : "ies"}</span>
-                          <span className="achievement-status"><i className={`dot ${status.dotClass}`} /> {status.label}</span>
                         </div>
                       </div>
                     );
