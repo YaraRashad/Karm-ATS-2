@@ -1832,11 +1832,19 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
   const activeFunnelRows = funnelRows.filter(row => row.label !== "Hired");
   const bottleneck = activeFunnelRows.reduce((max, row) => row.count > max.count ? row : max, { label: "None", count: 0 });
 
+  const normalizePlanDepartment = (dept) => {
+    const label = (dept || "Unassigned").trim() || "Unassigned";
+    const key = label.toLowerCase();
+    if (key === "development") return "Business Development";
+    if (key === "o&m office" || key === "o&m distribution") return "O&M";
+    return label;
+  };
+
   const planMap = new Map();
   jobs.forEach(job => {
-    const key = job.dept || "Unassigned";
+    const key = normalizePlanDepartment(job.dept);
     const current = planMap.get(key) || {
-      department: job.dept || "Unassigned",
+      department: key,
       entities: new Set(),
       plannedReqs: 0,
       plannedRoles: 0,
@@ -1851,9 +1859,9 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
   });
   hiredApplications.forEach(app => {
     const job = jobById.get(app.jobId);
-    const key = job?.dept || "Unassigned";
+    const key = normalizePlanDepartment(job?.dept);
     const current = planMap.get(key) || {
-      department: job?.dept || "Unassigned",
+      department: key,
       entities: new Set(),
       plannedReqs: 0,
       plannedRoles: 0,
@@ -1872,6 +1880,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
       progress: row.plannedRoles ? Math.min(100, Math.round((row.filled / row.plannedRoles) * 100)) : row.filled > 0 ? 100 : 0,
     }))
     .sort((a, b) => a.department.localeCompare(b.department));
+  const maxOpenVacancies = Math.max(...planRows.map(row => row.remaining), 1);
   const achievementStatus = progress => progress >= 80
     ? { label: "Green", className: "achievement-green", dotClass: "dot-green" }
     : progress >= 50
@@ -2021,16 +2030,17 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
                 <div className="achievement-chart">
                   {planRows.map(row => {
                     const status = achievementStatus(row.progress);
+                    const openVacancyWidth = row.remaining === 0 ? 0 : Math.max(4, Math.round((row.remaining / maxOpenVacancies) * 100));
                     return (
                       <div className="achievement-row" key={row.department}>
                         <div className="achievement-row-top">
                           <div className="achievement-dept">{row.department}</div>
                           <div className="achievement-summary">
-                            {row.progress}% achieved · {row.remaining} open vacanc{row.remaining === 1 ? "y" : "ies"}
+                            {row.progress}% achieved
                           </div>
                         </div>
-                        <div className="achievement-track" aria-label={`${row.department} ${row.progress}% achieved`}>
-                          <div className={`achievement-fill ${status.className}`} style={{ width: `${Math.max(row.progress, row.filled > 0 ? 3 : 0)}%` }} />
+                        <div className="achievement-track" aria-label={`${row.department} ${row.remaining} open vacancies and ${row.progress}% achieved`}>
+                          <div className={`achievement-fill ${status.className}`} style={{ width: `${openVacancyWidth}%` }} />
                         </div>
                         <div className="achievement-row-meta">
                           <span>{row.progress}% achievement</span>
