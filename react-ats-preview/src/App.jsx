@@ -263,9 +263,47 @@ const css = `
   .roadmap-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
   .readiness-bar { height: 8px; background: var(--bg4); border-radius: 999px; overflow: hidden; margin-top: 8px; }
   .readiness-bar-fill { height: 100%; background: var(--teal); border-radius: 999px; }
+  .dashboard-stack { display: grid; gap: 18px; }
+  .dashboard-section { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+  .dashboard-section-head { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .dashboard-section-title { font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: 0; }
+  .dashboard-section-sub { font-size: 12px; color: var(--text3); margin-top: 3px; }
+  .dashboard-section-body { padding: 18px 20px; }
+  .health-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+  .health-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; background: var(--bg2); min-width: 0; }
+  .health-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+  .health-label { font-size: 11px; font-family: var(--mono); text-transform: uppercase; color: var(--text3); letter-spacing: .4px; line-height: 1.35; }
+  .health-value { font-size: 26px; line-height: 1; font-weight: 700; color: var(--text); letter-spacing: 0; }
+  .health-note { font-size: 11px; color: var(--text3); margin-top: 8px; line-height: 1.35; }
+  .health-action { font-size: 12px; color: var(--text2); margin-top: 10px; line-height: 1.35; }
+  .health-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-family: var(--mono); color: var(--text2); white-space: nowrap; }
+  .health-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .health-green { background: var(--green); }
+  .health-yellow { background: var(--amber); }
+  .health-red { background: var(--red); }
+  .health-legend { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 14px; color: var(--text3); font-size: 11px; }
+  .health-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .funnel-list { display: grid; gap: 11px; }
+  .funnel-row { display: grid; grid-template-columns: 170px 1fr 70px; gap: 12px; align-items: center; }
+  .funnel-stage { font-size: 13px; font-weight: 600; color: var(--text); }
+  .funnel-bar { height: 10px; background: var(--bg4); border-radius: 999px; overflow: hidden; }
+  .funnel-fill { height: 100%; border-radius: 999px; background: var(--accent); }
+  .funnel-count { font-size: 12px; font-family: var(--mono); color: var(--text2); text-align: right; }
+  .table-compact th, .table-compact td { padding: 11px 14px; }
+  .progress-cell { min-width: 130px; }
+  .progress-track { height: 7px; background: var(--bg4); border-radius: 999px; overflow: hidden; margin-top: 5px; }
+  .progress-fill { height: 100%; background: var(--teal); border-radius: 999px; }
+  .empty-panel { padding: 28px 18px; text-align: center; color: var(--text3); font-size: 13px; line-height: 1.5; }
+  @media (max-width: 1180px) {
+    .health-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
   @media (max-width: 760px) {
     .page-header { flex-direction: column; align-items: stretch; }
     .stat-grid { grid-template-columns: 1fr; }
+    .dashboard-section-head { flex-direction: column; align-items: stretch; }
+    .health-grid { grid-template-columns: 1fr; }
+    .funnel-row { grid-template-columns: 1fr; gap: 6px; }
+    .funnel-count { text-align: left; }
     .insight-grid, .template-grid, .roadmap-grid, .dashboard-work-grid, .dashboard-breakdown-grid { grid-template-columns: 1fr; }
     .toolbar { align-items: stretch; }
     .toolbar > div, .toolbar .form-select, .search-input { width: 100% !important; }
@@ -1617,290 +1655,301 @@ function RoadmapPanel() {
 }
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
-function DashboardPage({ jobs, candidates, applications, offers, interviews, scorecards, hiringRequests = [], dashboardAuditLogs = [], currentRole, roleConfig, openModal }) {
-  const openJobs = jobs.filter(j => j.status === "Open").length;
-  const activeApps = applications.filter(a => a.status === "Active").length;
-  const hiredApps = applications.filter(a => a.stage === "Hired").length;
-  const pendingOffers = offers.filter(o => o.status === "Pending Approval").length;
-  const openEntityCount = new Set(jobs.filter(j => j.status === "Open").map(j => j.entity)).size;
-  const plannedRoles = jobs.reduce((sum, j) => sum + (Number(j.headcount) || 0), 0);
-  const filledVsPlan = `${hiredApps}/${plannedRoles}`;
-  const acceptedOffers = offers.filter(o => o.candidateStatus === "Accepted" || o.status === "Accepted").length;
-  const offerAcceptance = offers.length ? Math.round((acceptedOffers / offers.length) * 100) : 0;
-  const interviewedApps = applications.filter(a => ["1st Interview","Technical Interview","Final Interview","Offer","Hired"].includes(a.stage)).length;
-  const offerStageApps = applications.filter(a => ["Offer","Hired"].includes(a.stage)).length + offers.length;
-  const dropOffRate = interviewedApps ? Math.max(0, Math.round(((interviewedApps - offerStageApps) / interviewedApps) * 100)) : 0;
-  const rejectedByReason = applications.filter(a => a.stage === "Rejected" || a.status === "Rejected").reduce((acc, app) => {
-    const reason = app.rejectionReason || "Role fit / not progressed";
-    acc[reason] = (acc[reason] || 0) + 1;
-    return acc;
-  }, {});
-  const recruiterCount = applications.reduce((acc, app) => {
-    const recruiter = app.recruiter || "Unassigned";
-    acc[recruiter] = (acc[recruiter] || 0) + 1;
-    return acc;
-  }, {});
+function DashboardPage({ jobs, candidates, applications, offers, interviews, hiringRequests = [] }) {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const weekStart = new Date(today);
+  weekStart.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 7);
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const nextMonthStart = new Date(today.getFullYear(), today.getMonth() + 1, 1);
 
-  const stageCount = {};
-  PIPELINE_STAGES.forEach(s => { stageCount[s] = applications.filter(a => a.stage === s && a.status === "Active").length; });
-
-  const sourceCount = {};
-  candidates.forEach(c => { sourceCount[c.source] = (sourceCount[c.source] || 0) + 1; });
-  const topSources = Object.entries(sourceCount).sort((a, b) => b[1] - a[1]);
-  const maxSource = Math.max(...Object.values(sourceCount), 1);
-
-  const activityColor = (action) => {
-    const normalized = String(action || "").toLowerCase();
-    if (normalized.includes("offer")) return "#f59e0b";
-    if (normalized.includes("reject")) return "#f87171";
-    if (normalized.includes("interview") || normalized.includes("scorecard")) return "#2dd4b4";
-    if (normalized.includes("candidate")) return "#4f8ef7";
-    if (normalized.includes("requisition") || normalized.includes("position")) return "#a78bfa";
-    return "#4f8ef7";
+  const parseDate = (value) => {
+    if (!value) return null;
+    const parsed = new Date(String(value).replace(" ", "T"));
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
   };
-  const activityText = (log) => {
-    const action = log.action ? String(log.action) : "System activity";
-    const user = log.user ? ` by ${log.user}` : "";
-    const change = log.newValue && log.newValue !== "—" ? ` → ${log.newValue}` : "";
-    return `${action}${change}${user}`;
+  const isThisWeek = (value) => {
+    const date = parseDate(value);
+    return Boolean(date && date >= weekStart && date < weekEnd);
   };
-  const recentActivities = dashboardAuditLogs
-    .slice(0, 8)
-    .map(log => ({
-      id: log.id,
-      text: activityText(log),
-      time: formatRelativeActivity(log.at),
-      color: activityColor(log.action),
-    }));
+  const isThisMonth = (value) => {
+    const date = parseDate(value);
+    return Boolean(date && date >= monthStart && date < nextMonthStart);
+  };
+  const isActiveApplication = (app) => app.status === "Active" && !["Hired", "Rejected", "On Hold"].includes(app.stage);
+  const jobById = new Map(jobs.map(job => [job.id, job]));
+  const activeApplications = applications.filter(isActiveApplication);
+  const activeCandidateIds = new Set(activeApplications.map(app => app.candidateId).filter(Boolean));
+  const openJobs = jobs.filter(job => job.status === "Open");
+  const pendingOffers = offers.filter(offer => ["Pending Approval", "Pending HR Approval", "Pending"].includes(offer.status));
+  const interviewsThisWeek = interviews.filter(interview => isThisWeek(interview.scheduledAt) && interview.status !== "Cancelled");
+  const hiredApplications = applications.filter(app => app.stage === "Hired");
+  const hiresThisMonth = hiredApplications.filter(app => {
+    const dateValue = app.hiredAt || app.closedAt || app.updatedAt || app.lastActivityAt;
+    return dateValue ? isThisMonth(dateValue) : true;
+  });
+  const fillDurations = hiredApplications
+    .map(app => {
+      const start = parseDate(app.appliedDate || app.appliedAt);
+      const end = parseDate(app.hiredAt || app.closedAt || app.updatedAt || app.lastActivityAt);
+      if (!start || !end || end < start) return null;
+      return Math.round((end - start) / 86400000);
+    })
+    .filter(days => Number.isFinite(days));
+  const avgTimeToFill = fillDurations.length
+    ? Math.round(fillDurations.reduce((sum, days) => sum + days, 0) / fillDurations.length)
+    : null;
+
+  const health = {
+    green: { label: "Healthy", className: "health-green" },
+    yellow: { label: "Attention", className: "health-yellow" },
+    red: { label: "Critical", className: "health-red" },
+  };
+  const openReqHealth = openJobs.length === 0 ? health.yellow : health.green;
+  const activeCandidateHealth = openJobs.length > 0 && activeCandidateIds.size === 0 ? health.red : activeCandidateIds.size < openJobs.length ? health.yellow : health.green;
+  const interviewsHealth = activeApplications.length > 0 && interviewsThisWeek.length === 0 ? health.yellow : health.green;
+  const offersHealth = pendingOffers.length >= 5 ? health.red : pendingOffers.length > 0 ? health.yellow : health.green;
+  const hiresHealth = openJobs.length > 0 && hiresThisMonth.length === 0 ? health.yellow : health.green;
+  const fillHealth = avgTimeToFill === null ? health.yellow : avgTimeToFill > 60 ? health.red : avgTimeToFill > 45 ? health.yellow : health.green;
+
+  const kpis = [
+    { label: "Open requisitions", value: openJobs.length, note: `${jobs.length} total requisitions`, action: openJobs.length === 0 ? "Confirm whether hiring plan is current." : "Keep owners assigned and roles moving.", health: openReqHealth },
+    { label: "Active candidates", value: activeCandidateIds.size, note: `${activeApplications.length} active applications`, action: activeCandidateIds.size < openJobs.length ? "Add sourcing focus to thin pipelines." : "Pipeline has candidate coverage.", health: activeCandidateHealth },
+    { label: "Interviews this week", value: interviewsThisWeek.length, note: "Scheduled or completed interviews", action: interviewsThisWeek.length === 0 && activeApplications.length > 0 ? "Schedule next interviews for active candidates." : "Review upcoming interview load.", health: interviewsHealth },
+    { label: "Pending offers", value: pendingOffers.length, note: "Awaiting approval or response", action: pendingOffers.length > 0 ? "Follow up on approval and candidate response." : "No offer approvals waiting.", health: offersHealth },
+    { label: "Hires this month", value: hiresThisMonth.length, note: `${hiredApplications.length} total hired records`, action: hiresThisMonth.length === 0 && openJobs.length > 0 ? "Check final stages and offer readiness." : "Month-to-date hires are visible.", health: hiresHealth },
+    { label: "Average time to fill", value: avgTimeToFill === null ? "N/A" : `${avgTimeToFill}d`, note: avgTimeToFill === null ? "Shown after dated hires exist" : "Applied date to hire date", action: avgTimeToFill === null ? "Historical dates can be incomplete." : avgTimeToFill > 45 ? "Review slow stages and handoffs." : "Hiring cycle is within target.", health: fillHealth },
+  ];
+
+  const funnelDefinitions = [
+    { label: "Applied/New", stages: ["Applied"] },
+    { label: "Screening", stages: ["HR Screening", "HM Review"] },
+    { label: "HR Interview", stages: ["1st Interview"] },
+    { label: "Technical Interview", stages: ["Technical Interview"] },
+    { label: "Final/EXCOM/CEO", stages: ["Final Interview"] },
+    { label: "Offer", stages: ["Offer"] },
+    { label: "Hired", stages: ["Hired"] },
+  ];
+  const funnelRows = funnelDefinitions.map(item => ({
+    ...item,
+    count: applications.filter(app => item.stages.includes(app.stage) && app.status !== "Rejected").length,
+  }));
+  const maxFunnel = Math.max(...funnelRows.map(row => row.count), 1);
+  const activeFunnelRows = funnelRows.filter(row => row.label !== "Hired");
+  const bottleneck = activeFunnelRows.reduce((max, row) => row.count > max.count ? row : max, { label: "None", count: 0 });
+
+  const planMap = new Map();
+  jobs.forEach(job => {
+    const key = `${job.dept || "Unassigned"}||${job.entity || "Unassigned"}`;
+    const current = planMap.get(key) || {
+      department: job.dept || "Unassigned",
+      entity: job.entity || "Unassigned",
+      plannedReqs: 0,
+      plannedRoles: 0,
+      open: 0,
+      filled: 0,
+    };
+    current.plannedReqs += 1;
+    current.plannedRoles += Number(job.headcount) || 1;
+    if (job.status === "Open") current.open += 1;
+    planMap.set(key, current);
+  });
+  hiredApplications.forEach(app => {
+    const job = jobById.get(app.jobId);
+    const key = `${job?.dept || "Unassigned"}||${job?.entity || "Unassigned"}`;
+    const current = planMap.get(key) || {
+      department: job?.dept || "Unassigned",
+      entity: job?.entity || "Unassigned",
+      plannedReqs: 0,
+      plannedRoles: 0,
+      open: 0,
+      filled: 0,
+    };
+    current.filled += 1;
+    planMap.set(key, current);
+  });
+  const planRows = [...planMap.values()]
+    .map(row => ({
+      ...row,
+      remaining: Math.max(row.plannedRoles - row.filled, 0),
+      progress: row.plannedRoles ? Math.min(100, Math.round((row.filled / row.plannedRoles) * 100)) : row.filled > 0 ? 100 : 0,
+    }))
+    .sort((a, b) => a.department.localeCompare(b.department) || a.entity.localeCompare(b.entity));
+
+  const recruiterMap = new Map();
+  const ensureRecruiter = (name) => {
+    const key = name || "Unassigned";
+    if (!recruiterMap.has(key)) {
+      recruiterMap.set(key, { recruiter: key, openReqs: 0, activeCandidates: 0, interviewsThisWeek: 0, overdue: 0, hiresThisMonth: 0 });
+    }
+    return recruiterMap.get(key);
+  };
+  openJobs.forEach(job => {
+    ensureRecruiter(job.recruiter).openReqs += 1;
+  });
+  activeApplications.forEach(app => {
+    const job = jobById.get(app.jobId);
+    const row = ensureRecruiter(app.recruiter || job?.recruiter);
+    row.activeCandidates += 1;
+    if ((Number(app.daysInStage) || 0) >= 5) row.overdue += 1;
+  });
+  interviewsThisWeek.forEach(interview => {
+    const app = applications.find(item => item.id === interview.applicationId);
+    const job = app ? jobById.get(app.jobId) : null;
+    ensureRecruiter(app?.recruiter || job?.recruiter).interviewsThisWeek += 1;
+  });
+  hiresThisMonth.forEach(app => {
+    const job = jobById.get(app.jobId);
+    ensureRecruiter(app.recruiter || job?.recruiter).hiresThisMonth += 1;
+  });
+  const recruiterRows = [...recruiterMap.values()].sort((a, b) => {
+    const totalA = a.openReqs + a.activeCandidates + a.interviewsThisWeek + a.overdue + a.hiresThisMonth;
+    const totalB = b.openReqs + b.activeCandidates + b.interviewsThisWeek + b.overdue + b.hiresThisMonth;
+    return totalB - totalA || a.recruiter.localeCompare(b.recruiter);
+  });
+
+  const renderHealth = (item) => (
+    <span className="health-pill">
+      <span className={`health-dot ${item.health.className}`} />
+      {item.health.label}
+    </span>
+  );
 
   return (
     <>
       <div className="page-header">
         <div>
           <div className="page-title">Karm. ATS Dashboard</div>
+          <div className="page-sub">Operational hiring health, funnel bottlenecks, plan progress, and recruiter workload.</div>
         </div>
       </div>
       <div className="page-content">
-        <OperationalDashboardPanel
-          jobs={jobs}
-          candidates={candidates}
-          applications={applications}
-          offers={offers}
-          interviews={interviews}
-          scorecards={scorecards}
-          hiringRequests={hiringRequests}
-        />
-
-        {/* STATS */}
-        <div className="stat-grid" style={{ marginBottom: 20 }}>
-          <div className="stat-card">
-            <div className="stat-label">Open requisitions</div>
-            <div className="stat-value">{openJobs}</div>
-            <div className="stat-sub"><span className="dot dot-green" /> {openJobs} across {openEntityCount} {openEntityCount === 1 ? "entity" : "entities"}</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">Active applications</div>
-            <div className="stat-value">{activeApps}</div>
-            <div className="stat-sub"><span className="dot dot-blue" /> In active hiring pipeline</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">Pending offers</div>
-            <div className="stat-value" style={{ color: pendingOffers > 0 ? "var(--amber)" : "var(--text)" }}>{pendingOffers}</div>
-            <div className="stat-sub"><span className="dot dot-amber" /> Awaiting approval</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">Hires this month</div>
-            <div className="stat-value" style={{ color: "var(--teal)" }}>{hiredApps}</div>
-            <div className="stat-sub"><span className="dot dot-green" /> Total confirmed</div>
-          </div>
-        </div>
-
-        <div className="stat-grid" style={{ marginBottom: 20 }}>
-          <div className="stat-card">
-            <div className="stat-label">Time to hire</div>
-            <div className="stat-value">31d</div>
-            <div className="stat-sub"><span className="dot dot-blue" /> Avg. from applied to offer</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">Filled vs plan</div>
-            <div className="stat-value">{filledVsPlan}</div>
-            <div className="stat-sub"><span className="dot dot-green" /> Confirmed hires / headcount plan</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">Offer acceptance</div>
-            <div className="stat-value">{offerAcceptance}%</div>
-            <div className="stat-sub"><span className="dot dot-amber" /> Accepted offers</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">Interview drop-off</div>
-            <div className="stat-value">{dropOffRate}%</div>
-            <div className="stat-sub"><span className="dot dot-red" /> Interview to offer loss</div>
-          </div>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 16 }}>
-
-          {/* PIPELINE FUNNEL */}
-          <div className="card" style={{ gridColumn: "span 2" }}>
-            <div className="card-header"><div className="card-title">Applications by stage</div></div>
-            <div className="card-body">
-              {PIPELINE_STAGES.map(stage => {
-                const count = stageCount[stage] || 0;
-                const pct = Math.round((count / Math.max(activeApps, 1)) * 100);
-                return (
-                  <div key={stage} style={{ marginBottom: 10 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ width: 8, height: 8, borderRadius: "50%", background: stageColor(stage), display: "inline-block", flexShrink: 0 }} />
-                        <span style={{ fontSize: 12, color: "var(--text2)" }}>{stage}</span>
-                      </div>
-                      <span style={{ fontSize: 11, fontFamily: "var(--mono)", color: "var(--text3)" }}>{count} application{count !== 1 ? "s" : ""}</span>
-                    </div>
-                    <div className="mini-bar">
-                      <div className="mini-bar-fill" style={{ width: `${pct}%`, background: stageColor(stage) }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* RECENT ACTIVITY */}
-          <div className="card">
-            <div className="card-header"><div className="card-title">Recent activity</div></div>
-            <div className="card-body" style={{ padding: "12px 20px" }}>
-              {recentActivities.length > 0 ? recentActivities.map((a, i) => (
-                <div key={a.id || i} className="activity-item">
-                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: a.color, marginTop: 5, flexShrink: 0 }} />
-                  <div>
-                    <div className="activity-text">{a.text}</div>
-                    <div className="activity-time">{a.time}</div>
-                  </div>
-                </div>
-              )) : (
-                <div style={{ padding: "24px 0", color: "var(--text3)", fontSize: 12, textAlign: "center" }}>
-                  No production activity recorded yet.
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-          {/* OPEN REQS */}
-          <div className="card">
-            <div className="card-header"><div className="card-title">Open requisitions</div></div>
-            <div className="table-wrap">
-              <table>
-                <thead><tr><th>Role</th><th>Entity</th><th>Applications</th><th>Status</th></tr></thead>
-                <tbody>
-                  {jobs.filter(j => j.status === "Open").map(j => {
-                    const appCount = applications.filter(a => a.jobId === j.id && a.status === "Active").length;
-                    return (
-                      <tr key={j.id}>
-                        <td className="strong">{j.title}</td>
-                        <td><span className="tag">{j.entity}</span></td>
-                        <td style={{ fontFamily: "var(--mono)", color: "var(--accent)" }}>{appCount}</td>
-                        <td><span className={`badge ${jobStatusBadge(j.status)}`}>{j.status}</span></td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* SOURCE BREAKDOWN */}
-          <div className="card">
-            <div className="card-header"><div className="card-title">Talent sources</div></div>
-            <div className="card-body">
-              {topSources.map(([source, count]) => (
-                <div key={source} style={{ marginBottom: 12 }}>
-                  <div className="source-row">
-                    <span className="source-name">{source}</span>
-                    <span className="source-count">{count} profile{count !== 1 ? "s" : ""}</span>
-                  </div>
-                  <div className="mini-bar">
-                    <div className="mini-bar-fill" style={{ width: `${(count / maxSource) * 100}%`, background: "var(--accent)" }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
-          <div className="card">
-            <div className="card-header"><div className="card-title">Rejected applications by reason</div></div>
-            <div className="card-body">
-              {Object.keys(rejectedByReason).length === 0 ? (
-                <div style={{ fontSize: 13, color: "var(--text3)" }}>No rejected applications recorded yet.</div>
-              ) : Object.entries(rejectedByReason).map(([reason, count]) => (
-                <div key={reason} className="source-row">
-                  <span className="source-name">{reason}</span>
-                  <span className="source-count">{count}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="card">
-            <div className="card-header"><div className="card-title">Applications per recruiter</div></div>
-            <div className="card-body">
-              {Object.entries(recruiterCount).map(([recruiter, count]) => (
-                <div key={recruiter} style={{ marginBottom: 12 }}>
-                  <div className="source-row">
-                    <span className="source-name">{recruiter}</span>
-                    <span className="source-count">{count} application{count === 1 ? "" : "s"}</span>
-                  </div>
-                  <div className="mini-bar">
-                    <div className="mini-bar-fill" style={{ width: `${(count / Math.max(...Object.values(recruiterCount), 1)) * 100}%`, background: "var(--teal)" }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* HIRES PER DEPARTMENT */}
-        {(() => {
-          const hiredByDept = {};
-          applications.filter(a => a.stage === "Hired").forEach(a => {
-            const job = jobs.find(j => j.id === a.jobId);
-            if (job) hiredByDept[job.dept] = (hiredByDept[job.dept] || 0) + 1;
-          });
-          // Also count from initApplications for demo data richness
-          const deptEntries = Object.entries(hiredByDept).sort((a, b) => b[1] - a[1]);
-          const maxHires = Math.max(...deptEntries.map(([,n]) => n), 1);
-          return (
-            <div className="card" style={{ marginTop: 16 }}>
-              <div className="card-header">
-                <div className="card-title">Total hires by department</div>
-                <span className="badge badge-green">{applications.filter(a => a.stage === "Hired").length} total hired</span>
+        <div className="dashboard-stack">
+          <section className="dashboard-section">
+            <div className="dashboard-section-head">
+              <div>
+                <div className="dashboard-section-title">Hiring Health</div>
+                <div className="dashboard-section-sub">Daily signals for where recruiting needs attention.</div>
               </div>
-              {deptEntries.length === 0 ? (
-                <div className="card-body" style={{ textAlign: "center", color: "var(--text3)", padding: "32px" }}>
-                  No hires recorded yet — move candidates to the Hired stage to see data here.
-                </div>
-              ) : (
-                <div className="card-body">
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "16px 24px" }}>
-                    {deptEntries.map(([dept, count]) => (
-                      <div key={dept}>
-                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                          <span style={{ fontSize: 12, color: "var(--text2)", fontWeight: 500 }}>{dept}</span>
-                          <span style={{ fontSize: 12, fontFamily: "var(--mono)", color: "var(--teal)", fontWeight: 600 }}>{count}</span>
-                        </div>
-                        <div className="mini-bar">
-                          <div className="mini-bar-fill" style={{ width: `${(count / maxHires) * 100}%`, background: "var(--teal)" }} />
-                        </div>
-                      </div>
-                    ))}
+            </div>
+            <div className="dashboard-section-body">
+              <div className="health-grid">
+                {kpis.map(item => (
+                  <div className="health-card" key={item.label}>
+                    <div className="health-card-top">
+                      <div className="health-label">{item.label}</div>
+                      {renderHealth(item)}
+                    </div>
+                    <div className="health-value">{item.value}</div>
+                    <div className="health-note">{item.note}</div>
+                    <div className="health-action">{item.action}</div>
                   </div>
+                ))}
+              </div>
+              <div className="health-legend" aria-label="Health indicator legend">
+                <span><i className="health-dot health-green" /> Green healthy</span>
+                <span><i className="health-dot health-yellow" /> Yellow attention</span>
+                <span><i className="health-dot health-red" /> Red critical</span>
+              </div>
+            </div>
+          </section>
+
+          <section className="dashboard-section">
+            <div className="dashboard-section-head">
+              <div>
+                <div className="dashboard-section-title">Recruitment Funnel</div>
+                <div className="dashboard-section-sub">Candidate counts by stage to spot bottlenecks quickly.</div>
+              </div>
+              {bottleneck.count > 0 && <span className="badge badge-amber">Largest stage: {bottleneck.label}</span>}
+            </div>
+            <div className="dashboard-section-body">
+              {applications.length === 0 ? (
+                <div className="empty-panel">No candidate pipeline records are available yet. Stage counts will appear as applications are created or imported.</div>
+              ) : (
+                <div className="funnel-list">
+                  {funnelRows.map(row => (
+                    <div className="funnel-row" key={row.label}>
+                      <div className="funnel-stage">{row.label}</div>
+                      <div className="funnel-bar">
+                        <div className="funnel-fill" style={{ width: row.count === 0 ? 0 : `${Math.max(4, Math.round((row.count / maxFunnel) * 100))}%`, background: row.label === "Hired" ? "var(--teal)" : "var(--accent)" }} />
+                      </div>
+                      <div className="funnel-count">{row.count} candidate{row.count === 1 ? "" : "s"}</div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
-          );
-        })()}
+          </section>
+
+          <section className="dashboard-section">
+            <div className="dashboard-section-head">
+              <div>
+                <div className="dashboard-section-title">Hiring Plan vs Actual</div>
+                <div className="dashboard-section-sub">Progress by department and entity using current requisition and hire data.</div>
+              </div>
+            </div>
+            {planRows.length === 0 ? (
+              <div className="empty-panel">No requisition plan is available yet. Planned, open, filled, and remaining roles will appear once requisitions exist.</div>
+            ) : (
+              <div className="table-wrap">
+                <table className="table-compact">
+                  <thead>
+                    <tr><th>Department / entity</th><th>Planned requisitions</th><th>Open requisitions</th><th>Filled roles</th><th>Remaining roles</th><th>Progress</th></tr>
+                  </thead>
+                  <tbody>
+                    {planRows.map(row => (
+                      <tr key={`${row.department}-${row.entity}`}>
+                        <td className="strong">{row.department}<br /><small style={{ color: "var(--text3)" }}>{row.entity}</small></td>
+                        <td>{row.plannedReqs}</td>
+                        <td>{row.open}</td>
+                        <td>{row.filled}</td>
+                        <td>{row.remaining}</td>
+                        <td className="progress-cell">
+                          <span style={{ fontFamily: "var(--mono)", color: "var(--text2)", fontSize: 12 }}>{row.progress}%</span>
+                          <div className="progress-track"><div className="progress-fill" style={{ width: `${row.progress}%` }} /></div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          <section className="dashboard-section">
+            <div className="dashboard-section-head">
+              <div>
+                <div className="dashboard-section-title">Recruiter Workload</div>
+                <div className="dashboard-section-sub">Ownership view for open requisitions, active candidates, interviews, overdue follow-ups, and hires.</div>
+              </div>
+            </div>
+            {recruiterRows.length === 0 ? (
+              <div className="empty-panel">No recruiter workload is available yet. Assign recruiters to requisitions or applications to populate this view.</div>
+            ) : (
+              <div className="table-wrap">
+                <table className="table-compact">
+                  <thead>
+                    <tr><th>Recruiter</th><th>Assigned open requisitions</th><th>Active candidates</th><th>Interviews this week</th><th>Overdue follow-ups</th><th>Hires this month</th></tr>
+                  </thead>
+                  <tbody>
+                    {recruiterRows.map(row => (
+                      <tr key={row.recruiter}>
+                        <td className="strong">{row.recruiter}</td>
+                        <td>{row.openReqs}</td>
+                        <td>{row.activeCandidates}</td>
+                        <td>{row.interviewsThisWeek}</td>
+                        <td><span className={`badge ${row.overdue > 0 ? "badge-amber" : "badge-green"}`}>{row.overdue}</span></td>
+                        <td>{row.hiresThisMonth}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </div>
       </div>
     </>
   );
