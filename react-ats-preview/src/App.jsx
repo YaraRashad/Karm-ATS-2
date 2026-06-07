@@ -6556,6 +6556,25 @@ function ViewOfferModal({ data, closeModal, ctx }) {
   const { offer } = data;
   const { cand, job, app } = offer;
   const canViewSalary = !!ctx.canViewSalary;
+  const isPlaceholderName = (value) => {
+    const normalized = String(value || "").trim().toLowerCase();
+    return !normalized || normalized === "recruiter" || normalized === "unassigned" || normalized === "—";
+  };
+  const resolveOfferCreator = () => {
+    if (!isPlaceholderName(offer.createdBy)) return offer.createdBy;
+    if (!isPlaceholderName(app?.recruiter)) return app.recruiter;
+    if (!isPlaceholderName(job?.recruiter)) return job.recruiter;
+    const recruiterId = app?.recruiterId || job?.recruiterId;
+    const recruiterUser = recruiterId ? ctx.allUsers?.find(user => String(user.id) === String(recruiterId)) : null;
+    if (!isPlaceholderName(recruiterUser?.fullName)) return recruiterUser.fullName;
+    const fallbackRecruiter = ctx.allUsers?.find(user =>
+      user?.active !== false &&
+      !isPlaceholderName(user?.fullName) &&
+      ["Recruiter", "recruiter"].includes(user.role || user.roleKey)
+    );
+    return fallbackRecruiter?.fullName || "Unassigned";
+  };
+  const createdByName = resolveOfferCreator();
 
   const statusColor = offer.status === "Approved" ? "var(--green)" : offer.status === "Pending Approval" ? "var(--amber)" : "var(--red)";
   const basicSalary = offer.basicSalary || Math.round((offer.salary || 0) * 0.8);
@@ -6583,7 +6602,7 @@ function ViewOfferModal({ data, closeModal, ctx }) {
               <div><div className="form-label">Start date</div><div style={{ fontSize: 15, fontWeight: 500, color: "var(--text)" }}>{offer.startDate}</div></div>
               <div><div className="form-label">Basic salary</div><div style={{ fontSize: 13, color: "var(--text2)", fontFamily: "var(--mono)" }}>{canViewSalary ? `${basicSalary.toLocaleString()} ${offer.currency}` : "Restricted"}</div></div>
               <div><div className="form-label">Variable pay</div><div style={{ fontSize: 13, color: "var(--text2)", fontFamily: "var(--mono)" }}>{canViewSalary ? `${variablePay.toLocaleString()} ${offer.currency}` : "Restricted"}</div></div>
-              <div><div className="form-label">Created by</div><div style={{ fontSize: 13, color: "var(--text2)" }}>{offer.createdBy}</div></div>
+              <div><div className="form-label">Created by</div><div style={{ fontSize: 13, color: "var(--text2)" }}>{createdByName}</div></div>
               <div><div className="form-label">Created date</div><div style={{ fontSize: 13, color: "var(--text2)", fontFamily: "var(--mono)" }}>{offer.createdDate}</div></div>
               <div><div className="form-label">Candidate status</div><span className={`badge ${offer.candidateStatus === "Accepted" ? "badge-green" : offer.candidateStatus === "Rejected" ? "badge-red" : "badge-blue"}`}>{offer.candidateStatus || "Pending candidate"}</span></div>
               <div><div className="form-label">Approver notes</div><div style={{ fontSize: 13, color: "var(--text2)" }}>{offer.approvalNote || "—"}</div></div>
