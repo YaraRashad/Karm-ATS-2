@@ -3269,13 +3269,18 @@ function CandidatesPage({ candidates, setCandidates, applications, jobs, roleCon
                       <td>
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                           <div className="candidate-avatar" style={{ background: c.color + "22", color: c.color, fontSize: 11, fontWeight: 600 }}>{initials(c.name)}</div>
-                          <span
-                            className="strong"
-                            onClick={() => openModal("viewCandidate", { candidate: c, activeApp, activeJob })}
-                            style={{ color: "var(--accent)", cursor: "pointer" }}
-                          >
-                            {c.name}
-                          </span>
+                          <div>
+                            <span
+                              className="strong"
+                              onClick={() => openModal("viewCandidate", { candidate: c, activeApp, activeJob })}
+                              style={{ color: "var(--accent)", cursor: "pointer" }}
+                            >
+                              {c.name}
+                            </span>
+                            <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 3 }}>
+                              {activeJob?.title || "No active position"}
+                            </div>
+                          </div>
                         </div>
                       </td>
                       <td style={{ color: "var(--text3)", fontFamily: "var(--mono)", fontSize: 12 }}>{c.email}</td>
