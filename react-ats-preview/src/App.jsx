@@ -8,6 +8,7 @@ import {
   backendActions,
   completeMicrosoftRedirect,
   fetchAtsData,
+  fetchFileBlob,
   logout,
   microsoftLogin,
   restoreSession,
@@ -207,6 +208,10 @@ const css = `
 
   /* SEARCH + FILTER */
   .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .toolbar-summary { margin-left: auto; display: flex; align-items: center; justify-content: flex-end; min-width: 140px; }
+  .toolbar-count { border: 1px solid var(--border); background: var(--bg2); border-radius: var(--radius); padding: 8px 12px; text-align: right; }
+  .toolbar-count-value { font-size: 20px; line-height: 1; font-weight: 700; color: var(--text); }
+  .toolbar-count-label { margin-top: 4px; font-size: 10px; font-family: var(--mono); text-transform: uppercase; color: var(--text3); letter-spacing: .5px; }
   .search-wrap { position: relative; }
   .search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text3); }
   .search-input { background: var(--bg2); border: 1px solid var(--border2); border-radius: var(--radius); color: var(--text); font-size: 13px; padding: 8px 12px 8px 34px; font-family: var(--font); outline: none; width: 220px; }
@@ -249,6 +254,9 @@ const css = `
   .stage-pip.current { background: var(--amber); }
   .insight-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
   .insight-card { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
+  .insight-card.clickable { cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s; }
+  .insight-card.clickable:hover { border-color: var(--accent); box-shadow: var(--shadow-sm); transform: translateY(-1px); }
+  .insight-card.clickable:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .insight-label { font-size: 10px; font-family: var(--mono); text-transform: uppercase; color: var(--text3); letter-spacing: 0.5px; margin-bottom: 6px; }
   .insight-value { font-size: 22px; font-weight: 600; color: var(--text); letter-spacing: -0.5px; }
   .insight-copy { font-size: 12px; color: var(--text2); margin-top: 6px; }
@@ -271,6 +279,9 @@ const css = `
   .dashboard-section-body { padding: 18px 20px; }
   .health-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
   .health-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; background: var(--bg2); min-width: 0; }
+  .health-card.clickable { cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s; }
+  .health-card.clickable:hover { border-color: var(--accent); box-shadow: var(--shadow-sm); transform: translateY(-1px); }
+  .health-card.clickable:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .health-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
   .health-label { font-size: 11px; font-family: var(--mono); text-transform: uppercase; color: var(--text3); letter-spacing: .4px; line-height: 1.35; }
   .health-value { font-size: 26px; line-height: 1; font-weight: 700; color: var(--text); letter-spacing: 0; }
@@ -306,6 +317,8 @@ const css = `
     .funnel-count { text-align: left; }
     .insight-grid, .template-grid, .roadmap-grid, .dashboard-work-grid, .dashboard-breakdown-grid { grid-template-columns: 1fr; }
     .toolbar { align-items: stretch; }
+    .toolbar-summary { margin-left: 0; justify-content: stretch; }
+    .toolbar-count { width: 100%; text-align: left; }
     .toolbar > div, .toolbar .form-select, .search-input { width: 100% !important; }
   }
 `;
@@ -358,6 +371,7 @@ const normalizeRoleAssignments = (assignments) => {
 const ENTITIES = ["HoldCo. (UK)", "Sub HoldCo. (NL)", "Karm Egypt", "Karm Cyprus", "Karm Tunisia"];
 const DEPARTMENTS = [
   "CEO Office",
+  "Innovation Center",
   "Logistics",
   "Finance",
   "HR",
@@ -602,33 +616,6 @@ const AUDIT_SECURITY_CHECKS = [
   { name: "Role changes", coverage: "In place", detail: "Admin user edits should remain auditable with old and new values." },
   { name: "Permission failures", coverage: "Recommended", detail: "Track 403 responses and surface them clearly in QA reports." },
 ];
-
-const buildResumeIntelligence = (candidates = []) => {
-  const total = candidates.length;
-  const withCv = candidates.filter(hasCandidateCv).length;
-  const lowConfidence = candidates.filter(isLowConfidenceCandidate);
-  const duplicateMap = candidates.reduce((acc, candidate) => {
-    const key = normalizeEmail(candidate.email) || String(candidate.name || "").trim().toLowerCase();
-    if (!key) return acc;
-    acc[key] = acc[key] || [];
-    acc[key].push(candidate);
-    return acc;
-  }, {});
-  const duplicateGroups = Object.values(duplicateMap).filter(group => group.length > 1);
-  const sourceEntries = Object.entries(candidates.reduce((acc, candidate) => {
-    const source = candidate.source || "Unknown";
-    acc[source] = (acc[source] || 0) + 1;
-    return acc;
-  }, {})).sort((a, b) => b[1] - a[1]);
-  return {
-    total,
-    withCv,
-    coverage: pct(withCv, total),
-    lowConfidence,
-    duplicateGroups,
-    sourceEntries,
-  };
-};
 
 const buildRecruiterWorkbench = (applications = [], candidates = [], jobs = [], interviews = [], scorecards = []) => {
   const activeApps = applications.filter(app => app.status === "Active");
@@ -1023,7 +1010,7 @@ function LegacyAtsApp({ sessionUser, backendData, dataError, reloadData, logout:
   const pages = { dashboard: DashboardPage, requests: HiringRequestsPage, jobs: JobsPage, candidates: CandidatesPage, pipeline: PipelinePage, interviews: InterviewsPage, offers: OffersPage, settings: SettingsPage };
   const PageComponent = pages[activePage] || DashboardPage;
 
-  const ctx = { jobs: scopedJobs, setJobs, candidates: scopedCandidates, setCandidates, applications: scopedApplications, setApplications, scorecards, setScorecards, offers: scopedOffers, setOffers, interviews: scopedInterviews, setInterviews, hiringRequests: scopedHiringRequests, setHiringRequests, roleAssignments, setRoleAssignments, ROLES_CONFIG, auditLogs: derivedAuditLogs, dashboardAuditLogs: auditLogs, backendUsers: allUsers, openModal, closeModal, currentRole, roleConfig, canViewSalary, canApproveOffers, allUsers, stageIndex, backendActions, reloadData, sessionUser };
+  const ctx = { jobs: scopedJobs, setJobs, candidates: scopedCandidates, setCandidates, applications: scopedApplications, setApplications, scorecards, setScorecards, offers: scopedOffers, setOffers, interviews: scopedInterviews, setInterviews, hiringRequests: scopedHiringRequests, setHiringRequests, roleAssignments, setRoleAssignments, ROLES_CONFIG, auditLogs: derivedAuditLogs, dashboardAuditLogs: auditLogs, backendUsers: allUsers, openModal, closeModal, currentRole, roleConfig, canViewSalary, canApproveOffers, allUsers, stageIndex, backendActions, reloadData, sessionUser, setPage };
 
   return (
     <>
@@ -1099,6 +1086,9 @@ function ModalRouter({ modal, closeModal, ctx }) {
     viewOffer: ViewOfferModal,
     scheduleInterview: ScheduleInterviewModal,
     moveStage: MoveStageModal,
+    newJoiners: NewJoinersModal,
+    pendingOffers: PendingOffersModal,
+    openRequisitions: OpenRequisitionsModal,
   };
   const Component = M[modal.type];
   if (!Component) return null;
@@ -1357,87 +1347,11 @@ function OperationalDashboardPanel({ jobs = [], candidates = [], applications = 
   );
 }
 
-function ResumeIntelligencePanel({ candidates }) {
-  const intelligence = buildResumeIntelligence(candidates);
-
-  return (
-    <div data-testid="resume-intelligence-panel" className="card" style={{ marginBottom: 16 }}>
-      <div className="card-header">
-        <div>
-          <div className="card-title">Resume intelligence</div>
-          <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>PDF and Word parsing coverage, low-confidence records, duplicate checks, and source history</div>
-        </div>
-        <span className={`badge ${intelligence.coverage >= 80 ? "badge-green" : intelligence.coverage >= 40 ? "badge-amber" : "badge-blue"}`}>{intelligence.coverage}% with CV</span>
-      </div>
-      <div className="card-body">
-        <div className="insight-grid">
-          <div className="insight-card">
-            <div className="insight-label">Talent profiles</div>
-            <div className="insight-value">{intelligence.total}</div>
-            <div className="insight-copy">Central candidate records</div>
-          </div>
-          <div className="insight-card">
-            <div className="insight-label">CV attached</div>
-            <div className="insight-value">{intelligence.withCv}</div>
-            <div className="insight-copy">PDF or Word file available</div>
-          </div>
-          <div className="insight-card">
-            <div className="insight-label">Low confidence</div>
-            <div className="insight-value">{intelligence.lowConfidence.length}</div>
-            <div className="insight-copy">Needs recruiter review</div>
-          </div>
-          <div className="insight-card">
-            <div className="insight-label">Duplicate groups</div>
-            <div className="insight-value">{intelligence.duplicateGroups.length}</div>
-            <div className="insight-copy">Same email or name match</div>
-          </div>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
-          <div className="compact-list">
-            <div className="compact-row">
-              <span>Word resume parsing</span>
-              <span className="badge badge-green">Supported</span>
-            </div>
-            <div className="compact-row">
-              <span>Text-based PDF parsing</span>
-              <span className="badge badge-amber">High priority</span>
-            </div>
-            <div className="compact-row">
-              <span>Scanned PDF OCR</span>
-              <span className="badge badge-purple">Planned</span>
-            </div>
-            <div className="compact-row">
-              <span>Manual creation fallback</span>
-              <span className="badge badge-green">Allowed</span>
-            </div>
-          </div>
-          <div className="compact-list">
-            {intelligence.sourceEntries.length ? intelligence.sourceEntries.slice(0, 5).map(([source, count]) => (
-              <div className="compact-row" key={source}>
-                <span>{source}</span>
-                <span className="source-count">{count} profile{count === 1 ? "" : "s"}</span>
-              </div>
-            )) : (
-              <div className="compact-row">
-                <span>No source history yet</span>
-                <span className="badge badge-gray">Empty</span>
-              </div>
-            )}
-          </div>
-        </div>
-        {intelligence.lowConfidence.length > 0 && (
-          <div className="alert alert-amber" style={{ marginTop: 16 }}>
-            <Icon name="alert" size={14} />
-            {intelligence.lowConfidence.length} profile{intelligence.lowConfidence.length === 1 ? "" : "s"} need manual field review after resume upload.
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function RecruiterWorkbenchPanel({ applications, candidates, jobs, interviews, scorecards }) {
+function RecruiterWorkbenchPanel({ applications, candidates, jobs, interviews, scorecards, showDelayedOnly = false, onShowDelayedOnly }) {
   const workbench = buildRecruiterWorkbench(applications, candidates, jobs, interviews, scorecards);
+  const activateStuckQueue = () => {
+    if (workbench.delayedApps.length > 0) onShowDelayedOnly?.();
+  };
 
   return (
     <div data-testid="recruiter-workbench-panel" className="card" style={{ marginBottom: 16 }}>
@@ -1451,26 +1365,27 @@ function RecruiterWorkbenchPanel({ applications, candidates, jobs, interviews, s
       <div className="card-body">
         <div className="insight-grid">
           {workbench.savedViews.map(view => (
-            <div className="insight-card" key={view.name}>
+            <div
+              className={`insight-card ${view.name === "Stuck stage queue" && workbench.delayedApps.length > 0 ? "clickable" : ""}`}
+              key={view.name}
+              role={view.name === "Stuck stage queue" && workbench.delayedApps.length > 0 ? "button" : undefined}
+              tabIndex={view.name === "Stuck stage queue" && workbench.delayedApps.length > 0 ? 0 : undefined}
+              title={view.name === "Stuck stage queue" && workbench.delayedApps.length > 0 ? "Show stuck-stage applications" : undefined}
+              onClick={view.name === "Stuck stage queue" ? activateStuckQueue : undefined}
+              onKeyDown={view.name === "Stuck stage queue" ? (event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  activateStuckQueue();
+                }
+              } : undefined}
+            >
               <div className="insight-label">{view.name}</div>
               <div className="insight-value">{view.count}</div>
-              <div className="insight-copy">{view.detail}</div>
+              <div className="insight-copy">
+                {view.name === "Stuck stage queue" && showDelayedOnly ? "Showing delayed applications" : view.detail}
+              </div>
             </div>
           ))}
-        </div>
-        <div className="compact-list" style={{ marginTop: 16 }}>
-          {workbench.delayedApps.slice(0, 4).map(app => (
-            <div className="compact-row" key={app.id}>
-              <span>{app.candidate?.name || "Candidate"} · {app.job?.title || "Role"}</span>
-              <span className="badge badge-red">{app.daysInStage || 0} days</span>
-            </div>
-          ))}
-          {workbench.delayedApps.length === 0 && (
-            <div className="compact-row">
-              <span>No stuck applications in this view</span>
-              <span className="badge badge-green">Clear</span>
-            </div>
-          )}
         </div>
       </div>
     </div>
@@ -1655,7 +1570,7 @@ function RoadmapPanel() {
 }
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
-function DashboardPage({ jobs, candidates, applications, offers, interviews, hiringRequests = [] }) {
+function DashboardPage({ jobs, candidates, applications, offers, interviews, hiringRequests = [], openModal, allUsers = [], setPage }) {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const weekStart = new Date(today);
@@ -1679,17 +1594,103 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
     return Boolean(date && date >= monthStart && date < nextMonthStart);
   };
   const isActiveApplication = (app) => app.status === "Active" && !["Hired", "Rejected", "On Hold"].includes(app.stage);
+  const isPlaceholderName = (value) => {
+    const normalized = String(value || "").trim().toLowerCase();
+    return !normalized || normalized === "recruiter" || normalized === "unassigned" || normalized === "—";
+  };
+  const resolveRecruiterName = (app, job) => {
+    if (!isPlaceholderName(app?.recruiter)) return app.recruiter;
+    if (!isPlaceholderName(job?.recruiter)) return job.recruiter;
+    const recruiterId = app?.recruiterId || job?.recruiterId;
+    const recruiterUser = recruiterId ? allUsers.find(user => String(user.id) === String(recruiterId)) : null;
+    if (!isPlaceholderName(recruiterUser?.fullName)) return recruiterUser.fullName;
+    const fallbackRecruiter = allUsers.find(user =>
+      user?.active !== false &&
+      !isPlaceholderName(user?.fullName) &&
+      ["Recruiter", "recruiter"].includes(user.role || user.roleKey)
+    );
+    return fallbackRecruiter?.fullName || "Unassigned";
+  };
   const jobById = new Map(jobs.map(job => [job.id, job]));
+  const candidateById = new Map(candidates.map(candidate => [candidate.id, candidate]));
   const activeApplications = applications.filter(isActiveApplication);
   const activeCandidateIds = new Set(activeApplications.map(app => app.candidateId).filter(Boolean));
   const openJobs = jobs.filter(job => job.status === "Open");
-  const pendingOffers = offers.filter(offer => ["Pending Approval", "Pending HR Approval", "Pending"].includes(offer.status));
+  const openRequisitionRows = openJobs
+    .map(job => {
+      const jobApplications = activeApplications.filter(app => app.jobId === job.id);
+      return {
+        id: job.id,
+        title: job.title || "Untitled requisition",
+        department: job.dept || "Unassigned department",
+        entity: job.entity || "Unassigned entity",
+        recruiter: resolveRecruiterName(null, job),
+        headcount: Number(job.headcount) || 1,
+        activeCandidates: new Set(jobApplications.map(app => app.candidateId).filter(Boolean)).size,
+        openDate: job.openDate,
+        status: job.status || "Open",
+      };
+    })
+    .sort((a, b) => b.activeCandidates - a.activeCandidates || a.title.localeCompare(b.title));
+  const pendingOfferRecords = offers.filter(offer => {
+    const status = String(offer.status || "").toLowerCase();
+    const candidateStatus = String(offer.candidateStatus || "").toLowerCase();
+    return status.includes("pending") || candidateStatus.includes("pending");
+  });
+  const offerStageApplications = activeApplications.filter(app => app.stage === "Offer");
+  const pendingOfferApplicationIds = new Set([
+    ...pendingOfferRecords.map(offer => offer.applicationId).filter(Boolean),
+    ...offerStageApplications.map(app => app.id).filter(Boolean),
+  ]);
+  const pendingOfferCount = pendingOfferApplicationIds.size;
+  const pendingOfferRows = [...pendingOfferApplicationIds]
+    .map(applicationId => {
+      const app = applications.find(item => item.id === applicationId);
+      const candidate = app ? candidateById.get(app.candidateId) : null;
+      const job = app ? jobById.get(app.jobId) : null;
+      const offer = pendingOfferRecords.find(item => item.applicationId === applicationId);
+      return {
+        id: applicationId,
+        candidateName: candidate?.name || "Candidate",
+        roleTitle: job?.title || "Unassigned role",
+        entity: job?.entity || "Unassigned entity",
+        department: job?.dept || "Unassigned department",
+        recruiter: resolveRecruiterName(app, job),
+        stage: app?.stage || "Offer",
+        offerStatus: offer?.status || (app?.stage === "Offer" ? "In Offer stage" : "Pending"),
+        candidateStatus: offer?.candidateStatus || "Pending candidate",
+        createdDate: offer?.createdDate || app?.lastActivityAt || app?.appliedDate,
+        candidate,
+        app,
+        job,
+        offer,
+      };
+    })
+    .sort((a, b) => String(b.createdDate || "").localeCompare(String(a.createdDate || "")) || a.candidateName.localeCompare(b.candidateName));
   const interviewsThisWeek = interviews.filter(interview => isThisWeek(interview.scheduledAt) && interview.status !== "Cancelled");
   const hiredApplications = applications.filter(app => app.stage === "Hired");
   const hiresThisMonth = hiredApplications.filter(app => {
     const dateValue = app.hiredAt || app.closedAt || app.updatedAt || app.lastActivityAt;
     return dateValue ? isThisMonth(dateValue) : true;
   });
+  const newJoinerRows = hiresThisMonth
+    .map(app => {
+      const candidate = candidateById.get(app.candidateId);
+      const job = jobById.get(app.jobId);
+      return {
+        id: app.id,
+        candidateName: candidate?.name || "Candidate",
+        roleTitle: job?.title || "Unassigned role",
+        entity: job?.entity || "Unassigned entity",
+        department: job?.dept || "Unassigned department",
+        recruiter: resolveRecruiterName(app, job),
+        hireDate: app.hiredAt || app.closedAt || app.updatedAt || app.lastActivityAt || app.appliedDate,
+        candidate,
+        app,
+        job,
+      };
+    })
+    .sort((a, b) => String(b.hireDate || "").localeCompare(String(a.hireDate || "")) || a.candidateName.localeCompare(b.candidateName));
   const fillDurations = hiredApplications
     .map(app => {
       const start = parseDate(app.appliedDate || app.appliedAt);
@@ -1710,16 +1711,16 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
   const openReqHealth = openJobs.length === 0 ? health.yellow : health.green;
   const activeCandidateHealth = openJobs.length > 0 && activeCandidateIds.size === 0 ? health.red : activeCandidateIds.size < openJobs.length ? health.yellow : health.green;
   const interviewsHealth = activeApplications.length > 0 && interviewsThisWeek.length === 0 ? health.yellow : health.green;
-  const offersHealth = pendingOffers.length >= 5 ? health.red : pendingOffers.length > 0 ? health.yellow : health.green;
+  const offersHealth = pendingOfferCount >= 5 ? health.red : pendingOfferCount > 0 ? health.yellow : health.green;
   const hiresHealth = openJobs.length > 0 && hiresThisMonth.length === 0 ? health.yellow : health.green;
   const fillHealth = avgTimeToFill === null ? health.yellow : avgTimeToFill > 60 ? health.red : avgTimeToFill > 45 ? health.yellow : health.green;
 
   const kpis = [
-    { label: "Open requisitions", value: openJobs.length, note: `${jobs.length} total requisitions`, action: openJobs.length === 0 ? "Confirm whether hiring plan is current." : "Keep owners assigned and roles moving.", health: openReqHealth },
+    { label: "Open requisitions", value: openJobs.length, note: `${jobs.length} total requisitions`, action: openJobs.length === 0 ? "Confirm whether hiring plan is current." : "Click to view open requisitions.", health: openReqHealth, modalType: "openRequisitions" },
     { label: "Active candidates", value: activeCandidateIds.size, note: `${activeApplications.length} active applications`, action: activeCandidateIds.size < openJobs.length ? "Add sourcing focus to thin pipelines." : "Pipeline has candidate coverage.", health: activeCandidateHealth },
     { label: "Interviews this week", value: interviewsThisWeek.length, note: "Scheduled or completed interviews", action: interviewsThisWeek.length === 0 && activeApplications.length > 0 ? "Schedule next interviews for active candidates." : "Review upcoming interview load.", health: interviewsHealth },
-    { label: "Pending offers", value: pendingOffers.length, note: "Awaiting approval or response", action: pendingOffers.length > 0 ? "Follow up on approval and candidate response." : "No offer approvals waiting.", health: offersHealth },
-    { label: "Hires this month", value: hiresThisMonth.length, note: `${hiredApplications.length} total hired records`, action: hiresThisMonth.length === 0 && openJobs.length > 0 ? "Check final stages and offer readiness." : "Month-to-date hires are visible.", health: hiresHealth },
+    { label: "Pending offers", value: pendingOfferCount, note: `${offerStageApplications.length} in Offer stage · ${pendingOfferRecords.length} pending records`, action: pendingOfferCount > 0 ? "Click to view pending offers." : "No offer approvals waiting.", health: offersHealth, modalType: "pendingOffers" },
+    { label: "Hires this month", value: hiresThisMonth.length, note: `${hiredApplications.length} total hired records`, action: hiresThisMonth.length === 0 && openJobs.length > 0 ? "Check final stages and offer readiness." : "Click to view new joiners.", health: hiresHealth, modalType: "newJoiners" },
     { label: "Average time to fill", value: avgTimeToFill === null ? "N/A" : `${avgTimeToFill}d`, note: avgTimeToFill === null ? "Shown after dated hires exist" : "Applied date to hire date", action: avgTimeToFill === null ? "Historical dates can be incomplete." : avgTimeToFill > 45 ? "Review slow stages and handoffs." : "Hiring cycle is within target.", health: fillHealth },
   ];
 
@@ -1742,15 +1743,16 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
 
   const planMap = new Map();
   jobs.forEach(job => {
-    const key = `${job.dept || "Unassigned"}||${job.entity || "Unassigned"}`;
+    const key = job.dept || "Unassigned";
     const current = planMap.get(key) || {
       department: job.dept || "Unassigned",
-      entity: job.entity || "Unassigned",
+      entities: new Set(),
       plannedReqs: 0,
       plannedRoles: 0,
       open: 0,
       filled: 0,
     };
+    current.entities.add(job.entity || "Unassigned");
     current.plannedReqs += 1;
     current.plannedRoles += Number(job.headcount) || 1;
     if (job.status === "Open") current.open += 1;
@@ -1758,25 +1760,27 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
   });
   hiredApplications.forEach(app => {
     const job = jobById.get(app.jobId);
-    const key = `${job?.dept || "Unassigned"}||${job?.entity || "Unassigned"}`;
+    const key = job?.dept || "Unassigned";
     const current = planMap.get(key) || {
       department: job?.dept || "Unassigned",
-      entity: job?.entity || "Unassigned",
+      entities: new Set(),
       plannedReqs: 0,
       plannedRoles: 0,
       open: 0,
       filled: 0,
     };
+    current.entities.add(job?.entity || "Unassigned");
     current.filled += 1;
     planMap.set(key, current);
   });
   const planRows = [...planMap.values()]
     .map(row => ({
       ...row,
+      entityList: [...row.entities].sort().join(", "),
       remaining: Math.max(row.plannedRoles - row.filled, 0),
       progress: row.plannedRoles ? Math.min(100, Math.round((row.filled / row.plannedRoles) * 100)) : row.filled > 0 ? 100 : 0,
     }))
-    .sort((a, b) => a.department.localeCompare(b.department) || a.entity.localeCompare(b.entity));
+    .sort((a, b) => a.department.localeCompare(b.department));
 
   const recruiterMap = new Map();
   const ensureRecruiter = (name) => {
@@ -1787,22 +1791,22 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
     return recruiterMap.get(key);
   };
   openJobs.forEach(job => {
-    ensureRecruiter(job.recruiter).openReqs += 1;
+    ensureRecruiter(resolveRecruiterName(null, job)).openReqs += 1;
   });
   activeApplications.forEach(app => {
     const job = jobById.get(app.jobId);
-    const row = ensureRecruiter(app.recruiter || job?.recruiter);
+    const row = ensureRecruiter(resolveRecruiterName(app, job));
     row.activeCandidates += 1;
     if ((Number(app.daysInStage) || 0) >= 5) row.overdue += 1;
   });
   interviewsThisWeek.forEach(interview => {
     const app = applications.find(item => item.id === interview.applicationId);
     const job = app ? jobById.get(app.jobId) : null;
-    ensureRecruiter(app?.recruiter || job?.recruiter).interviewsThisWeek += 1;
+    ensureRecruiter(resolveRecruiterName(app, job)).interviewsThisWeek += 1;
   });
   hiresThisMonth.forEach(app => {
     const job = jobById.get(app.jobId);
-    ensureRecruiter(app.recruiter || job?.recruiter).hiresThisMonth += 1;
+    ensureRecruiter(resolveRecruiterName(app, job)).hiresThisMonth += 1;
   });
   const recruiterRows = [...recruiterMap.values()].sort((a, b) => {
     const totalA = a.openReqs + a.activeCandidates + a.interviewsThisWeek + a.overdue + a.hiresThisMonth;
@@ -1822,7 +1826,6 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
       <div className="page-header">
         <div>
           <div className="page-title">Karm. ATS Dashboard</div>
-          <div className="page-sub">Operational hiring health, funnel bottlenecks, plan progress, and recruiter workload.</div>
         </div>
       </div>
       <div className="page-content">
@@ -1837,7 +1840,20 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
             <div className="dashboard-section-body">
               <div className="health-grid">
                 {kpis.map(item => (
-                  <div className="health-card" key={item.label}>
+                  <div
+                    className={`health-card ${item.modalType ? "clickable" : ""}`}
+                    key={item.label}
+                    role={item.modalType ? "button" : undefined}
+                    tabIndex={item.modalType ? 0 : undefined}
+                    onClick={item.modalType ? () => openModal?.(item.modalType, item.modalType === "openRequisitions" ? { rows: openRequisitionRows, totalRequisitions: jobs.length } : item.modalType === "pendingOffers" ? { rows: pendingOfferRows, offerStageCount: offerStageApplications.length, pendingRecordCount: pendingOfferRecords.length } : { rows: newJoinerRows, totalHired: hiredApplications.length }) : undefined}
+                    onKeyDown={item.modalType ? (event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        openModal?.(item.modalType, item.modalType === "openRequisitions" ? { rows: openRequisitionRows, totalRequisitions: jobs.length } : item.modalType === "pendingOffers" ? { rows: pendingOfferRows, offerStageCount: offerStageApplications.length, pendingRecordCount: pendingOfferRecords.length } : { rows: newJoinerRows, totalHired: hiredApplications.length });
+                      }
+                    } : undefined}
+                    title={item.modalType === "openRequisitions" ? "View open requisitions" : item.modalType === "pendingOffers" ? "View pending offers" : item.modalType ? "View new joiners" : undefined}
+                  >
                     <div className="health-card-top">
                       <div className="health-label">{item.label}</div>
                       {renderHealth(item)}
@@ -1887,7 +1903,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
             <div className="dashboard-section-head">
               <div>
                 <div className="dashboard-section-title">Hiring Plan vs Actual</div>
-                <div className="dashboard-section-sub">Progress by department and entity using current requisition and hire data.</div>
+                <div className="dashboard-section-sub">Progress by department using current requisition and hire data.</div>
               </div>
             </div>
             {planRows.length === 0 ? (
@@ -1896,12 +1912,12 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
               <div className="table-wrap">
                 <table className="table-compact">
                   <thead>
-                    <tr><th>Department / entity</th><th>Planned requisitions</th><th>Open requisitions</th><th>Filled roles</th><th>Remaining roles</th><th>Progress</th></tr>
+                    <tr><th>Department</th><th>Planned requisitions</th><th>Open requisitions</th><th>Filled roles</th><th>Remaining roles</th><th>Progress</th></tr>
                   </thead>
                   <tbody>
                     {planRows.map(row => (
-                      <tr key={`${row.department}-${row.entity}`}>
-                        <td className="strong">{row.department}<br /><small style={{ color: "var(--text3)" }}>{row.entity}</small></td>
+                      <tr key={row.department}>
+                        <td className="strong">{row.department}<br /><small style={{ color: "var(--text3)" }}>{row.entityList}</small></td>
                         <td>{row.plannedReqs}</td>
                         <td>{row.open}</td>
                         <td>{row.filled}</td>
@@ -2012,7 +2028,6 @@ function HiringRequestsPage({ hiringRequests, setHiringRequests, currentRole, ro
             </div>
           </div>
         </div>
-        <ResumeIntelligencePanel candidates={candidates} />
         <div className="card">
           <div className="table-wrap">
             <table>
@@ -2786,6 +2801,19 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
     if (canonical === "nl") return "Sub HoldCo. (NL)";
     return value || "";
   };
+  const approvalDateDisplay = job => {
+    if (job.approvalDate) {
+      return { text: formatDisplayDate(job.approvalDate), title: "Approval date captured in ATS." };
+    }
+    const status = canonicalStatus(job.status);
+    if (status === "draft" || status === "pending_approval") {
+      return { text: "Pending", title: "This requisition is not approved yet." };
+    }
+    if (job.openDate) {
+      return { text: formatDisplayDate(job.openDate), title: "Approval date was not captured; showing requisition open date." };
+    }
+    return { text: "Not recorded", title: "Approval date was not captured for this requisition." };
+  };
   const requisitionStatusOptions = ["Open", "Draft", "Closed"];
   const liveStatusOptions = Array.from(new Set(jobs.map(j => statusDisplayLabel(j.status)).filter(Boolean)));
   const statusOptions = Array.from(new Set([
@@ -2793,14 +2821,16 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
     ...liveStatusOptions,
   ]));
   const entityOptions = Array.from(new Set(jobs.map(j => entityDisplayLabel(j.entity)).filter(Boolean))).sort();
-  const deptOptions = Array.from(new Set(jobs.map(j => j.dept).filter(Boolean))).sort();
+  const deptOptions = Array.from(new Set([...DEPARTMENTS, ...jobs.map(j => j.dept).filter(Boolean)])).sort();
   const positionTypeOptions = Array.from(new Set(jobs.map(j => j.positionType).filter(Boolean))).sort();
   const recruiterOptions = Array.from(new Set(jobs.map(j => j.recruiter).filter(Boolean))).sort();
 
   const filtered = jobs.filter(j => {
     const matchesStatus = filterStatus === "All" || canonicalStatus(j.status) === canonicalStatus(filterStatus);
     const matchesEntity = filterEntity === "All" || canonicalEntity(j.entity) === canonicalEntity(filterEntity);
-    const matchesDept = filterDept === "All" || normalizeFilterValue(j.dept) === normalizeFilterValue(filterDept);
+    const matchesDept = filterDept === "All" ||
+      normalizeFilterValue(j.dept) === normalizeFilterValue(filterDept) ||
+      (normalizeFilterValue(filterDept) === "innovation center" && normalizeFilterValue(j.title) === "innovation center");
     const matchesPositionType = filterPositionType === "All" || normalizeFilterValue(j.positionType || "Manpower") === normalizeFilterValue(filterPositionType);
     const matchesRecruiter = filterRecruiter === "All" || normalizeFilterValue(j.recruiter || "Unassigned") === normalizeFilterValue(filterRecruiter);
     const matchesSearch = j.title.toLowerCase().includes(search.toLowerCase());
@@ -2831,6 +2861,7 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
     if (!okToDelete) return;
     try {
       await backendActions.deletePosition(job.id);
+      setJobs(prev => prev.filter(item => item.id !== job.id));
       await reloadData?.();
     } catch (e) {
       alert(e.message || "Could not delete this position.");
@@ -2930,6 +2961,12 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
               <option>All</option>{recruiterOptions.map(name => <option key={name}>{name}</option>)}
             </select>
           </div>
+          <div className="toolbar-summary">
+            <div className="toolbar-count" aria-live="polite">
+              <div className="toolbar-count-value">{filtered.length}</div>
+              <div className="toolbar-count-label">{filterStatus === "All" ? "Positions shown" : `${statusDisplayLabel(filterStatus)} positions`}</div>
+            </div>
+          </div>
         </div>
         <div className="card">
           <div className="table-wrap">
@@ -2941,6 +2978,7 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
                   const statusActionDisabled = job.status === "Draft";
                   const statusActionLabel = job.status === "Closed" ? "Reopen" : "Close";
                   const statusActionReason = statusActionDisabled ? "Open the draft before closing it." : "";
+                  const approvalDate = approvalDateDisplay(job);
                   return (
                     <tr key={job.id} style={{ cursor: "pointer" }} onClick={() => setSelectedJob(job)}>
                       <td className="strong" style={{ color: "var(--accent)" }}>{job.title}</td>
@@ -2949,7 +2987,7 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
                       <td><span className={`badge ${positionTypeBadge(job.positionType)}`}>{job.positionType || "Manpower"}</span></td>
                       <td style={{ fontFamily: "var(--mono)", color: "var(--text2)" }}>{canViewSalary ? `${(job.salaryMin || 0).toLocaleString()}–${(job.salaryMax || 0).toLocaleString()}` : "Restricted"}</td>
                       <td>{job.approvedBy || "—"}</td>
-                      <td style={{ fontFamily: "var(--mono)", color: "var(--text3)" }}>{job.approvalDate || "—"}</td>
+                      <td style={{ fontFamily: "var(--mono)", color: "var(--text3)" }} title={approvalDate.title}>{approvalDate.text}</td>
                       <td style={{ fontFamily: "var(--mono)" }}>{job.headcount}</td>
                       <td style={{ fontFamily: "var(--mono)", color: "var(--accent)", fontWeight: 600 }}>{appCount}</td>
                       <td>{job.recruiter || "Unassigned"}</td>
@@ -4041,6 +4079,8 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
           jobs={jobs}
           interviews={interviews}
           scorecards={scorecards}
+          showDelayedOnly={showDelayedOnly}
+          onShowDelayedOnly={() => setShowDelayedOnly(true)}
         />
         <div className="toolbar" style={{ marginBottom: 16 }}>
           <div className="search-wrap">
@@ -4911,88 +4951,6 @@ function SettingsPage({ currentRole, roleAssignments, setRoleAssignments, ROLES_
 
         {activeTab === "users" && (
           <div>
-            <div className="card" style={{ marginBottom: 16 }}>
-              <div className="card-header">
-                <div className="card-title">Role assignments</div>
-                <div style={{ fontSize: 11, color: "var(--text3)", fontFamily: "var(--mono)" }}>Assign any team member to any system role</div>
-              </div>
-              <div className="card-body">
-                {ROLE_LIST.map(role => {
-                  const perms = ROLE_PERMISSIONS[role];
-                  const assignedIndexes = Array.isArray(localAssignments[role]) ? localAssignments[role] : [localAssignments[role]].filter(Number.isInteger);
-                  const assignedMembers = assignedIndexes.map(idx => TEAM[idx]).filter(Boolean);
-                  const availableMembers = TEAM.map((member, idx) => ({ member, idx })).filter(({ idx }) => !assignedIndexes.includes(idx));
-                  const addMember = (idx) => {
-                    if (idx === "") return;
-                    const nextIdx = parseInt(idx);
-                    setLocalAssignments(prev => ({
-                      ...prev,
-                      [role]: Array.from(new Set([...(Array.isArray(prev[role]) ? prev[role] : [prev[role]].filter(Number.isInteger)), nextIdx])),
-                    }));
-                  };
-                  const removeMember = (idx) => {
-                    setLocalAssignments(prev => {
-                      const current = Array.isArray(prev[role]) ? prev[role] : [prev[role]].filter(Number.isInteger);
-                      const next = current.filter(i => i !== idx);
-                      return { ...prev, [role]: next.length ? next : current };
-                    });
-                  };
-                  return (
-                    <div key={role} style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 16, padding: "14px 0", borderBottom: "1px solid var(--border)" }}>
-                      <div style={{ width: 200, flexShrink: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 2 }}>{role}</div>
-                        <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 8 }}>{assignedMembers.length} assigned</div>
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          {perms.canSeeAll && <span className="badge badge-blue" style={{ fontSize: 10 }}>Full access</span>}
-                          {perms.canApproveOffer && <span className="badge badge-amber" style={{ fontSize: 10 }}>Approves offers</span>}
-                          {perms.canManageUsers && <span className="badge badge-teal" style={{ fontSize: 10 }}>Manages users</span>}
-                          {!perms.canSeeAll && !perms.canApproveOffer && <span className="badge badge-gray" style={{ fontSize: 10 }}>Scoped access</span>}
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
-                          {assignedMembers.map(member => {
-                            const idx = TEAM.findIndex(t => t.email === member.email);
-                            return (
-                              <span key={member.email} className="chip" style={{ borderColor: member.color + "55", background: member.color + "11" }}>
-                                <span style={{ width: 22, height: 22, borderRadius: "50%", background: member.color + "22", color: member.color, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{member.initials}</span>
-                                {member.fullName}
-                                {assignedMembers.length > 1 && <button className="chip-remove" onClick={() => removeMember(idx)}>×</button>}
-                              </span>
-                            );
-                          })}
-                        </div>
-                        <select
-                          className="form-select"
-                          value=""
-                          onChange={e => addMember(e.target.value)}
-                          style={{ flex: 1 }}
-                        >
-                          <option value="">Add another {role.toLowerCase()}...</option>
-                          {availableMembers.map(({ member, idx }) => (
-                            <option key={member.email} value={idx}>{member.fullName} — {member.email}</option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div style={{ padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div style={{ fontSize: 12, color: "var(--text3)" }}>
-                  {changed ? "⚠ You have unsaved changes" : saved ? "✓ Roles saved" : "Role assignments are saved to this browser"}
-                </div>
-                <button
-                  className="btn btn-primary"
-                  onClick={saveAssignments}
-                  disabled={!changed}
-                  style={{ opacity: changed ? 1 : 0.5 }}
-                >
-                  {saved ? "✓ Saved!" : "Save role assignments"}
-                </button>
-              </div>
-            </div>
-
             <div className="card">
               <div className="card-header">
                 <div className="card-title">All team members</div>
@@ -5286,6 +5244,205 @@ function SettingsPage({ currentRole, roleAssignments, setRoleAssignments, ROLES_
 }
 
 // ── MODALS ────────────────────────────────────────────────────────────────────
+function OpenRequisitionsModal({ data, closeModal, ctx }) {
+  const rows = data?.rows || [];
+  const [departmentFilter, setDepartmentFilter] = useState("All");
+  const departmentDisplayName = department => department === "O&M" ? "O&M Distribution" : department;
+  const departmentOptions = Array.from(new Set(rows.map(row => row.department).filter(Boolean))).sort();
+  const filteredRows = rows.filter(row => departmentFilter === "All" || row.department === departmentFilter);
+  const openJobsPage = () => {
+    closeModal();
+    ctx.setPage?.("jobs");
+  };
+
+  return (
+    <div className="modal-overlay" onClick={closeModal}>
+      <div className="modal modal-lg" style={{ maxWidth: 860 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <div className="modal-title">Open Requisitions</div>
+            <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
+              {filteredRows.length} shown · {rows.length} open · {data?.totalRequisitions || 0} total requisition{data?.totalRequisitions === 1 ? "" : "s"}
+            </div>
+          </div>
+          <button className="modal-close" onClick={closeModal}>×</button>
+        </div>
+        <div className="modal-body">
+          {rows.length === 0 ? (
+            <div className="empty-panel">No open requisitions are currently visible.</div>
+          ) : (
+            <div>
+              <div className="toolbar" style={{ marginBottom: 12 }}>
+                <div>
+                  <label className="form-label">Department</label>
+                  <select className="form-select" value={departmentFilter} onChange={event => setDepartmentFilter(event.target.value)}>
+                    <option>All</option>
+                    {departmentOptions.map(department => <option key={department} value={department}>{departmentDisplayName(department)}</option>)}
+                  </select>
+                </div>
+              </div>
+              {filteredRows.length === 0 ? (
+                <div className="empty-panel">No open requisitions match this department.</div>
+              ) : (
+                <div className="table-wrap">
+                  <table className="table-compact">
+                    <thead>
+                      <tr><th>Role</th><th>Department / entity</th><th>Recruiter</th><th>Headcount</th><th>Active candidates</th><th>Open date</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                      {filteredRows.map(row => (
+                        <tr key={row.id}>
+                          <td className="strong">{row.title}</td>
+                          <td>{departmentDisplayName(row.department)}<br /><small style={{ color: "var(--text3)" }}>{row.entity}</small></td>
+                          <td>{row.recruiter}</td>
+                          <td style={{ fontFamily: "var(--mono)", color: "var(--text2)" }}>{row.headcount}</td>
+                          <td><span className={`badge ${row.activeCandidates > 0 ? "badge-blue" : "badge-amber"}`}>{row.activeCandidates}</span></td>
+                          <td style={{ fontFamily: "var(--mono)", color: "var(--text2)" }}>{formatDisplayDate(row.openDate)}</td>
+                          <td><button className="btn btn-ghost btn-sm" onClick={openJobsPage}>View requisitions</button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={closeModal}>Close</button>
+          <button className="btn btn-primary" onClick={openJobsPage}>Open Job Requisitions</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NewJoinersModal({ data, closeModal, ctx }) {
+  const rows = data?.rows || [];
+
+  return (
+    <div className="modal-overlay" onClick={closeModal}>
+      <div className="modal modal-lg" style={{ maxWidth: 760 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <div className="modal-title">New Joiners This Month</div>
+            <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
+              {rows.length} month-to-date hire{rows.length === 1 ? "" : "s"} · {data?.totalHired || 0} total hired record{data?.totalHired === 1 ? "" : "s"}
+            </div>
+          </div>
+          <button className="modal-close" onClick={closeModal}>×</button>
+        </div>
+        <div className="modal-body">
+          {rows.length === 0 ? (
+            <div className="empty-panel">No new joiners are recorded for this month yet.</div>
+          ) : (
+            <div className="table-wrap">
+              <table className="table-compact">
+                <thead>
+                  <tr><th>New joiner</th><th>Role</th><th>Department / entity</th><th>Recruiter</th><th>Hire date</th><th></th></tr>
+                </thead>
+                <tbody>
+                  {rows.map(row => (
+                    <tr key={row.id}>
+                      <td className="strong">{row.candidateName}</td>
+                      <td>{row.roleTitle}</td>
+                      <td>{row.department}<br /><small style={{ color: "var(--text3)" }}>{row.entity}</small></td>
+                      <td>{row.recruiter}</td>
+                      <td style={{ fontFamily: "var(--mono)", color: "var(--text2)" }}>{formatDisplayDate(row.hireDate)}</td>
+                      <td>
+                        {row.candidate && (
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => ctx.openModal("viewCandidate", { candidate: row.candidate, activeApp: row.app, activeJob: row.job })}
+                          >
+                            View
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={closeModal}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PendingOffersModal({ data, closeModal, ctx }) {
+  const rows = data?.rows || [];
+
+  return (
+    <div className="modal-overlay" onClick={closeModal}>
+      <div className="modal modal-lg" style={{ maxWidth: 820 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <div className="modal-title">Pending Offers</div>
+            <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
+              {data?.offerStageCount || 0} in Offer stage · {data?.pendingRecordCount || 0} pending offer record{data?.pendingRecordCount === 1 ? "" : "s"}
+            </div>
+          </div>
+          <button className="modal-close" onClick={closeModal}>×</button>
+        </div>
+        <div className="modal-body">
+          {rows.length === 0 ? (
+            <div className="empty-panel">No candidates are currently waiting in the offer step.</div>
+          ) : (
+            <div className="table-wrap">
+              <table className="table-compact">
+                <thead>
+                  <tr><th>Candidate</th><th>Role</th><th>Department / entity</th><th>Recruiter</th><th>Offer status</th><th>Last update</th><th></th></tr>
+                </thead>
+                <tbody>
+                  {rows.map(row => (
+                    <tr key={row.id}>
+                      <td className="strong">{row.candidateName}</td>
+                      <td>{row.roleTitle}</td>
+                      <td>{row.department}<br /><small style={{ color: "var(--text3)" }}>{row.entity}</small></td>
+                      <td>{row.recruiter}</td>
+                      <td>
+                        <span className="badge badge-amber">{row.offerStatus}</span>
+                        <br />
+                        <small style={{ color: "var(--text3)" }}>{row.candidateStatus}</small>
+                      </td>
+                      <td style={{ fontFamily: "var(--mono)", color: "var(--text2)" }}>{formatDisplayDate(row.createdDate)}</td>
+                      <td>
+                        {row.offer ? (
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => ctx.openModal("viewOffer", { offer: { ...row.offer, cand: row.candidate, app: row.app, job: row.job } })}
+                          >
+                            View offer
+                          </button>
+                        ) : row.candidate ? (
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => ctx.openModal("viewCandidate", { candidate: row.candidate, activeApp: row.app, activeJob: row.job })}
+                          >
+                            View candidate
+                          </button>
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={closeModal}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AddHiringRequestModal({ data, closeModal, ctx }) {
   const [form, setForm] = useState({ title: "", dept: DEPARTMENTS[0], entity: ENTITIES[0], reason: "" });
   const [saving, setSaving] = useState(false);
@@ -5537,6 +5694,9 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
   const [notesLog, setNotesLog] = useState(c.notesLog || []);
   const [showCvPreview, setShowCvPreview] = useState(false);
   const cvUrl = c.cvUrl && c.cvUrl !== "#" ? c.cvUrl : "";
+  const [cvPreviewUrl, setCvPreviewUrl] = useState("");
+  const [cvPreviewLoading, setCvPreviewLoading] = useState(false);
+  const [cvPreviewError, setCvPreviewError] = useState("");
   const latestScore = candidateScorecards[0];
   const latestRating = candidateScorecards.length ? (candidateScorecards.reduce((sum, s) => sum + ((s.knowledge + s.attitude + s.feedback) / 3), 0) / candidateScorecards.length).toFixed(1) : "—";
   const canMoveCandidate = !!ctx.roleConfig.canMoveCandidates;
@@ -5544,6 +5704,33 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
   const canCreateOffer = !!ctx.roleConfig.canCreateOffers;
 
   const openJobs = ctx.jobs.filter(j => j.status === "Open");
+
+  useEffect(() => {
+    if (!showCvPreview || !cvUrl) return undefined;
+    let alive = true;
+    let objectUrl = "";
+    setCvPreviewLoading(true);
+    setCvPreviewError("");
+    fetchFileBlob(cvUrl)
+      .then(blob => {
+        if (!alive) return;
+        objectUrl = URL.createObjectURL(blob);
+        setCvPreviewUrl(objectUrl);
+      })
+      .catch(error => {
+        if (!alive) return;
+        setCvPreviewUrl("");
+        setCvPreviewError(error.message || "CV file could not be loaded.");
+      })
+      .finally(() => {
+        if (alive) setCvPreviewLoading(false);
+      });
+    return () => {
+      alive = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      setCvPreviewUrl("");
+    };
+  }, [showCvPreview, cvUrl]);
 
   const saveStage = async () => {
     if (!canMoveCandidate) return;
@@ -5614,6 +5801,23 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
     ctx.openModal("addOffer", { applicationId: activeApp.id });
   };
 
+  const downloadCv = async () => {
+    if (!cvUrl) return;
+    try {
+      const blob = await fetchFileBlob(cvUrl);
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = c.cvFileName || `${c.name.replace(/\s+/g, "_")}_CV.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      alert(error.message || "CV file could not be downloaded.");
+    }
+  };
+
   return (
     <div className="modal-overlay" onClick={closeModal}>
       <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
@@ -5664,7 +5868,7 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
                   {cvUrl ? (
                     <>
                       <button className="btn btn-ghost btn-sm" onClick={() => setShowCvPreview(v => !v)}>{showCvPreview ? "Hide CV" : "View CV"}</button>
-                      <a className="btn btn-ghost btn-sm" href={cvUrl} download={c.cvFileName || `${c.name.replace(/\s+/g, "_")}_CV.pdf`} style={{ textDecoration: "none" }}>Download CV</a>
+                      <button className="btn btn-ghost btn-sm" onClick={downloadCv}>Download CV</button>
                     </>
                   ) : (
                     <span className="badge badge-gray">No CV attached</span>
@@ -5672,15 +5876,24 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
                 </div>
               </div>
               {showCvPreview && cvUrl ? (
-                <object data={cvUrl} type="application/pdf" style={{ width: "100%", height: 260, border: "1px solid var(--border)", borderRadius: "var(--radius)", background: "white" }}>
-                  <iframe title={`${c.name} CV`} src={cvUrl} style={{ width: "100%", height: 260, border: 0 }} />
-                </object>
+                cvPreviewLoading ? (
+                  <div className="empty-panel" style={{ minHeight: 180, display: "flex", alignItems: "center", justifyContent: "center" }}>Loading CV...</div>
+                ) : cvPreviewError ? (
+                  <div className="alert alert-amber" style={{ minHeight: 120 }}>
+                    <Icon name="alert" size={14} />
+                    {cvPreviewError}
+                  </div>
+                ) : cvPreviewUrl ? (
+                  <object data={cvPreviewUrl} type="application/pdf" style={{ width: "100%", height: 260, border: "1px solid var(--border)", borderRadius: "var(--radius)", background: "white" }}>
+                    <iframe title={`${c.name} CV`} src={cvPreviewUrl} style={{ width: "100%", height: 260, border: 0 }} />
+                  </object>
+                ) : null
               ) : (
                 <div style={{ minHeight: 180, border: "1px dashed var(--border2)", borderRadius: "var(--radius)", display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", color: "var(--text3)", fontSize: 12, padding: 16 }}>
                   {cvUrl ? "CV is attached. Click View CV to preview it, or Download CV to save it." : "No CV has been uploaded for this candidate yet."}
                 </div>
               )}
-              <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 8, fontFamily: "var(--mono)" }}>{c.cvFileName || "No CV file"}</div>
+              <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 8, fontFamily: "var(--mono)" }}>{c.cvFileName || (cvUrl ? "CV attached" : "No CV file")}</div>
             </div>
             <div style={{ background: "var(--bg3)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: 14 }}>
               <div className="form-label">Decision Summary</div>
