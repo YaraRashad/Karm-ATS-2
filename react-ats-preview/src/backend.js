@@ -1,6 +1,6 @@
 import { PublicClientApplication } from "@azure/msal-browser";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api/v1";
+export const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api/v1";
 const MSAL_CLIENT_ID = import.meta.env.VITE_AZURE_AD_CLIENT_ID;
 const MSAL_TENANT_ID = import.meta.env.VITE_AZURE_AD_TENANT_ID;
 
@@ -144,6 +144,24 @@ export async function api(path, options = {}, retry = true) {
   return body?.data ?? body;
 }
 
+export async function fetchFileBlob(path) {
+  if (!path) throw new Error("File URL is missing.");
+  if (path.startsWith("data:") || path.startsWith("blob:")) {
+    return fetch(path).then(res => res.blob());
+  }
+  const fileUrl = path.startsWith("http")
+    ? path
+    : `${API_BASE.replace(/\/api\/v1\/?$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
+  const { accessToken } = readSessionTokens();
+  const res = await fetch(fileUrl, {
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+  });
+  if (!res.ok) {
+    throw new Error(`CV file could not be loaded (${res.status}).`);
+  }
+  return res.blob();
+}
+
 export async function microsoftLogin() {
   if (!msalInstance) throw new Error("Microsoft login is not configured");
   await msalInstance.initialize();
@@ -275,8 +293,8 @@ export function mapBackendData({ positions = [], candidates = [], applications =
     level: p.seniority || "",
     headcount: p.headcount || 1,
     openDate: p.openDate?.slice?.(0, 10) || p.createdAt?.slice?.(0, 10) || "",
-    recruiterId: p.recruiterId || p.recruiter?.id || "",
-    recruiter: fullName(p.recruiter),
+    recruiterId: p.recruiterId || p.recruiter?.userId || p.recruiter?.user?.id || p.recruiter?.id || "",
+    recruiter: fullName(p.recruiter?.user || p.recruiter),
     hiringManagerId: p.hiringManagerId || p.hiringManager?.id || "",
     hiringManager: fullName(p.hiringManager?.user),
     description: p.description || "",
@@ -306,7 +324,8 @@ export function mapBackendData({ positions = [], candidates = [], applications =
     jobId: a.positionId || a.position?.id,
     stage: stageLabel[a.stage] || a.stage,
     status: a.isActive === false || a.stage === "rejected" ? "Rejected" : "Active",
-    recruiter: fullName(a.position?.recruiter) || "Recruiter",
+    recruiterId: a.position?.recruiterId || a.position?.recruiter?.userId || a.position?.recruiter?.user?.id || a.position?.recruiter?.id || "",
+    recruiter: fullName(a.position?.recruiter?.user || a.position?.recruiter) || "Recruiter",
     appliedDate: a.appliedAt?.slice?.(0, 10) || "",
     notes: a.notes?.[0]?.content || a.disqualifyReason || "",
     daysInStage: a.daysInStage || 0,
