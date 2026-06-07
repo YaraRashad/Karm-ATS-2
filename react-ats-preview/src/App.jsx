@@ -1100,6 +1100,7 @@ function ModalRouter({ modal, closeModal, ctx }) {
     moveStage: MoveStageModal,
     newJoiners: NewJoinersModal,
     interviewsThisWeek: InterviewsThisWeekModal,
+    offerAcceptance: OfferAcceptanceModal,
     pendingOffers: PendingOffersModal,
     openRequisitions: OpenRequisitionsModal,
   };
@@ -1742,18 +1743,46 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
   const hiringVsPlanRate = totalPlannedVacancies > 0
     ? Math.min(100, Math.round((totalFilledVacancies / totalPlannedVacancies) * 100))
     : totalFilledVacancies > 0 ? 100 : null;
-  const acceptedOffers = offers.filter(offer => {
+  const acceptedOfferRecords = offers.filter(offer => {
     const candidateStatus = String(offer.candidateStatus || "").toLowerCase();
     const status = String(offer.status || "").toLowerCase();
     return candidateStatus === "accepted" || status === "accepted";
-  }).length;
-  const declinedOffers = offers.filter(offer => {
+  });
+  const declinedOfferRecords = offers.filter(offer => {
     const candidateStatus = String(offer.candidateStatus || "").toLowerCase();
     const status = String(offer.status || "").toLowerCase();
     return ["rejected", "declined"].includes(candidateStatus) || ["rejected", "declined", "withdrawn"].includes(status);
-  }).length;
+  });
+  const acceptedOffers = acceptedOfferRecords.length;
+  const declinedOffers = declinedOfferRecords.length;
   const decidedOffers = acceptedOffers + declinedOffers;
   const offerAcceptanceRate = decidedOffers > 0 ? Math.round((acceptedOffers / decidedOffers) * 100) : null;
+  const offerAcceptanceRows = [...acceptedOfferRecords, ...declinedOfferRecords]
+    .map((offer, index) => {
+      const app = applications.find(item => item.id === offer.applicationId);
+      const candidate = app ? candidateById.get(app.candidateId) : offer.cand || offer.candidate || null;
+      const job = app ? jobById.get(app.jobId) : offer.job || null;
+      const candidateStatus = String(offer.candidateStatus || "").toLowerCase();
+      const offerStatus = String(offer.status || "").toLowerCase();
+      const decision = candidateStatus === "accepted" || offerStatus === "accepted" ? "Accepted" : "Declined";
+      return {
+        id: offer.id || offer.applicationId || `${decision}-${offer.candidateName || offer.candidateId || index}`,
+        candidateName: candidate?.name || offer.candidateName || "Candidate",
+        roleTitle: job?.title || offer.jobTitle || offer.roleTitle || "Unassigned role",
+        department: job?.dept || offer.department || "Unassigned department",
+        entity: job?.entity || offer.entity || "Unassigned entity",
+        recruiter: resolveRecruiterName(app, job),
+        decision,
+        offerStatus: offer.status || decision,
+        candidateStatus: offer.candidateStatus || decision,
+        decisionDate: offer.respondedAt || offer.responseDate || offer.updatedAt || offer.createdDate || app?.lastActivityAt,
+        candidate,
+        app,
+        job,
+        offer,
+      };
+    })
+    .sort((a, b) => String(b.decisionDate || "").localeCompare(String(a.decisionDate || "")) || a.candidateName.localeCompare(b.candidateName));
 
   const health = {
     green: { label: "Healthy", className: "health-green" },
@@ -1776,7 +1805,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
     { label: "Hires this month", value: hiresThisMonth.length, note: `${hiredApplications.length} total hired records`, action: hiresThisMonth.length === 0 && openJobs.length > 0 ? "Check final stages and offer readiness." : "Click to view new joiners.", health: hiresHealth, modalType: "newJoiners" },
     { label: "Average time to fill", value: avgTimeToFill === null ? "N/A" : `${avgTimeToFill}d`, note: avgTimeToFill === null ? "Shown after dated hires exist" : "Applied date to hire date", action: avgTimeToFill === null ? "Historical dates can be incomplete." : avgTimeToFill > 45 ? "Review slow stages and handoffs." : "Hiring cycle is within target.", health: fillHealth },
     { label: "Hiring vs plan", value: hiringVsPlanRate === null ? "N/A" : `${hiringVsPlanRate}%`, note: `${totalFilledVacancies}/${totalPlannedVacancies || 0} vacancies filled`, action: hiringVsPlanRate === null ? "No hiring plan data yet." : `${Math.max((totalPlannedVacancies || 0) - totalFilledVacancies, 0)} vacancies still open.`, health: hiringVsPlanHealth },
-    { label: "Offer acceptance rate", value: offerAcceptanceRate === null ? "N/A" : `${offerAcceptanceRate}%`, note: `${acceptedOffers} accepted · ${declinedOffers} declined`, action: offerAcceptanceRate === null ? "Awaiting accepted or declined offers." : "Accepted offers divided by decided offers.", health: offerAcceptanceHealth },
+    { label: "Offer acceptance rate", value: offerAcceptanceRate === null ? "N/A" : `${offerAcceptanceRate}%`, note: `${acceptedOffers} accepted · ${declinedOffers} declined`, action: offerAcceptanceRate === null ? "Awaiting accepted or declined offers." : "Click to view accepted and declined offers.", health: offerAcceptanceHealth, modalType: "offerAcceptance" },
   ];
 
   const funnelDefinitions = [
@@ -1887,6 +1916,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
       interviewsThisWeek: { rows: interviewRows, activeApplications: activeApplications.length },
       pendingOffers: { rows: pendingOfferRows, offerStageCount: offerStageApplications.length, pendingRecordCount: pendingOfferRecords.length },
       newJoiners: { rows: newJoinerRows, totalHired: hiredApplications.length },
+      offerAcceptance: { rows: offerAcceptanceRows, accepted: acceptedOffers, declined: declinedOffers, rate: offerAcceptanceRate },
     };
     openModal?.(item.modalType, payloads[item.modalType] || {});
   };
@@ -1895,6 +1925,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
     if (item.modalType === "interviewsThisWeek") return "View interviews this week";
     if (item.modalType === "pendingOffers") return "View pending offers";
     if (item.modalType === "newJoiners") return "View new joiners";
+    if (item.modalType === "offerAcceptance") return "View offer acceptance details";
     return undefined;
   };
 
@@ -5503,6 +5534,80 @@ function InterviewsThisWeekModal({ data, closeModal, ctx }) {
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={closeModal}>Close</button>
           <button className="btn btn-primary" onClick={openInterviewsPage}>{rows.length ? "Open Interviews" : "Schedule Interview"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OfferAcceptanceModal({ data, closeModal, ctx }) {
+  const rows = data?.rows || [];
+  const openOffersPage = () => {
+    closeModal();
+    ctx.setPage?.("offers");
+  };
+
+  return (
+    <div className="modal-overlay" onClick={closeModal}>
+      <div className="modal modal-lg" style={{ maxWidth: 840 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <div className="modal-title">Offer Acceptance Rate</div>
+            <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
+              {data?.rate ?? "N/A"}% accepted · {data?.accepted || 0} accepted · {data?.declined || 0} declined
+            </div>
+          </div>
+          <button className="modal-close" onClick={closeModal}>×</button>
+        </div>
+        <div className="modal-body">
+          {rows.length === 0 ? (
+            <div className="empty-panel">No accepted or declined offers are recorded yet.</div>
+          ) : (
+            <div className="table-wrap">
+              <table className="table-compact">
+                <thead>
+                  <tr><th>Candidate</th><th>Role</th><th>Department / entity</th><th>Recruiter</th><th>Decision</th><th>Last update</th><th></th></tr>
+                </thead>
+                <tbody>
+                  {rows.map(row => (
+                    <tr key={row.id}>
+                      <td className="strong">{row.candidateName}</td>
+                      <td>{row.roleTitle}</td>
+                      <td>{row.department}<br /><small style={{ color: "var(--text3)" }}>{row.entity}</small></td>
+                      <td>{row.recruiter}</td>
+                      <td>
+                        <span className={`badge ${row.decision === "Accepted" ? "badge-green" : "badge-red"}`}>{row.decision}</span>
+                        <br />
+                        <small style={{ color: "var(--text3)" }}>{row.candidateStatus || row.offerStatus}</small>
+                      </td>
+                      <td style={{ fontFamily: "var(--mono)", color: "var(--text2)" }}>{formatDisplayDate(row.decisionDate)}</td>
+                      <td>
+                        {row.offer ? (
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => ctx.openModal("viewOffer", { offer: { ...row.offer, cand: row.candidate, app: row.app, job: row.job } })}
+                          >
+                            View offer
+                          </button>
+                        ) : row.candidate ? (
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => ctx.openModal("viewCandidate", { candidate: row.candidate, activeApp: row.app, activeJob: row.job })}
+                          >
+                            View
+                          </button>
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={closeModal}>Close</button>
+          <button className="btn btn-primary" onClick={openOffersPage}>Open Offers</button>
         </div>
       </div>
     </div>
