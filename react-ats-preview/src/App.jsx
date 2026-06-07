@@ -1875,7 +1875,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
   const ensureRecruiter = (name) => {
     const key = name || "Unassigned";
     if (!recruiterMap.has(key)) {
-      recruiterMap.set(key, { recruiter: key, openReqs: 0, activeCandidates: 0, interviewsThisWeek: 0, overdue: 0, hiresThisMonth: 0 });
+      recruiterMap.set(key, { recruiter: key, openReqs: 0, activeCandidates: 0, interviewsThisWeek: 0, hiresThisMonth: 0 });
     }
     return recruiterMap.get(key);
   };
@@ -1886,7 +1886,6 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
     const job = jobById.get(app.jobId);
     const row = ensureRecruiter(resolveRecruiterName(app, job));
     row.activeCandidates += 1;
-    if ((Number(app.daysInStage) || 0) >= 5) row.overdue += 1;
   });
   interviewsThisWeek.forEach(interview => {
     const app = applications.find(item => item.id === interview.applicationId);
@@ -1898,8 +1897,8 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
     ensureRecruiter(resolveRecruiterName(app, job)).hiresThisMonth += 1;
   });
   const recruiterRows = [...recruiterMap.values()].sort((a, b) => {
-    const totalA = a.openReqs + a.activeCandidates + a.interviewsThisWeek + a.overdue + a.hiresThisMonth;
-    const totalB = b.openReqs + b.activeCandidates + b.interviewsThisWeek + b.overdue + b.hiresThisMonth;
+    const totalA = a.openReqs + a.activeCandidates + a.interviewsThisWeek + a.hiresThisMonth;
+    const totalB = b.openReqs + b.activeCandidates + b.interviewsThisWeek + b.hiresThisMonth;
     return totalB - totalA || a.recruiter.localeCompare(b.recruiter);
   });
 
@@ -2049,7 +2048,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
             <div className="dashboard-section-head">
               <div>
                 <div className="dashboard-section-title">Recruiter Workload</div>
-                <div className="dashboard-section-sub">Ownership view for open requisitions, active candidates, interviews, overdue follow-ups, and hires.</div>
+                <div className="dashboard-section-sub">Ownership view for open requisitions, active candidates, interviews, and hires.</div>
               </div>
             </div>
             {recruiterRows.length === 0 ? (
@@ -2058,7 +2057,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
               <div className="table-wrap">
                 <table className="table-compact">
                   <thead>
-                    <tr><th>Recruiter</th><th>Assigned open requisitions</th><th>Active candidates</th><th>Interviews this week</th><th>Overdue follow-ups</th><th>Hires this month</th></tr>
+                    <tr><th>Recruiter</th><th>Assigned open requisitions</th><th>Active candidates</th><th>Interviews this week</th><th>Hires this month</th></tr>
                   </thead>
                   <tbody>
                     {recruiterRows.map(row => (
@@ -2067,7 +2066,6 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
                         <td>{row.openReqs}</td>
                         <td>{row.activeCandidates}</td>
                         <td>{row.interviewsThisWeek}</td>
-                        <td><span className={`badge ${row.overdue > 0 ? "badge-amber" : "badge-green"}`}>{row.overdue}</span></td>
                         <td>{row.hiresThisMonth}</td>
                       </tr>
                     ))}
