@@ -3143,14 +3143,16 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
 }
 
 // ── CANDIDATES PAGE ───────────────────────────────────────────────────────────
-function CandidatesPage({ candidates, setCandidates, applications, jobs, roleConfig, openModal, backendActions, reloadData }) {
+function CandidatesPage({ candidates, setCandidates, applications, setApplications, jobs, roleConfig, openModal, backendActions, reloadData }) {
   const [search, setSearch] = useState("");
   const [filterSource, setFilterSource] = useState("All");
   const [filterJob, setFilterJob] = useState("All");
   const [filterDept, setFilterDept] = useState("All");
   const [filterStage, setFilterStage] = useState("All");
   const [deletingCandidateId, setDeletingCandidateId] = useState(null);
+  const [assigningCandidateId, setAssigningCandidateId] = useState(null);
   const deptOptions = Array.from(new Set(jobs.map(j => j.dept).filter(Boolean))).sort();
+  const openJobs = jobs.filter(j => j.status === "Open");
 
   const filtered = candidates.filter(c => {
     const matchSource = filterSource === "All" || c.source === filterSource;
@@ -3182,6 +3184,38 @@ function CandidatesPage({ candidates, setCandidates, applications, jobs, roleCon
       alert(e.message || "Could not delete candidate.");
     } finally {
       setDeletingCandidateId(null);
+    }
+  };
+
+  const assignCandidatePosition = async (candidate, jobId) => {
+    if (!jobId || !canCreate) return;
+    const job = jobs.find(j => String(j.id) === String(jobId));
+    if (!job) return;
+    setAssigningCandidateId(candidate.id);
+    try {
+      if (backendActions?.createApplication) {
+        await backendActions.createApplication({ candidateId: candidate.id, positionId: job.id });
+        await reloadData?.();
+      } else if (setApplications) {
+        setApplications(prev => [...prev, {
+          id: Date.now(),
+          candidateId: candidate.id,
+          jobId: job.id,
+          stage: "Applied",
+          status: "Active",
+          recruiter: job.recruiter || "Recruiter",
+          appliedDate: todayISO(),
+          notes: "",
+          daysInStage: 0,
+          priority: "",
+          nextAction: "Review CV",
+          lastActivityAt: todayISO(),
+        }]);
+      }
+    } catch (e) {
+      alert(e.message || "Could not assign this candidate to the selected position.");
+    } finally {
+      setAssigningCandidateId(null);
     }
   };
 
@@ -3226,7 +3260,7 @@ function CandidatesPage({ candidates, setCandidates, applications, jobs, roleCon
             <label className="form-label">Position</label>
             <select className="form-select" style={{ width: "auto" }} value={filterJob} onChange={e => setFilterJob(e.target.value)}>
               <option value="All">All positions</option>
-              {jobs.filter(j => j.status === "Open").map(j => <option key={j.id} value={j.id}>{j.title}</option>)}
+              {openJobs.map(j => <option key={j.id} value={j.id}>{j.title}</option>)}
             </select>
           </div>
           <div>
@@ -3269,9 +3303,29 @@ function CandidatesPage({ candidates, setCandidates, applications, jobs, roleCon
                             >
                               {c.name}
                             </span>
-                            <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 3 }}>
-                              {activeJob?.title || "No active position"}
-                            </div>
+                            {activeJob ? (
+                              <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 3 }}>
+                                {activeJob.title}
+                              </div>
+                            ) : canCreate ? (
+                              <select
+                                className="form-select"
+                                value=""
+                                onChange={e => assignCandidatePosition(c, e.target.value)}
+                                disabled={assigningCandidateId === c.id}
+                                style={{ marginTop: 6, width: "min(220px, 100%)", height: 34, fontSize: 12 }}
+                                aria-label={`Select active position for ${c.name}`}
+                              >
+                                <option value="">{assigningCandidateId === c.id ? "Assigning..." : "Select position..."}</option>
+                                {openJobs.map(job => (
+                                  <option key={job.id} value={job.id}>{job.title}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 3 }}>
+                                No active position
+                              </div>
+                            )}
                           </div>
                         </div>
                       </td>
