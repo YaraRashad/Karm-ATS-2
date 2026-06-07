@@ -1099,6 +1099,7 @@ function ModalRouter({ modal, closeModal, ctx }) {
     scheduleInterview: ScheduleInterviewModal,
     moveStage: MoveStageModal,
     newJoiners: NewJoinersModal,
+    interviewsThisWeek: InterviewsThisWeekModal,
     pendingOffers: PendingOffersModal,
     openRequisitions: OpenRequisitionsModal,
   };
@@ -1680,6 +1681,28 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
     })
     .sort((a, b) => String(b.createdDate || "").localeCompare(String(a.createdDate || "")) || a.candidateName.localeCompare(b.candidateName));
   const interviewsThisWeek = interviews.filter(interview => isThisWeek(interview.scheduledAt) && interview.status !== "Cancelled");
+  const interviewRows = interviewsThisWeek
+    .map(interview => {
+      const app = applications.find(item => item.id === interview.applicationId);
+      const candidate = app ? candidateById.get(app.candidateId) : null;
+      const job = app ? jobById.get(app.jobId) : null;
+      return {
+        id: interview.id,
+        candidateName: candidate?.name || interview.candidateName || "Candidate",
+        roleTitle: job?.title || interview.jobTitle || "Unassigned role",
+        department: job?.dept || "Unassigned department",
+        entity: job?.entity || "Unassigned entity",
+        recruiter: resolveRecruiterName(app, job),
+        interviewer: interview.interviewer || interview.interviewerName || "Unassigned",
+        interviewType: interview.type || interview.interviewType || "Interview",
+        scheduledAt: interview.scheduledAt,
+        status: interview.status || "Scheduled",
+        candidate,
+        app,
+        job,
+      };
+    })
+    .sort((a, b) => String(a.scheduledAt || "").localeCompare(String(b.scheduledAt || "")) || a.candidateName.localeCompare(b.candidateName));
   const hiredApplications = applications.filter(app => app.stage === "Hired");
   const hiresThisMonth = hiredApplications.filter(app => {
     const dateValue = app.hiredAt || app.closedAt || app.updatedAt || app.lastActivityAt;
@@ -1748,7 +1771,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
 
   const kpis = [
     { label: "Open requisitions", value: openJobs.length, note: `${jobs.length} total requisitions`, action: openJobs.length === 0 ? "Confirm whether hiring plan is current." : "Click to view open requisitions.", health: openReqHealth, modalType: "openRequisitions" },
-    { label: "Interviews this week", value: interviewsThisWeek.length, note: "Scheduled or completed interviews", action: interviewsThisWeek.length === 0 && activeApplications.length > 0 ? "Schedule next interviews for active candidates." : "Review upcoming interview load.", health: interviewsHealth },
+    { label: "Interviews this week", value: interviewsThisWeek.length, note: "Scheduled or completed interviews", action: interviewsThisWeek.length === 0 && activeApplications.length > 0 ? "Click to schedule next interviews." : "Click to review upcoming interview load.", health: interviewsHealth, modalType: "interviewsThisWeek" },
     { label: "Pending offers", value: pendingOfferCount, note: `${offerStageApplications.length} in Offer stage · ${pendingOfferRecords.length} pending records`, action: pendingOfferCount > 0 ? "Click to view pending offers." : "No offer approvals waiting.", health: offersHealth, modalType: "pendingOffers" },
     { label: "Hires this month", value: hiresThisMonth.length, note: `${hiredApplications.length} total hired records`, action: hiresThisMonth.length === 0 && openJobs.length > 0 ? "Check final stages and offer readiness." : "Click to view new joiners.", health: hiresHealth, modalType: "newJoiners" },
     { label: "Average time to fill", value: avgTimeToFill === null ? "N/A" : `${avgTimeToFill}d`, note: avgTimeToFill === null ? "Shown after dated hires exist" : "Applied date to hire date", action: avgTimeToFill === null ? "Historical dates can be incomplete." : avgTimeToFill > 45 ? "Review slow stages and handoffs." : "Hiring cycle is within target.", health: fillHealth },
@@ -1857,6 +1880,23 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
       {item.health.label}
     </span>
   );
+  const openKpiModal = (item) => {
+    if (!item.modalType) return;
+    const payloads = {
+      openRequisitions: { rows: openRequisitionRows, totalRequisitions: jobs.length },
+      interviewsThisWeek: { rows: interviewRows, activeApplications: activeApplications.length },
+      pendingOffers: { rows: pendingOfferRows, offerStageCount: offerStageApplications.length, pendingRecordCount: pendingOfferRecords.length },
+      newJoiners: { rows: newJoinerRows, totalHired: hiredApplications.length },
+    };
+    openModal?.(item.modalType, payloads[item.modalType] || {});
+  };
+  const kpiTitle = (item) => {
+    if (item.modalType === "openRequisitions") return "View open requisitions";
+    if (item.modalType === "interviewsThisWeek") return "View interviews this week";
+    if (item.modalType === "pendingOffers") return "View pending offers";
+    if (item.modalType === "newJoiners") return "View new joiners";
+    return undefined;
+  };
 
   return (
     <>
@@ -1882,14 +1922,14 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
                     key={item.label}
                     role={item.modalType ? "button" : undefined}
                     tabIndex={item.modalType ? 0 : undefined}
-                    onClick={item.modalType ? () => openModal?.(item.modalType, item.modalType === "openRequisitions" ? { rows: openRequisitionRows, totalRequisitions: jobs.length } : item.modalType === "pendingOffers" ? { rows: pendingOfferRows, offerStageCount: offerStageApplications.length, pendingRecordCount: pendingOfferRecords.length } : { rows: newJoinerRows, totalHired: hiredApplications.length }) : undefined}
+                    onClick={item.modalType ? () => openKpiModal(item) : undefined}
                     onKeyDown={item.modalType ? (event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        openModal?.(item.modalType, item.modalType === "openRequisitions" ? { rows: openRequisitionRows, totalRequisitions: jobs.length } : item.modalType === "pendingOffers" ? { rows: pendingOfferRows, offerStageCount: offerStageApplications.length, pendingRecordCount: pendingOfferRecords.length } : { rows: newJoinerRows, totalHired: hiredApplications.length });
+                        openKpiModal(item);
                       }
                     } : undefined}
-                    title={item.modalType === "openRequisitions" ? "View open requisitions" : item.modalType === "pendingOffers" ? "View pending offers" : item.modalType ? "View new joiners" : undefined}
+                    title={kpiTitle(item)}
                   >
                     <div className="health-card-top">
                       <div className="health-label">{item.label}</div>
@@ -5400,6 +5440,69 @@ function NewJoinersModal({ data, closeModal, ctx }) {
         </div>
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={closeModal}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InterviewsThisWeekModal({ data, closeModal, ctx }) {
+  const rows = data?.rows || [];
+  const openInterviewsPage = () => {
+    closeModal();
+    ctx.setPage?.("interviews");
+  };
+
+  return (
+    <div className="modal-overlay" onClick={closeModal}>
+      <div className="modal modal-lg" style={{ maxWidth: 820 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <div className="modal-title">Interviews This Week</div>
+            <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
+              {rows.length} scheduled or completed interview{rows.length === 1 ? "" : "s"} · {data?.activeApplications || 0} active application{data?.activeApplications === 1 ? "" : "s"}
+            </div>
+          </div>
+          <button className="modal-close" onClick={closeModal}>×</button>
+        </div>
+        <div className="modal-body">
+          {rows.length === 0 ? (
+            <div className="empty-panel">No interviews are scheduled for this week yet.</div>
+          ) : (
+            <div className="table-wrap">
+              <table className="table-compact">
+                <thead>
+                  <tr><th>Candidate</th><th>Role</th><th>Department / entity</th><th>Interviewer</th><th>Date & time</th><th>Status</th><th></th></tr>
+                </thead>
+                <tbody>
+                  {rows.map(row => (
+                    <tr key={row.id}>
+                      <td className="strong">{row.candidateName}</td>
+                      <td>{row.roleTitle}<br /><small style={{ color: "var(--text3)" }}>{row.interviewType}</small></td>
+                      <td>{row.department}<br /><small style={{ color: "var(--text3)" }}>{row.entity}</small></td>
+                      <td>{row.interviewer}<br /><small style={{ color: "var(--text3)" }}>{row.recruiter}</small></td>
+                      <td style={{ fontFamily: "var(--mono)", color: "var(--text2)" }}>{formatDisplayDate(row.scheduledAt)}</td>
+                      <td><span className={`badge ${row.status === "Completed" ? "badge-green" : "badge-blue"}`}>{row.status}</span></td>
+                      <td>
+                        {row.candidate && (
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => ctx.openModal("viewCandidate", { candidate: row.candidate, activeApp: row.app, activeJob: row.job })}
+                          >
+                            View
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={closeModal}>Close</button>
+          <button className="btn btn-primary" onClick={openInterviewsPage}>{rows.length ? "Open Interviews" : "Schedule Interview"}</button>
         </div>
       </div>
     </div>
