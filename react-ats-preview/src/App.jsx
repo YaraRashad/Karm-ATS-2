@@ -1742,10 +1742,10 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
   const avgTimeToFill = fillDurations.length
     ? Math.round(fillDurations.reduce((sum, days) => sum + days, 0) / fillDurations.length)
     : null;
-  const totalPlannedVacancies = jobs.reduce((sum, job) => sum + (Number(job.headcount) || 1), 0);
+  const openPlannedVacancies = openJobs.reduce((sum, job) => sum + (Number(job.headcount) || 1), 0);
   const totalFilledVacancies = hiredApplications.length;
-  const hiringVsPlanRate = totalPlannedVacancies > 0
-    ? Math.min(100, Math.round((totalFilledVacancies / totalPlannedVacancies) * 100))
+  const hiringVsPlanRate = openPlannedVacancies > 0
+    ? Math.min(100, Math.round((totalFilledVacancies / openPlannedVacancies) * 100))
     : totalFilledVacancies > 0 ? 100 : null;
   const offerAcceptanceRows = offers
     .map((offer, index) => {
@@ -1811,7 +1811,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
     { label: "Pending offers", value: pendingOfferCount, note: `${offerStageApplications.length} in Offer stage · ${pendingOfferRecords.length} pending records`, action: pendingOfferCount > 0 ? "Click to view pending offers." : "No offer approvals waiting.", health: offersHealth, modalType: "pendingOffers" },
     { label: "Hires this month", value: hiresThisMonth.length, note: `${hiredApplications.length} total hired records`, action: hiresThisMonth.length === 0 && openJobs.length > 0 ? "Check final stages and offer readiness." : "Click to view new joiners.", health: hiresHealth, modalType: "newJoiners" },
     { label: "Average time to fill", value: avgTimeToFill === null ? "N/A" : `${avgTimeToFill}d`, note: avgTimeToFill === null ? "Shown after dated hires exist" : "Applied date to hire date", action: avgTimeToFill === null ? "Historical dates can be incomplete." : avgTimeToFill > 45 ? "Review slow stages and handoffs." : "Hiring cycle is within target.", health: fillHealth },
-    { label: "Hiring vs plan", value: hiringVsPlanRate === null ? "N/A" : `${hiringVsPlanRate}%`, note: `${totalFilledVacancies}/${totalPlannedVacancies || 0} vacancies filled`, action: hiringVsPlanRate === null ? "No hiring plan data yet." : `${Math.max((totalPlannedVacancies || 0) - totalFilledVacancies, 0)} vacancies still open.`, health: hiringVsPlanHealth },
+    { label: "Hiring vs plan", value: hiringVsPlanRate === null ? "N/A" : `${hiringVsPlanRate}%`, note: `${totalFilledVacancies}/${openPlannedVacancies || 0} open vacancies filled`, action: hiringVsPlanRate === null ? "No open hiring plan data yet." : `${Math.max((openPlannedVacancies || 0) - totalFilledVacancies, 0)} open vacancies remaining.`, health: hiringVsPlanHealth },
     { label: "Offer acceptance rate", value: offerAcceptanceRate === null ? "N/A" : `${offerAcceptanceRate}%`, note: `${acceptedOffers} accepted · ${declinedOffers} declined`, action: offerAcceptanceRate === null ? "Awaiting accepted or declined offers." : "Click to view accepted and declined offers.", health: offerAcceptanceHealth, modalType: "offerAcceptance" },
   ];
 
