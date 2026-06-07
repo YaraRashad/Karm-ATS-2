@@ -277,6 +277,18 @@ const css = `
   .dashboard-section-title { font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: 0; }
   .dashboard-section-sub { font-size: 12px; color: var(--text3); margin-top: 3px; }
   .dashboard-section-body { padding: 18px 20px; }
+  .achievement-chart { display: grid; gap: 14px; }
+  .achievement-row { display: grid; gap: 8px; }
+  .achievement-row-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .achievement-dept { font-size: 13px; font-weight: 700; color: var(--text); }
+  .achievement-summary { font-size: 12px; color: var(--text2); text-align: right; }
+  .achievement-track { height: 12px; background: var(--bg4); border-radius: 999px; overflow: hidden; }
+  .achievement-fill { height: 100%; border-radius: 999px; min-width: 3px; transition: width 0.25s; }
+  .achievement-fill.achievement-green { background: var(--green); }
+  .achievement-fill.achievement-yellow { background: var(--amber); }
+  .achievement-fill.achievement-red { background: var(--red); }
+  .achievement-row-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 11px; color: var(--text3); }
+  .achievement-status { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); text-transform: uppercase; letter-spacing: .4px; }
   .health-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
   .health-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; background: var(--bg2); min-width: 0; }
   .health-card.clickable { cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s; }
@@ -1781,6 +1793,11 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
       progress: row.plannedRoles ? Math.min(100, Math.round((row.filled / row.plannedRoles) * 100)) : row.filled > 0 ? 100 : 0,
     }))
     .sort((a, b) => a.department.localeCompare(b.department));
+  const achievementStatus = progress => progress >= 80
+    ? { label: "Green", className: "achievement-green", dotClass: "dot-green" }
+    : progress >= 50
+      ? { label: "Yellow", className: "achievement-yellow", dotClass: "dot-amber" }
+      : { label: "Red", className: "achievement-red", dotClass: "dot-red" };
 
   const recruiterMap = new Map();
   const ensureRecruiter = (name) => {
@@ -1902,34 +1919,37 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
           <section className="dashboard-section">
             <div className="dashboard-section-head">
               <div>
-                <div className="dashboard-section-title">Hiring Plan vs Actual</div>
-                <div className="dashboard-section-sub">Progress by department using current requisition and hire data.</div>
+                <div className="dashboard-section-title">Hiring Plan Achievement by Department</div>
+                <div className="dashboard-section-sub">Filled vacancies against planned hiring by department.</div>
               </div>
             </div>
             {planRows.length === 0 ? (
-              <div className="empty-panel">No requisition plan is available yet. Planned, open, filled, and remaining roles will appear once requisitions exist.</div>
+              <div className="empty-panel">No hiring plan data yet. Achievement will appear once requisitions or hires exist.</div>
             ) : (
-              <div className="table-wrap">
-                <table className="table-compact">
-                  <thead>
-                    <tr><th>Department</th><th>Planned requisitions</th><th>Open requisitions</th><th>Filled roles</th><th>Remaining roles</th><th>Progress</th></tr>
-                  </thead>
-                  <tbody>
-                    {planRows.map(row => (
-                      <tr key={row.department}>
-                        <td className="strong">{row.department}<br /><small style={{ color: "var(--text3)" }}>{row.entityList}</small></td>
-                        <td>{row.plannedReqs}</td>
-                        <td>{row.open}</td>
-                        <td>{row.filled}</td>
-                        <td>{row.remaining}</td>
-                        <td className="progress-cell">
-                          <span style={{ fontFamily: "var(--mono)", color: "var(--text2)", fontSize: 12 }}>{row.progress}%</span>
-                          <div className="progress-track"><div className="progress-fill" style={{ width: `${row.progress}%` }} /></div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="dashboard-section-body">
+                <div className="achievement-chart">
+                  {planRows.map(row => {
+                    const status = achievementStatus(row.progress);
+                    return (
+                      <div className="achievement-row" key={row.department}>
+                        <div className="achievement-row-top">
+                          <div className="achievement-dept">{row.department}</div>
+                          <div className="achievement-summary">
+                            {row.progress}% achieved · {row.filled}/{row.plannedRoles} filled
+                          </div>
+                        </div>
+                        <div className="achievement-track" aria-label={`${row.department} ${row.progress}% achieved`}>
+                          <div className={`achievement-fill ${status.className}`} style={{ width: `${Math.max(row.progress, row.filled > 0 ? 3 : 0)}%` }} />
+                        </div>
+                        <div className="achievement-row-meta">
+                          <span>{row.plannedRoles} total vacancies · {row.plannedReqs} planned requisition{row.plannedReqs === 1 ? "" : "s"}</span>
+                          <span>{row.remaining} open vacanc{row.remaining === 1 ? "y" : "ies"}</span>
+                          <span className="achievement-status"><i className={`dot ${status.dotClass}`} /> {status.label}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </section>
@@ -4358,14 +4378,6 @@ function InterviewsPage({ interviews, setInterviews, applications, candidates, j
         {canSchedule && <button className="btn btn-primary" onClick={() => openModal("scheduleInterview")}><Icon name="plus" size={14} /> Schedule Interview</button>}
       </div>
       <div className="page-content">
-        <HiringManagerWorkspacePanel
-          interviews={interviews}
-          applications={applications}
-          candidates={candidates}
-          jobs={jobs}
-          scorecards={scorecards}
-          roleConfig={roleConfig}
-        />
         <div className="tabs" style={{ marginBottom: 16 }}>
           <div className={`tab ${tab === "scheduled" ? "active" : ""}`} onClick={() => setTab("scheduled")}>Scheduled ({scheduled.length})</div>
           <div className={`tab ${tab === "completed" ? "active" : ""}`} onClick={() => setTab("completed")}>Completed ({completed.length})</div>
