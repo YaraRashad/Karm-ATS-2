@@ -487,6 +487,7 @@ export const backendActions = {
   rejectApplication: (id, payload) => api(`/applications/${id}/disqualify`, { method: "POST", body: JSON.stringify(payload) }),
   addNote: (id, payload) => api(`/applications/${id}/notes`, { method: "POST", body: JSON.stringify(payload) }),
   createInterview: (payload) => api("/interviews", { method: "POST", body: JSON.stringify(payload) }),
+  deleteInterview: (id) => api(`/interviews/${id}`, { method: "DELETE" }),
   createOffer: (payload) => api("/offers", { method: "POST", body: JSON.stringify(payload) }),
   createHiringRequest: (payload) => api("/hiring-requests", {
     method: "POST",

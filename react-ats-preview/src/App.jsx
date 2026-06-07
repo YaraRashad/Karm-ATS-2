@@ -4446,11 +4446,13 @@ function RejectCandidateModal({ appIds, applications, candidates, jobs, onCancel
 }
 
 // ── INTERVIEWS PAGE ───────────────────────────────────────────────────────────
-function InterviewsPage({ interviews, setInterviews, applications, candidates, jobs, scorecards, roleConfig, openModal }) {
+function InterviewsPage({ interviews, setInterviews, applications, candidates, jobs, scorecards, roleConfig, openModal, backendActions, reloadData }) {
   const [tab, setTab] = useState("scheduled");
+  const [deletingInterviewId, setDeletingInterviewId] = useState(null);
 
   const canSchedule = !!roleConfig.canScheduleInterviews;
   const canScore = true;
+  const canDelete = !!roleConfig.canDeleteRecords;
 
   const enrichedInterviews = interviews.map(i => {
     const app = applications.find(a => a.id === i.applicationId);
@@ -4463,6 +4465,23 @@ function InterviewsPage({ interviews, setInterviews, applications, candidates, j
   const scheduled = enrichedInterviews.filter(i => i.status === "Scheduled");
   const completed = enrichedInterviews.filter(i => i.status === "Completed");
   const displayed = tab === "scheduled" ? scheduled : completed;
+
+  const deleteInterview = async (interview) => {
+    if (!canDelete || !backendActions?.deleteInterview) return;
+    const candidateName = interview.cand?.name || "this candidate";
+    const interviewDate = formatDisplayDate(interview.scheduledAt);
+    if (!window.confirm(`Delete the scheduled interview for ${candidateName} on ${interviewDate}?\n\nThis removes the interview from the ATS for all users.`)) return;
+    setDeletingInterviewId(interview.id);
+    try {
+      await backendActions.deleteInterview(interview.id);
+      setInterviews(prev => prev.filter(item => String(item.id) !== String(interview.id)));
+      await reloadData?.();
+    } catch (e) {
+      alert(e.message || "Could not delete this interview.");
+    } finally {
+      setDeletingInterviewId(null);
+    }
+  };
 
   return (
     <>
@@ -4511,11 +4530,22 @@ function InterviewsPage({ interviews, setInterviews, applications, candidates, j
                     </td>
                     <td><span className={`badge ${i.status === "Completed" ? "badge-green" : "badge-amber"}`}>{i.status}</span></td>
                     <td>
-                      {canScore && (
-                        <button className="btn btn-ghost btn-sm" onClick={() => openModal("scorecard", { interview: i, app: i.app, cand: i.cand, job: i.job, existingScore: i.sc })}>
-                          {i.sc ? "View Score" : "Score"}
-                        </button>
-                      )}
+                      <div className="row-actions">
+                        {canScore && (
+                          <button className="btn btn-ghost btn-sm" onClick={() => openModal("scorecard", { interview: i, app: i.app, cand: i.cand, job: i.job, existingScore: i.sc })}>
+                            {i.sc ? "View Score" : "Score"}
+                          </button>
+                        )}
+                        {canDelete && i.status === "Scheduled" && (
+                          <button
+                            className="btn btn-danger btn-sm"
+                            onClick={() => deleteInterview(i)}
+                            disabled={deletingInterviewId === i.id}
+                          >
+                            {deletingInterviewId === i.id ? "Deleting..." : "Delete"}
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
