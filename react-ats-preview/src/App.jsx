@@ -1685,8 +1685,8 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
       };
     })
     .sort((a, b) => String(b.createdDate || "").localeCompare(String(a.createdDate || "")) || a.candidateName.localeCompare(b.candidateName));
-  const interviewsThisWeek = interviews.filter(interview => isThisWeek(interview.scheduledAt) && interview.status !== "Cancelled");
-  const interviewRows = interviewsThisWeek
+  const scheduledInterviews = interviews.filter(interview => interview.status === "Scheduled");
+  const interviewRows = scheduledInterviews
     .map(interview => {
       const app = applications.find(item => item.id === interview.applicationId);
       const candidate = app ? candidateById.get(app.candidateId) : null;
@@ -1798,7 +1798,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
   };
   const openReqHealth = openJobs.length === 0 ? health.yellow : health.green;
   const activeCandidateHealth = openJobs.length > 0 && activeCandidateIds.size === 0 ? health.red : activeCandidateIds.size < openJobs.length ? health.yellow : health.green;
-  const interviewsHealth = activeApplications.length > 0 && interviewsThisWeek.length === 0 ? health.yellow : health.green;
+  const interviewsHealth = activeApplications.length > 0 && scheduledInterviews.length === 0 ? health.yellow : health.green;
   const offersHealth = pendingOfferCount >= 5 ? health.red : pendingOfferCount > 0 ? health.yellow : health.green;
   const hiresHealth = openJobs.length > 0 && hiresThisMonth.length === 0 ? health.yellow : health.green;
   const fillHealth = avgTimeToFill === null ? health.yellow : avgTimeToFill > 60 ? health.red : avgTimeToFill > 45 ? health.yellow : health.green;
@@ -1807,7 +1807,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
 
   const kpis = [
     { label: "Open requisitions", value: openJobs.length, note: `${jobs.length} total requisitions`, action: openJobs.length === 0 ? "Confirm whether hiring plan is current." : "Click to view open requisitions.", health: openReqHealth, modalType: "openRequisitions" },
-    { label: "Interviews this week", value: interviewsThisWeek.length, note: "Scheduled or completed interviews", action: interviewsThisWeek.length === 0 && activeApplications.length > 0 ? "Click to schedule next interviews." : "Click to review upcoming interview load.", health: interviewsHealth, modalType: "interviewsThisWeek" },
+    { label: "Scheduled interviews", value: scheduledInterviews.length, note: "Interviews awaiting completion", action: scheduledInterviews.length === 0 && activeApplications.length > 0 ? "Click to schedule next interviews." : "Click to review scheduled interview load.", health: interviewsHealth, modalType: "interviewsThisWeek" },
     { label: "Pending offers", value: pendingOfferCount, note: `${offerStageApplications.length} in Offer stage · ${pendingOfferRecords.length} pending records`, action: pendingOfferCount > 0 ? "Click to view pending offers." : "No offer approvals waiting.", health: offersHealth, modalType: "pendingOffers" },
     { label: "Hires this month", value: hiresThisMonth.length, note: `${hiredApplications.length} total hired records`, action: hiresThisMonth.length === 0 && openJobs.length > 0 ? "Check final stages and offer readiness." : "Click to view new joiners.", health: hiresHealth, modalType: "newJoiners" },
     { label: "Average time to fill", value: avgTimeToFill === null ? "N/A" : `${avgTimeToFill}d`, note: avgTimeToFill === null ? "Shown after dated hires exist" : "Applied date to hire date", action: avgTimeToFill === null ? "Historical dates can be incomplete." : avgTimeToFill > 45 ? "Review slow stages and handoffs." : "Hiring cycle is within target.", health: fillHealth },
@@ -1894,7 +1894,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
     const row = ensureRecruiter(resolveRecruiterName(app, job));
     row.activeCandidates += 1;
   });
-  interviewsThisWeek.forEach(interview => {
+  scheduledInterviews.forEach(interview => {
     const app = applications.find(item => item.id === interview.applicationId);
     const job = app ? jobById.get(app.jobId) : null;
     ensureRecruiter(resolveRecruiterName(app, job)).interviewsThisWeek += 1;
@@ -1928,7 +1928,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
   };
   const kpiTitle = (item) => {
     if (item.modalType === "openRequisitions") return "View open requisitions";
-    if (item.modalType === "interviewsThisWeek") return "View interviews this week";
+    if (item.modalType === "interviewsThisWeek") return "View scheduled interviews";
     if (item.modalType === "pendingOffers") return "View pending offers";
     if (item.modalType === "newJoiners") return "View new joiners";
     if (item.modalType === "offerAcceptance") return "View offer acceptance details";
@@ -2064,7 +2064,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
               <div className="table-wrap">
                 <table className="table-compact">
                   <thead>
-                    <tr><th>Recruiter</th><th>Assigned open requisitions</th><th>Active candidates</th><th>Interviews this week</th><th>Hires this month</th></tr>
+                    <tr><th>Recruiter</th><th>Assigned open requisitions</th><th>Active candidates</th><th>Scheduled interviews</th><th>Hires this month</th></tr>
                   </thead>
                   <tbody>
                     {recruiterRows.map(row => (
@@ -5524,16 +5524,16 @@ function InterviewsThisWeekModal({ data, closeModal, ctx }) {
       <div className="modal modal-lg" style={{ maxWidth: 820 }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <div>
-            <div className="modal-title">Interviews This Week</div>
+            <div className="modal-title">Scheduled Interviews</div>
             <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
-              {rows.length} scheduled or completed interview{rows.length === 1 ? "" : "s"} · {data?.activeApplications || 0} active application{data?.activeApplications === 1 ? "" : "s"}
+              {rows.length} scheduled interview{rows.length === 1 ? "" : "s"} · {data?.activeApplications || 0} active application{data?.activeApplications === 1 ? "" : "s"}
             </div>
           </div>
           <button className="modal-close" onClick={closeModal}>×</button>
         </div>
         <div className="modal-body">
           {rows.length === 0 ? (
-            <div className="empty-panel">No interviews are scheduled for this week yet.</div>
+            <div className="empty-panel">No interviews are scheduled yet.</div>
           ) : (
             <div className="table-wrap">
               <table className="table-compact">
