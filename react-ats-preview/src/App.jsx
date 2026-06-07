@@ -1945,12 +1945,6 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
       <div className="page-content">
         <div className="dashboard-stack">
           <section className="dashboard-section">
-            <div className="dashboard-section-head">
-              <div>
-                <div className="dashboard-section-title">Hiring Health</div>
-                <div className="dashboard-section-sub">Daily signals for where recruiting needs attention.</div>
-              </div>
-            </div>
             <div className="dashboard-section-body">
               <div className="health-grid">
                 {kpis.map(item => (
