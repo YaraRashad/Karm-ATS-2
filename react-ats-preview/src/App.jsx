@@ -322,6 +322,32 @@ const css = `
   .chart-bar-track { height: 12px; border-radius: 999px; background: var(--bg4); overflow: hidden; }
   .chart-bar-fill { height: 100%; border-radius: 999px; background: var(--green); min-width: 3px; }
   .chart-bar-meta { display: flex; justify-content: space-between; gap: 12px; color: var(--text3); font-size: 11px; }
+  .plan-achievement-card { background: #fffefa; }
+  .plan-achievement-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
+  .plan-achievement-title { font-size: 18px; font-weight: 800; color: var(--text); letter-spacing: 0; }
+  .plan-achievement-sub { font-size: 13px; color: var(--text2); margin-top: 4px; }
+  .plan-legend { display: flex; align-items: center; gap: 18px; color: var(--text2); font-size: 13px; white-space: nowrap; }
+  .plan-legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .plan-legend-box { width: 13px; height: 13px; border-radius: 3px; display: inline-block; }
+  .plan-legend-planned { background: #bfe38b; border: 1px solid #87bf4a; }
+  .plan-legend-filled { background: #3f7f08; }
+  .plan-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 26px; }
+  .plan-summary-card { background: #f5f3ea; border-radius: 8px; padding: 16px 12px; text-align: center; border: 1px solid rgba(15, 23, 42, .04); }
+  .plan-summary-label { color: #3f3f3f; font-size: 13px; }
+  .plan-summary-value { margin-top: 6px; color: #111827; font-size: 28px; line-height: 1; font-weight: 800; letter-spacing: 0; }
+  .plan-summary-value.open { color: #6b5a13; }
+  .plan-summary-value.percent { color: #8b2f2f; }
+  .plan-bars-plot { display: grid; gap: 12px; padding: 4px 0 8px; }
+  .plan-plot-row { display: grid; grid-template-columns: 185px minmax(260px, 1fr); gap: 16px; align-items: center; }
+  .plan-plot-label { text-align: right; font-size: 13px; font-weight: 700; color: #3f3f3f; line-height: 1.2; }
+  .plan-plot-area { position: relative; min-height: 44px; border-left: 1px solid #d9d9d9; background-image: repeating-linear-gradient(to right, transparent 0, transparent calc(12.5% - 1px), #e6e2da calc(12.5% - 1px), #e6e2da 12.5%); }
+  .plan-bar { position: absolute; left: 0; border-radius: 5px; transition: width .25s; }
+  .plan-bar.planned { top: 5px; height: 18px; background: #bfe38b; border: 1px solid #87bf4a; }
+  .plan-bar.filled { top: 27px; height: 14px; background: #3f7f08; box-shadow: inset 0 -1px 0 rgba(0,0,0,.12); }
+  .plan-bar-note { position: absolute; right: 0; top: -1px; font-size: 11px; color: var(--text3); background: rgba(255, 254, 250, .84); padding-left: 6px; }
+  .plan-axis { display: grid; grid-template-columns: 185px minmax(260px, 1fr); gap: 16px; align-items: start; margin-top: 3px; }
+  .plan-axis-scale { display: flex; justify-content: space-between; border-top: 1px solid #d9d9d9; color: #555; font-size: 12px; padding-top: 6px; }
+  .plan-axis-label { grid-column: 2; text-align: center; color: #555; font-size: 12px; margin-top: 2px; }
   .funnel-stack { display: grid; gap: 11px; }
   .funnel-stack-row { display: grid; grid-template-columns: 155px 1fr 54px; gap: 12px; align-items: center; }
   .funnel-stack-stage { font-size: 12px; font-weight: 700; color: var(--text); }
@@ -372,6 +398,11 @@ const css = `
     .chart-metric-grid { grid-template-columns: 1fr; gap: 12px; }
     .chart-metric { border-right: 0; border-bottom: 1px solid var(--border); padding-bottom: 12px; }
     .chart-metric:last-child { border-bottom: 0; }
+    .plan-achievement-head { flex-direction: column; }
+    .plan-summary-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+    .plan-plot-row, .plan-axis { grid-template-columns: 100px minmax(160px, 1fr); gap: 10px; }
+    .plan-plot-label { font-size: 12px; }
+    .plan-axis-label { grid-column: 2; }
     .funnel-stack-row { grid-template-columns: 1fr; gap: 6px; }
     .funnel-stack-count { text-align: left; }
     .insight-grid, .template-grid, .roadmap-grid, .dashboard-work-grid, .dashboard-breakdown-grid { grid-template-columns: 1fr; }
@@ -459,7 +490,7 @@ const JOB_FAMILIES = [
   "Blue Collar - Technicians",
 ];
 
-const SOURCES = ["LinkedIn", "Referral", "Wuzzuf", "Indeed", "Direct Application", "Headhunt", "Recruitment Agency"];
+const SOURCES = ["LinkedIn", "Forasna", "Referral", "Internal Transfer"];
 const SAMPLE_CV_URL = "./assets/sample-cv.pdf";
 
 const formatDisplayDate = (value) => {
@@ -1948,6 +1979,18 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
       progress: row.plannedRoles ? Math.min(100, Math.round((row.filled / row.plannedRoles) * 100)) : row.filled > 0 ? 100 : 0,
     }))
     .sort((a, b) => a.department.localeCompare(b.department));
+  const planTotalVacancies = planRows.reduce((sum, row) => sum + row.plannedRoles, 0);
+  const planFilledVacancies = planRows.reduce((sum, row) => sum + row.filled, 0);
+  const planOpenVacancies = planRows.reduce((sum, row) => sum + row.remaining, 0);
+  const planOverallAchievement = planTotalVacancies > 0
+    ? Math.round((planFilledVacancies / planTotalVacancies) * 100)
+    : planFilledVacancies > 0 ? 100 : 0;
+  const topPlanRows = [...planRows]
+    .sort((a, b) => b.plannedRoles - a.plannedRoles || a.department.localeCompare(b.department))
+    .slice(0, 12);
+  const planChartMaxRaw = Math.max(...topPlanRows.map(row => row.plannedRoles), 1);
+  const planChartMax = Math.max(4, Math.ceil(planChartMaxRaw / 2) * 2);
+  const planAxisTicks = Array.from({ length: 9 }, (_, index) => Math.round((planChartMax / 8) * index));
   const achievementStatus = progress => progress >= 80
     ? { label: "Green", className: "achievement-green", dotClass: "dot-green" }
     : progress >= 50
@@ -2100,37 +2143,63 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
             )}
           </section>
 
-          <section className="chart-card chart-card-full">
-            <div className="chart-card-head">
+          <section className="chart-card chart-card-full plan-achievement-card">
+            <div className="plan-achievement-head">
               <div>
-                <div className="chart-card-title">Hiring Plan Achievement by Department</div>
-                <div className="chart-card-sub">Green bars show percentage of vacancies filled; labels show open vacancies.</div>
+                <div className="plan-achievement-title">Hiring Plan Achievement by Department</div>
+                <div className="plan-achievement-sub">Vacancies planned vs filled · June 2026</div>
               </div>
-              <span className="badge badge-green">Achievement %</span>
+              <div className="plan-legend" aria-label="Hiring plan chart legend">
+                <span><i className="plan-legend-box plan-legend-planned" /> Planned</span>
+                <span><i className="plan-legend-box plan-legend-filled" /> Filled</span>
+              </div>
             </div>
             {planRows.length === 0 ? (
               <div className="empty-panel">No hiring plan data yet. Achievement will appear once requisitions or hires exist.</div>
             ) : (
-              <div className="chart-bars">
-                {planRows.map(row => {
-                  const achievementWidth = row.progress === 0 ? 0 : Math.max(4, row.progress);
-                  return (
-                    <div className="chart-bar-row" key={row.department}>
-                      <div className="chart-bar-top">
-                        <div className="chart-bar-label">{row.department}</div>
-                        <div className="chart-bar-value">{row.progress}% achieved · {row.filled}/{row.plannedRoles} filled</div>
+              <>
+                <div className="plan-summary-grid">
+                  <div className="plan-summary-card">
+                    <div className="plan-summary-label">Total vacancies</div>
+                    <div className="plan-summary-value">{planTotalVacancies}</div>
+                  </div>
+                  <div className="plan-summary-card">
+                    <div className="plan-summary-label">Filled</div>
+                    <div className="plan-summary-value">{planFilledVacancies}</div>
+                  </div>
+                  <div className="plan-summary-card">
+                    <div className="plan-summary-label">Open</div>
+                    <div className="plan-summary-value open">{planOpenVacancies}</div>
+                  </div>
+                  <div className="plan-summary-card">
+                    <div className="plan-summary-label">Overall achievement</div>
+                    <div className="plan-summary-value percent">{planOverallAchievement}%</div>
+                  </div>
+                </div>
+                <div className="plan-bars-plot">
+                  {topPlanRows.map(row => {
+                    const plannedWidth = Math.max(2, Math.round((row.plannedRoles / planChartMax) * 100));
+                    const filledWidth = row.filled === 0 ? 0 : Math.max(2, Math.round((row.filled / planChartMax) * 100));
+                    return (
+                      <div className="plan-plot-row" key={row.department}>
+                        <div className="plan-plot-label">{row.department}</div>
+                        <div className="plan-plot-area" aria-label={`${row.department}: ${row.plannedRoles} planned, ${row.filled} filled, ${row.remaining} open`}>
+                          <div className="plan-bar planned" style={{ width: `${plannedWidth}%` }} />
+                          <div className="plan-bar filled" style={{ width: `${filledWidth}%` }} />
+                          <div className="plan-bar-note">{row.progress}% · {row.remaining} open</div>
+                        </div>
                       </div>
-                      <div className="chart-bar-track" aria-label={`${row.department} ${row.progress}% achievement`}>
-                        <div className="chart-bar-fill" style={{ width: `${achievementWidth}%` }} />
-                      </div>
-                      <div className="chart-bar-meta">
-                        <span>{row.plannedRoles} total vacanc{row.plannedRoles === 1 ? "y" : "ies"}</span>
-                        <span>{row.remaining} open vacanc{row.remaining === 1 ? "y" : "ies"}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+                <div className="plan-axis">
+                  <div />
+                  <div className="plan-axis-scale">
+                    {planAxisTicks.map((tick, index) => <span key={`${tick}-${index}`}>{tick}</span>)}
+                  </div>
+                  <div className="plan-axis-label">Number of positions</div>
+                </div>
+              </>
             )}
           </section>
 
@@ -3266,11 +3335,24 @@ function CandidatesPage({ candidates, setCandidates, applications, setApplicatio
   const [filterStage, setFilterStage] = useState("All");
   const [deletingCandidateId, setDeletingCandidateId] = useState(null);
   const [assigningCandidateId, setAssigningCandidateId] = useState(null);
+  const [savingSourceId, setSavingSourceId] = useState(null);
   const deptOptions = Array.from(new Set(jobs.map(j => j.dept).filter(Boolean))).sort();
   const openJobs = jobs.filter(j => j.status === "Open");
+  const canCreate = !!roleConfig.canEditCandidates;
+  const canDelete = !!roleConfig.canDeleteRecords;
+  const canEditSource = !!roleConfig.canEditCandidates;
+  const normalizeCandidateSource = (source) => {
+    const normalized = String(source || "").trim().toLowerCase();
+    if (normalized === "linkedin") return "LinkedIn";
+    if (normalized === "forasna" || normalized === "job_board") return "Forasna";
+    if (normalized === "referral") return "Referral";
+    if (normalized === "internal" || normalized === "internal_transfer") return "Internal Transfer";
+    return "";
+  };
 
   const filtered = candidates.filter(c => {
-    const matchSource = filterSource === "All" || c.source === filterSource;
+    const sourceLabel = normalizeCandidateSource(c.source);
+    const matchSource = filterSource === "All" || sourceLabel === filterSource;
     const matchSearch = c.name.toLowerCase().includes(search.toLowerCase()) || c.email.toLowerCase().includes(search.toLowerCase());
     const activeApp = applications.find(a => a.candidateId === c.id && a.status === "Active");
     const activeJob = activeApp ? jobs.find(j => j.id === activeApp.jobId) : null;
@@ -3279,9 +3361,6 @@ function CandidatesPage({ candidates, setCandidates, applications, setApplicatio
     const matchStage = filterStage === "All" || activeApp?.stage === filterStage;
     return matchSource && matchSearch && matchJob && matchDept && matchStage;
   });
-
-  const canCreate = !!roleConfig.canEditCandidates;
-  const canDelete = !!roleConfig.canDeleteRecords;
 
   const deleteCandidate = async (candidate) => {
     if (!canDelete || !backendActions?.deleteCandidate) return;
@@ -3334,6 +3413,24 @@ function CandidatesPage({ candidates, setCandidates, applications, setApplicatio
     }
   };
 
+  const updateCandidateSource = async (candidate, source) => {
+    if (!source || !canEditSource) return;
+    const previousSource = candidate.source;
+    setSavingSourceId(candidate.id);
+    setCandidates(prev => prev.map(item => item.id === candidate.id ? { ...item, source } : item));
+    try {
+      if (backendActions?.updateCandidate) {
+        await backendActions.updateCandidate(candidate.id, { source });
+        await reloadData?.();
+      }
+    } catch (e) {
+      setCandidates(prev => prev.map(item => item.id === candidate.id ? { ...item, source: previousSource } : item));
+      alert(e.message || "Could not update candidate source.");
+    } finally {
+      setSavingSourceId(null);
+    }
+  };
+
   const exportCandidates = () => {
     const headers = ["Full Name", "Email", "Phone", "Nationality", "Source", "Referred By", "Active Applications", "Current Stage", "Applied Job", "Date Added", "Tags"];
     const rows = filtered.map(c => {
@@ -3341,7 +3438,7 @@ function CandidatesPage({ candidates, setCandidates, applications, setApplicatio
       const activeJob = activeApp ? jobs.find(j => j.id === activeApp.jobId) : null;
       const appCount = applications.filter(a => a.candidateId === c.id && a.status === "Active").length;
       return [
-        c.name, c.email, c.phone || "", c.nationality, c.source, c.source === "Referral" ? (c.referredBy || "") : "",
+        c.name, c.email, c.phone || "", c.nationality, normalizeCandidateSource(c.source) || c.source, normalizeCandidateSource(c.source) === "Referral" ? (c.referredBy || "") : "",
         appCount,
         activeApp?.stage || "—",
         activeJob?.title || "—",
@@ -3447,8 +3544,21 @@ function CandidatesPage({ candidates, setCandidates, applications, setApplicatio
                       <td style={{ color: "var(--text3)", fontFamily: "var(--mono)", fontSize: 12 }}>{c.email}</td>
                       <td>{c.nationality}</td>
                       <td>
-                        <span className="badge badge-gray">{c.source}</span>
-                        {c.source === "Referral" && c.referredBy && (
+                        <select
+                          className="form-select"
+                          value={normalizeCandidateSource(c.source)}
+                          onChange={e => updateCandidateSource(c, e.target.value)}
+                          disabled={!canEditSource || savingSourceId === c.id}
+                          style={{ width: 180, height: 34, fontSize: 12 }}
+                          aria-label={`Source for ${c.name}`}
+                        >
+                          <option value="">Select source</option>
+                          {SOURCES.map(source => <option key={source} value={source}>{source}</option>)}
+                        </select>
+                        {savingSourceId === c.id && (
+                          <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>Saving...</div>
+                        )}
+                        {normalizeCandidateSource(c.source) === "Referral" && c.referredBy && (
                           <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>from {c.referredBy}</div>
                         )}
                       </td>
@@ -6845,13 +6955,16 @@ function ScheduleInterviewModal({ data, closeModal, ctx }) {
   })))
     .filter(u => u?.isActive !== false && u.email && u.fullName)
     .sort((a, b) => a.fullName.localeCompare(b.fullName));
-  const defaultInterviewerId = interviewerOptions.find(u => u.fullName === "Mohi Mohsen")?.id || interviewerOptions[0]?.id || "";
+  const defaultInterviewerId = String(interviewerOptions.find(u => u.fullName === "Mohi Mohsen")?.id || interviewerOptions[0]?.id || "");
   const [form, setForm] = useState({ applicationId: data?.applicationId || eligibleApps[0]?.id || "", type: "1st Interview", scheduledAt: "", format: "In-person", interviewerUserId: defaultInterviewerId });
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
   const submit = async () => {
     if (!form.applicationId || !form.scheduledAt) return;
-    const selectedInterviewer = interviewerOptions.find(u => u.id === form.interviewerUserId);
+    const selectedInterviewer = interviewerOptions.find(u =>
+      String(u.id || "") === String(form.interviewerUserId || "") ||
+      String(u.email || "") === String(form.interviewerUserId || "")
+    );
     if (!selectedInterviewer) {
       alert("Please select an interviewer from the user list.");
       return;
@@ -6925,10 +7038,10 @@ function ScheduleInterviewModal({ data, closeModal, ctx }) {
           <div className="form-row">
             <div className="form-group"><label className="form-label">Date & time *</label><input className="form-input" type="datetime-local" value={form.scheduledAt} onChange={e => set("scheduledAt", e.target.value)} /></div>
             <div className="form-group"><label className="form-label">Interviewer</label>
-              <select className="form-select" value={form.interviewerUserId} onChange={e => set("interviewerUserId", e.target.value)}>
+              <select className="form-select" value={String(form.interviewerUserId || "")} onChange={e => set("interviewerUserId", e.target.value)}>
                 <option value="">Select interviewer</option>
                 {interviewerOptions.map(u => (
-                  <option key={u.id} value={u.id}>{u.fullName} — {u.email}</option>
+                  <option key={u.id || u.email} value={String(u.id || u.email)}>{u.fullName} — {u.email}</option>
                 ))}
               </select>
             </div>

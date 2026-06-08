@@ -44,13 +44,17 @@ const entityLabel = {
 
 const sourceToApi = {
   LinkedIn: "linkedin",
+  Forasna: "job_board",
   Referral: "referral",
+  "Internal Transfer": "internal",
   Wuzzuf: "job_board",
   wuzzuf: "job_board",
   Indeed: "job_board",
   indeed: "job_board",
   "Direct Application": "direct",
   direct_application: "direct",
+  internal_transfer: "internal",
+  internal: "internal",
   Headhunt: "agency",
   headhunt: "agency",
   "Recruitment Agency": "agency",
@@ -59,6 +63,7 @@ const sourceToApi = {
   cv_upload: "direct",
   referral: "referral",
   linkedin: "linkedin",
+  job_board: "job_board",
 };
 
 const seniorityToApi = {
@@ -435,6 +440,13 @@ export const backendActions = {
     body: JSON.stringify({
       ...payload,
       source: sourceToApi[payload.source] || payload.source || "direct",
+    }),
+  }),
+  updateCandidate: (id, payload) => api(`/candidates/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      ...payload,
+      source: sourceToApi[payload.source] || payload.source,
     }),
   }),
   createPosition: (payload) => api("/positions", {
