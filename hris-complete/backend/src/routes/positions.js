@@ -424,7 +424,7 @@ positionsRouter.patch(
       const updates = { status };
       if (status === 'closed') {
         updates.closedDate = new Date();
-        updates.isActive   = false;
+        updates.isActive   = true;
       } else {
         updates.isActive = true;
         updates.closedDate = null;
