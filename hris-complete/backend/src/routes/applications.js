@@ -47,7 +47,10 @@ applicationsRouter.get('/', async (req, res, next) => {
 
     const scopedWhere = buildApplicationScopeWhere(req.user);
     const queryWhere = {
-      isActive: true,
+      OR: [
+        { isActive: true },
+        { stage: 'rejected' },
+      ],
       ...(positionId  && { positionId }),
       ...(candidateId && { candidateId }),
       ...(stage       && { stage }),

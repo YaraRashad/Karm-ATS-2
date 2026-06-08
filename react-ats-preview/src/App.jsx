@@ -1922,13 +1922,14 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
     { label: "Final/EXCOM/CEO", stages: ["Final Interview"] },
     { label: "Offer", stages: ["Offer"] },
     { label: "Hired", stages: ["Hired"] },
+    { label: "Rejected", stages: ["Rejected"] },
   ];
   const funnelRows = funnelDefinitions.map(item => ({
     ...item,
-    count: applications.filter(app => item.stages.includes(app.stage) && app.status !== "Rejected").length,
+    count: applications.filter(app => item.stages.includes(app.stage)).length,
   }));
   const maxFunnel = Math.max(...funnelRows.map(row => row.count), 1);
-  const activeFunnelRows = funnelRows.filter(row => row.label !== "Hired");
+  const activeFunnelRows = funnelRows.filter(row => !["Hired", "Rejected"].includes(row.label));
   const bottleneck = activeFunnelRows.reduce((max, row) => row.count > max.count ? row : max, { label: "None", count: 0 });
 
   const normalizePlanDepartment = (dept) => {
@@ -4286,9 +4287,11 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
   const canUpload = !!roleConfig.canEditCandidates;
 
   const activeApplications = applications.filter(a => a.status === "Active");
+  const visiblePipelineApplications = applications.filter(a => a.status === "Active" || a.stage === "Rejected" || a.status === "Rejected");
+  const pipelineStages = [...PIPELINE_STAGES, "Rejected"];
   const delayedApps = activeApplications.filter(a => (a.daysInStage || 0) >= 5);
 
-  const filteredApps = activeApplications.filter(a => {
+  const filteredApps = visiblePipelineApplications.filter(a => {
     const job = jobs.find(j => j.id === a.jobId);
     const cand = candidates.find(c => c.id === a.candidateId);
     const q = pipelineSearch.toLowerCase();
@@ -4445,7 +4448,9 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
       <div className="page-header">
         <div>
           <div className="page-title">Active Hiring Pipeline</div>
-          <div className="page-sub">{filteredApps.length} active application{filteredApps.length === 1 ? "" : "s"} across requisitions</div>
+          <div className="page-sub">
+            {filteredApps.length} application{filteredApps.length === 1 ? "" : "s"} across requisitions · {filteredApps.filter(a => a.stage === "Rejected" || a.status === "Rejected").length} rejected
+          </div>
         </div>
         {canUpload && (
           <button className="btn btn-primary" onClick={() => openCvParser()}>
@@ -4513,17 +4518,18 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
         </div>
 
         <div className="kanban">
-          {PIPELINE_STAGES.map(stage => {
+          {pipelineStages.map(stage => {
             const stageApps = filteredApps.filter(a => a.stage === stage);
             const isApplied = stage === "Applied";
+            const isRejectedStage = stage === "Rejected";
             const isDragTarget = dragOverStage === stage;
             return (
               <div
                 key={stage}
                 className="kanban-col"
                 style={{ outline: isDragTarget ? `2px solid var(--accent)` : "none", transition: "outline 0.1s" }}
-                onDragOver={e => handleDragOver(e, stage)}
-                onDrop={e => handleDrop(e, stage)}
+                onDragOver={e => !isRejectedStage && handleDragOver(e, stage)}
+                onDrop={e => !isRejectedStage && handleDrop(e, stage)}
                 onDragLeave={() => setDragOverStage(null)}
               >
                 <div className="kanban-col-header">
@@ -4571,19 +4577,21 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
                     const delayLabel = app.daysInStage >= 5 ? "Delayed" : app.daysInStage >= 3 ? "Watch" : "Days";
                     const isTopCandidate = app.priority === "Top candidate";
                     const isDelayed = app.daysInStage >= 5;
+                    const isRejectedApp = app.stage === "Rejected" || app.status === "Rejected";
+                    const canActOnApp = canMove && !isRejectedApp;
                     return (
                       <div
                         key={app.id}
                         className="kanban-card"
-                        draggable={canMove}
+                        draggable={canActOnApp}
                         onDragStart={e => handleDragStart(e, app.id)}
                         onDragEnd={handleDragEnd}
-                        onClick={() => !isDragging && canMove && openModal("moveStage", { app, cand, job })}
+                        onClick={() => !isDragging && canActOnApp && openModal("moveStage", { app, cand, job })}
                         style={{
                           opacity: isDragging ? 0.4 : 1,
-                          cursor: canMove ? "grab" : "default",
+                          cursor: canActOnApp ? "grab" : "default",
                           transition: "opacity 0.15s",
-                          borderColor: isTopCandidate ? "var(--amber)" : delayBorder,
+                          borderColor: isRejectedApp ? "var(--red)" : isTopCandidate ? "var(--amber)" : delayBorder,
                           borderWidth: isDelayed || isTopCandidate ? 2 : 1,
                           boxShadow: isTopCandidate ? "0 0 0 3px var(--amber-soft)" : undefined,
                           transform: isDelayed ? "scale(1.015)" : undefined,
@@ -4593,23 +4601,24 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
                           {app.priority ? (
                             <button
                               className="badge"
-                              onClick={() => cyclePriority(app.id)}
-                              style={{ border: `1px solid ${priority.color}`, color: priority.color, background: priority.bg, cursor: "pointer" }}
+                              onClick={() => canActOnApp && cyclePriority(app.id)}
+                              style={{ border: `1px solid ${priority.color}`, color: priority.color, background: priority.bg, cursor: canActOnApp ? "pointer" : "default" }}
                               title="Click to change priority"
                             >
                               {app.priority === "Top candidate" ? "⭐" : app.priority === "Urgent" ? "🔥" : "🟡"} {priority.label}
                             </button>
                           ) : (
-                            <button className="badge badge-gray" onClick={() => cyclePriority(app.id)} style={{ cursor: canMove ? "pointer" : "default" }} title="Add priority">
+                            <button className="badge badge-gray" onClick={() => canActOnApp && cyclePriority(app.id)} style={{ cursor: canActOnApp ? "pointer" : "default" }} title="Add priority">
                               Add priority
                             </button>
                           )}
+                          {isRejectedApp && <span className="badge badge-red">Rejected</span>}
                           {scheduledInterview && (
                             <span className="badge badge-blue">📅 {formatDisplayDate(scheduledInterview.scheduledAt)}</span>
                           )}
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                          {canMove && (
+                          {canActOnApp && (
                             <input
                               type="checkbox"
                               checked={selectedApps.includes(app.id)}
@@ -4620,7 +4629,7 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
                           )}
                           <div style={{ width: 24, height: 24, borderRadius: "50%", background: cand.color + "22", color: cand.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, flexShrink: 0 }}>{initials(cand.name)}</div>
                           <span className="kanban-card-name">{cand.name}</span>
-                          {canMove && <span style={{ marginLeft: "auto", color: "var(--text3)", fontSize: 14, cursor: "grab" }}>⠿</span>}
+                          {canActOnApp && <span style={{ marginLeft: "auto", color: "var(--text3)", fontSize: 14, cursor: "grab" }}>⠿</span>}
                         </div>
                         <div className="kanban-card-job">{job?.title}</div>
                         {app.nextAction && (
@@ -4637,9 +4646,9 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
                         </div>
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }} onClick={e => e.stopPropagation()}>
                           <button className="btn btn-ghost btn-sm" onClick={() => openModal("viewCandidate", { candidate: cand, activeApp: app, activeJob: job })}>View Candidate</button>
-                          {canMove && <button className="btn btn-ghost btn-sm" onClick={() => openModal("moveStage", { app, cand, job })}>Move</button>}
-                          {canMove && <button className="btn btn-ghost btn-sm" onClick={() => moveApplications([app.id], "HM Review")}>Shortlist</button>}
-                          {canMove && <button className="btn btn-danger btn-sm" onClick={() => setRejectModal({ appIds: [app.id] })}>Reject</button>}
+                          {canActOnApp && <button className="btn btn-ghost btn-sm" onClick={() => openModal("moveStage", { app, cand, job })}>Move</button>}
+                          {canActOnApp && <button className="btn btn-ghost btn-sm" onClick={() => moveApplications([app.id], "HM Review")}>Shortlist</button>}
+                          {canActOnApp && <button className="btn btn-danger btn-sm" onClick={() => setRejectModal({ appIds: [app.id] })}>Reject</button>}
                         </div>
                       </div>
                     );
