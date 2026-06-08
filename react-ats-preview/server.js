@@ -1,7 +1,7 @@
-import { createServer } from "node:http";
-import { createReadStream } from "node:fs";
-import { readFile } from "node:fs/promises";
-import { extname, join, normalize } from "node:path";
+const { createServer } = require("node:http");
+const { createReadStream } = require("node:fs");
+const { readFile } = require("node:fs/promises");
+const { extname, join, normalize } = require("node:path");
 
 const port = process.env.PORT || 8080;
 const root = join(process.cwd(), "dist");

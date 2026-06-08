@@ -48,7 +48,7 @@ jobs:
           mkdir -p ../frontend-release
           cp -R dist ../frontend-release/dist
           cp server.js ../frontend-release/server.js
-          node -e "const p=require('./package.json'); const out={name:'karm-ats-web',version:p.version,type:'module',scripts:{start:'node server.js'},engines:{node:'>=22'}}; require('fs').writeFileSync('../frontend-release/package.json', JSON.stringify(out,null,2));"
+          node -e "const p=require('./package.json'); const out={name:'karm-ats-web',version:p.version,scripts:{start:'node server.js'},engines:{node:'>=18'}}; require('fs').writeFileSync('../frontend-release/package.json', JSON.stringify(out,null,2));"
           cd ../frontend-release
           zip -r ../frontend-release.zip .
 
