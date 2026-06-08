@@ -29,6 +29,12 @@ function safePath(urlPath) {
 
 createServer(async (req, res) => {
   try {
+    if (req.url === "/health") {
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ status: "ok", service: "karm-ats-web" }));
+      return;
+    }
+
     const path = safePath(req.url);
     const ext = extname(path);
     res.setHeader("Cache-Control", ext === ".html" ? "no-store" : "public, max-age=31536000, immutable");
