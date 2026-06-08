@@ -145,9 +145,10 @@ export async function api(path, options = {}, retry = true) {
       ?.map(e => [e.path || e.param || e.field, e.msg || e.message].filter(Boolean).join(": "))
       .filter(Boolean)
       .join("; ");
+    const errorMessage = typeof body?.error === "string" ? body.error : body?.error?.message;
     const message = details
-      ? `${body?.error?.message || "Validation failed"} — ${details}`
-      : body?.error?.message || body?.message || `API request failed (${res.status})`;
+      ? `${errorMessage || "Validation failed"} — ${details}`
+      : errorMessage || body?.message || `API request failed (${res.status})`;
     throw new Error(message);
   }
   return body?.data ?? body;
