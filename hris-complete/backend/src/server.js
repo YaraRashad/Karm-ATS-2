@@ -53,16 +53,8 @@ app.use(cors({
 }));
 
 // ── Rate limiting ─────────────────────────────────────────────────────
-const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 2000,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many requests — please try again later.' },
-});
-app.use('/api/', limiter);
-
-// Auth endpoints get stricter rate limiting
+// Auth endpoints keep stricter protection, but normal ATS operations should
+// not throttle recruiters/admins while creating positions or moving candidates.
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
