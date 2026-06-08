@@ -490,7 +490,7 @@ const JOB_FAMILIES = [
   "Blue Collar - Technicians",
 ];
 
-const SOURCES = ["LinkedIn", "Forasna", "Referral", "Internal Transfer"];
+const SOURCES = ["LinkedIn", "Forasna", "Career Email", "Referral", "Internal Transfer"];
 const SAMPLE_CV_URL = "./assets/sample-cv.pdf";
 
 const formatDisplayDate = (value) => {
@@ -3346,6 +3346,7 @@ function CandidatesPage({ candidates, setCandidates, applications, setApplicatio
     const normalized = String(source || "").trim().toLowerCase();
     if (normalized === "linkedin") return "LinkedIn";
     if (normalized === "forasna" || normalized === "job_board") return "Forasna";
+    if (normalized === "career" || normalized === "career email" || normalized === "career_email" || normalized === "other") return "Career Email";
     if (normalized === "referral") return "Referral";
     if (normalized === "internal" || normalized === "internal_transfer") return "Internal Transfer";
     return "";
@@ -3493,6 +3494,18 @@ function CandidatesPage({ candidates, setCandidates, applications, setApplicatio
             <select className="form-select" style={{ width: "auto" }} value={filterStage} onChange={e => setFilterStage(e.target.value)}>
               <option>All</option>{STAGES.map(s => <option key={s}>{s}</option>)}
             </select>
+          </div>
+          <div className="toolbar-summary">
+            <div className="toolbar-count" aria-live="polite">
+              <div className="toolbar-count-value">{filtered.length}</div>
+              <div className="toolbar-count-label">
+                {filterSource !== "All"
+                  ? `${filterSource} profiles`
+                  : filterStage !== "All"
+                    ? `${filterStage} profiles`
+                    : "Profiles shown"}
+              </div>
+            </div>
           </div>
         </div>
         <div className="card">

@@ -45,6 +45,8 @@ const entityLabel = {
 const sourceToApi = {
   LinkedIn: "linkedin",
   Forasna: "job_board",
+  Career: "other",
+  "Career Email": "other",
   Referral: "referral",
   "Internal Transfer": "internal",
   Wuzzuf: "job_board",
@@ -63,6 +65,8 @@ const sourceToApi = {
   cv_upload: "direct",
   referral: "referral",
   linkedin: "linkedin",
+  career: "other",
+  career_email: "other",
   job_board: "job_board",
 };
 
