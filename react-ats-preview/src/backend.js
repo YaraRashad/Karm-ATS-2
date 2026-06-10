@@ -223,6 +223,24 @@ export async function logout() {
   }
 }
 
+export function mapHiringRequest(r = {}) {
+  return {
+    id: r.id,
+    title: r.title,
+    dept: r.dept || r.department?.name || "",
+    departmentId: r.departmentId || "",
+    entity: entityLabel[r.entity] || r.entity || "",
+    requestedBy: r.requestedBy || "",
+    requestedById: r.requestedById || "",
+    reason: r.reason || "",
+    status: r.status || "",
+    managerApproved: !!r.managerApproved,
+    hrApproved: !!r.hrApproved,
+    ceoApproved: !!r.ceoApproved,
+    requestDate: r.requestDate?.slice?.(0, 10) || r.createdAt?.slice?.(0, 10) || "",
+  };
+}
+
 const stageLabel = {
   applied: "Applied",
   screening: "HR Screening",
@@ -384,21 +402,7 @@ export function mapBackendData({ positions = [], candidates = [], applications =
     submittedDate: s.submittedAt?.slice?.(0, 10) || "",
   }));
 
-  const hiringRequestRows = hiringRequests.map(r => ({
-    id: r.id,
-    title: r.title,
-    dept: r.dept || r.department?.name || "",
-    departmentId: r.departmentId || "",
-    entity: entityLabel[r.entity] || r.entity || "",
-    requestedBy: r.requestedBy || "",
-    requestedById: r.requestedById || "",
-    reason: r.reason || "",
-    status: r.status || "",
-    managerApproved: !!r.managerApproved,
-    hrApproved: !!r.hrApproved,
-    ceoApproved: !!r.ceoApproved,
-    requestDate: r.requestDate?.slice?.(0, 10) || r.createdAt?.slice?.(0, 10) || "",
-  }));
+  const hiringRequestRows = hiringRequests.map(mapHiringRequest);
 
   return {
     jobs,

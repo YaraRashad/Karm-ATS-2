@@ -10,6 +10,7 @@ import {
   fetchAtsData,
   fetchFileBlob,
   logout,
+  mapHiringRequest,
   microsoftLogin,
   restoreSession,
 } from "./backend.js";
@@ -662,6 +663,30 @@ const normalizeApplications = (apps) => (apps || []).map((app, index) => ({
 const hasSalaryAccess = (user) => !!(user?.canViewSalary || user?.canSeeAll || user?.canApproveOffer);
 const hasOfferApprovalAccess = (user) => !!(user?.canApproveOffer || user?.canApproveOffers);
 const hasRequisitionApprovalAccess = (user) => !!(user?.canApproveRequisition || user?.canApproveRequisitions);
+const nextHiringRequestApprovalStep = (request) => {
+  if (!request?.managerApproved) return "manager";
+  if (!request?.hrApproved) return "hr";
+  if (!request?.ceoApproved) return "admin";
+  return "";
+};
+const canApproveHiringRequestStep = (request, currentRole, roleConfig) => {
+  const step = nextHiringRequestApprovalStep(request);
+  if (!step || request?.status === "Approved") return false;
+  if (currentRole === "Admin") return true;
+  if (step === "hr") return currentRole === "Recruiter";
+  if (step === "admin") return hasRequisitionApprovalAccess(roleConfig);
+  if (step === "manager") {
+    return currentRole === "Hiring Manager" || hasRequisitionApprovalAccess(roleConfig);
+  }
+  return false;
+};
+const hiringRequestApprovalButtonLabel = (request) => {
+  const step = nextHiringRequestApprovalStep(request);
+  if (step === "manager") return "Approve manager";
+  if (step === "hr") return "Approve HR";
+  if (step === "admin") return "Approve admin";
+  return "Approved";
+};
 const pct = (value, total) => total ? Math.round((Number(value) / Number(total)) * 100) : 0;
 const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
 const hasCandidateCv = (candidate) => Boolean((candidate?.cvUrl && candidate.cvUrl !== "#") || candidate?.cvFileName || candidate?.cvTextExtracted);
@@ -2267,7 +2292,6 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
 // ── HIRING REQUESTS ───────────────────────────────────────────────────────────
 function HiringRequestsPage({ hiringRequests, setHiringRequests, currentRole, roleConfig, openModal, backendActions, reloadData, candidates = [] }) {
   const canRequest = currentRole === "Admin" || currentRole === "Recruiter" || currentRole === "Hiring Manager";
-  const canApprove = hasRequisitionApprovalAccess(roleConfig);
   const [savingId, setSavingId] = useState("");
 
   const approveStep = async (id) => {
@@ -2275,7 +2299,8 @@ function HiringRequestsPage({ hiringRequests, setHiringRequests, currentRole, ro
       setSavingId(id);
       if (backendActions?.approveHiringRequestStep) {
         const updated = await backendActions.approveHiringRequestStep(id);
-        setHiringRequests(prev => prev.map(req => (req.id === id ? { ...req, ...updated } : req)));
+        const mapped = mapHiringRequest(updated);
+        setHiringRequests(prev => prev.map(req => (req.id === id ? { ...req, ...mapped } : req)));
         await reloadData?.();
         return;
       }
@@ -2287,7 +2312,7 @@ function HiringRequestsPage({ hiringRequests, setHiringRequests, currentRole, ro
         return req;
       }));
     } catch (error) {
-      window.alert(error.message || "Could not approve this hiring request.");
+      window.alert(`Could not approve this hiring request: ${error.message || "Unknown error"}`);
     } finally {
       setSavingId("");
     }
@@ -2326,21 +2351,24 @@ function HiringRequestsPage({ hiringRequests, setHiringRequests, currentRole, ro
             <table>
               <thead><tr><th>Role</th><th>Entity</th><th>Requested by</th><th>Reason</th><th>Approvals</th><th>Status</th><th></th></tr></thead>
               <tbody>
-                {hiringRequests.map(req => (
-                  <tr key={req.id}>
-                    <td className="strong">{req.title}<div style={{ fontSize: 11, color: "var(--text3)" }}>{req.dept}</div></td>
-                    <td><span className="tag">{req.entity}</span></td>
-                    <td>{req.requestedBy}</td>
-                    <td style={{ maxWidth: 260 }}>{req.reason}</td>
-                    <td>
-                      <span className={`badge ${req.managerApproved ? "badge-green" : "badge-amber"}`}>Manager</span>{" "}
-                      <span className={`badge ${req.hrApproved ? "badge-green" : "badge-amber"}`}>HR</span>{" "}
-                      <span className={`badge ${req.ceoApproved ? "badge-green" : "badge-amber"}`}>Admin</span>
-                    </td>
-                    <td><span className={`badge ${req.status === "Approved" ? "badge-green" : "badge-amber"}`}>{req.status}</span></td>
-                    <td>{canApprove && req.status !== "Approved" && <button className="btn btn-ghost btn-sm" onClick={() => approveStep(req.id)} disabled={savingId === req.id}>{savingId === req.id ? "Saving..." : "Approve step"}</button>}</td>
-                  </tr>
-                ))}
+                {hiringRequests.map(req => {
+                  const canApproveStep = canApproveHiringRequestStep(req, currentRole, roleConfig);
+                  return (
+                    <tr key={req.id}>
+                      <td className="strong">{req.title}<div style={{ fontSize: 11, color: "var(--text3)" }}>{req.dept}</div></td>
+                      <td><span className="tag">{req.entity}</span></td>
+                      <td>{req.requestedBy}</td>
+                      <td style={{ maxWidth: 260 }}>{req.reason}</td>
+                      <td>
+                        <span className={`badge ${req.managerApproved ? "badge-green" : "badge-amber"}`}>Manager</span>{" "}
+                        <span className={`badge ${req.hrApproved ? "badge-green" : "badge-amber"}`}>HR</span>{" "}
+                        <span className={`badge ${req.ceoApproved ? "badge-green" : "badge-amber"}`}>Admin</span>
+                      </td>
+                      <td><span className={`badge ${req.status === "Approved" ? "badge-green" : "badge-amber"}`}>{req.status}</span></td>
+                      <td>{canApproveStep && <button className="btn btn-ghost btn-sm" onClick={() => approveStep(req.id)} disabled={savingId === req.id}>{savingId === req.id ? "Saving..." : hiringRequestApprovalButtonLabel(req)}</button>}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
