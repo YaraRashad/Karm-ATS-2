@@ -58,6 +58,7 @@ positionsRouter.get('/', async (req, res, next) => {
       entity, department, status, priority,
       search, hiringManagerId, recruiterId,
       sortBy = 'createdAt', sortDir = 'desc',
+      includeArchivedClosed,
     } = req.query;
 
     const skip  = (parseInt(page) - 1) * parseInt(pageSize);
@@ -68,8 +69,12 @@ positionsRouter.get('/', async (req, res, next) => {
       ? { entity: { in: req.entityFilter } }
       : {};
 
+    const activeVisibility = includeArchivedClosed === 'true'
+      ? { OR: [{ isActive: true }, { status: 'closed' }] }
+      : { isActive: true };
+
     const where = {
-      isActive: true,
+      ...activeVisibility,
       ...entityFilter,
       ...buildPositionScopeWhere(req.user),
       ...(entity        && { entity }),

@@ -419,7 +419,7 @@ export function mapBackendData({ positions = [], candidates = [], applications =
 
 export async function fetchAtsData({ includeAudit = false, includeUsers = false } = {}) {
   const [positions, candidates, applications, interviews, offers, scorecards, hiringRequests, audit, users] = await Promise.all([
-    api("/positions?pageSize=200"),
+    api("/positions?pageSize=200&includeArchivedClosed=true"),
     api("/candidates?pageSize=500"),
     api("/applications?pageSize=500"),
     api("/interviews"),
