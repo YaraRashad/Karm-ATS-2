@@ -234,13 +234,43 @@ hiringRequestsRouter.patch(
         return unprocessable(res, 'No approval step is currently available');
       }
 
-      const updated = await prisma.hiringRequest.update({
-        where: { id: existing.id },
-        data: updates,
-        include: {
-          department: { select: { id: true, name: true } },
-          requestedBy: { select: { id: true, email: true, firstName: true, lastName: true } },
-        },
+      const createsApprovedRequisition = updates.status === 'approved';
+      const updated = await prisma.$transaction(async (tx) => {
+        const request = await tx.hiringRequest.update({
+          where: { id: existing.id },
+          data: updates,
+          include: {
+            department: { select: { id: true, name: true } },
+            requestedBy: { select: { id: true, email: true, firstName: true, lastName: true } },
+          },
+        });
+
+        if (createsApprovedRequisition) {
+          await tx.position.create({
+            data: {
+              title: request.title,
+              departmentId: request.departmentId,
+              entity: request.entity,
+              seniority: 'mid',
+              employmentType: 'full_time',
+              currency: 'EGP',
+              salaryMin: 0,
+              salaryMax: 1,
+              priority: 'normal',
+              status: 'open',
+              headcountStatus: 'approved',
+              headcountApprovedAt: updates.approvedAt,
+              headcountApprovedBy: req.user.name || req.user.email,
+              headcountRationale: request.reason || 'Created from approved hiring request',
+              openDate: updates.approvedAt,
+              recruiterId: req.user.id,
+              description: request.reason || '',
+              requirements: [],
+            },
+          });
+        }
+
+        return request;
       });
 
       await auditLog(req, {
@@ -258,6 +288,7 @@ hiringRequestsRouter.patch(
           managerApproved: updated.managerApproved,
           hrApproved: updated.hrApproved,
           adminApproved: updated.adminApproved,
+          createdRequisition: createsApprovedRequisition,
         },
       });
 
