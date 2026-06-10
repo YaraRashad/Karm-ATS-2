@@ -300,6 +300,7 @@ const css = `
   .chart-card-title { font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: 0; }
   .chart-card-sub { font-size: 12px; color: var(--text3); margin-top: 4px; line-height: 1.35; }
   .chart-metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 16px; }
+  .chart-metric-grid-secondary { grid-template-columns: repeat(2, minmax(0, 1fr)); border-bottom: 0; padding-bottom: 0; margin-bottom: 0; }
   .chart-metric { text-align: center; padding: 4px 12px; border-right: 1px solid var(--border); min-width: 0; }
   .chart-metric:last-child { border-right: 0; }
   .chart-metric-value { font-size: 30px; line-height: 1; font-weight: 800; letter-spacing: 0; color: var(--text); }
@@ -2095,9 +2096,12 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
                 <div className="chart-card-title">Overall Progress Tracking</div>
                 <div className="chart-card-sub">Live hiring signals from current requisitions, interviews, offers, and hires.</div>
               </div>
-              <span className="badge badge-blue">{openJobs.length} open roles</span>
             </div>
             <div className="chart-metric-grid">
+              <button className="chart-metric btn-reset" onClick={() => openKpiModal(kpis[0])} title="View open requisitions">
+                <div className="chart-metric-value" style={{ color: "var(--accent)" }}>{openJobs.length}</div>
+                <div className="chart-metric-label">Open roles</div>
+              </button>
               <button className="chart-metric btn-reset" onClick={() => openKpiModal(kpis[1])} title="View scheduled interviews">
                 <div className="chart-metric-value" style={{ color: "var(--amber)" }}>{scheduledInterviews.length}</div>
                 <div className="chart-metric-label">Scheduled interviews</div>
@@ -2110,14 +2114,16 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
                 <div className="chart-metric-value" style={{ color: "var(--accent)" }}>{hiresThisMonth.length}</div>
                 <div className="chart-metric-label">Hires this month</div>
               </button>
+            </div>
+            <div className="chart-metric-grid chart-metric-grid-secondary">
               <div className="chart-metric">
                 <div className="chart-metric-value" style={{ color: "var(--text)" }}>{avgTimeToFill === null ? "N/A" : `${avgTimeToFill}d`}</div>
                 <div className="chart-metric-label">Average time to fill</div>
               </div>
-            </div>
-            <div className="chart-hero-number">
-              <div className="chart-hero-value">{hiringVsPlanRate === null ? "N/A" : `${hiringVsPlanRate}%`}</div>
-              <div className="chart-hero-label">Hiring vs plan · {totalFilledVacancies}/{openPlannedVacancies || 0} vacancies filled</div>
+              <div className="chart-metric">
+                <div className="chart-metric-value" style={{ color: "var(--text)" }}>{hiringVsPlanRate === null ? "N/A" : `${hiringVsPlanRate}%`}</div>
+                <div className="chart-metric-label">Hiring vs plan · {totalFilledVacancies}/{openPlannedVacancies || 0} vacancies filled</div>
+              </div>
             </div>
           </section>
 
