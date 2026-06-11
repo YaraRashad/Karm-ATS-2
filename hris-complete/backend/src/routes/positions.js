@@ -524,20 +524,32 @@ positionsRouter.delete(
       const position = await prisma.position.findUnique({ where: { id: req.params.id } });
       if (!position) return notFound(res, 'Position');
 
-      const appCount = await prisma.application.count({
-        where: { positionId: req.params.id, isActive: true },
-      });
+      const [activeAppCount, historicalAppCount, offerCount] = await Promise.all([
+        prisma.application.count({
+          where: { positionId: req.params.id, isActive: true },
+        }),
+        prisma.application.count({
+          where: { positionId: req.params.id },
+        }),
+        prisma.offer.count({
+          where: { positionId: req.params.id },
+        }),
+      ]);
 
-      if (appCount > 0) {
+      if (activeAppCount > 0) {
         return unprocessable(res,
-          `Cannot delete — position has ${appCount} active application(s). Close the position instead.`
+          `Cannot delete — position has ${activeAppCount} active application(s). Close the position instead.`
         );
       }
 
-      // Soft delete
-      await prisma.position.update({
+      if (historicalAppCount > 0 || offerCount > 0) {
+        return unprocessable(res,
+          'Cannot delete — position has candidate or offer history. Close the position instead so history stays reportable.'
+        );
+      }
+
+      await prisma.position.delete({
         where: { id: req.params.id },
-        data:  { isActive: false, status: 'closed' },
       });
 
       return noContent(res);
