@@ -6,6 +6,7 @@
 // POST   /api/v1/offers/:id/submit             — draft → pending_approval
 // POST   /api/v1/offers/:id/approve-step       — approve one step in chain
 // POST   /api/v1/offers/:id/reject-step        — reject at a step
+// PATCH  /api/v1/offers/:id/candidate-status   — draft/accepted/declined
 // POST   /api/v1/offers/:id/mark-accepted
 // POST   /api/v1/offers/:id/mark-declined
 // POST   /api/v1/offers/:id/trigger-onboarding
@@ -511,12 +512,75 @@ offersRouter.post(
   }
 );
 
+// ── PATCH /offers/:id/candidate-status ───────────────────────────────
+offersRouter.patch(
+  '/:id/candidate-status',
+  canModifyOffer,
+  [
+    body('status').isIn(['draft', 'accepted', 'declined']).withMessage('Status must be draft, accepted, or declined'),
+    body('reason').optional().isString(),
+  ],
+  async (req, res, next) => {
+    if (!validate(req, res)) return;
+    try {
+      const { status, reason } = req.body;
+      const offer = await prisma.offer.findUnique({ where: { id: req.params.id } });
+      if (!offer) return notFound(res, 'Offer');
+
+      const now = new Date();
+      const offerData = status === 'accepted'
+        ? { status: 'accepted', acceptedAt: now, declinedAt: null, declineReason: null, declineNotes: null }
+        : status === 'declined'
+          ? { status: 'declined', declinedAt: now, declineReason: reason || 'Candidate declined', declineNotes: null }
+          : { status: 'draft', acceptedAt: null, declinedAt: null, declineReason: null, declineNotes: null };
+
+      const applicationData = status === 'accepted'
+        ? { stage: 'hired', displayStage: 'Hired', stageEnteredAt: now, isActive: true, disqualifyReason: null }
+        : status === 'declined'
+          ? { stage: 'rejected', displayStage: 'Rejected', stageEnteredAt: now, isActive: false, disqualifyReason: `Offer declined: ${reason || 'Candidate declined'}` }
+          : { stage: 'offer', displayStage: 'Offer', stageEnteredAt: now, isActive: true, disqualifyReason: null };
+
+      const [updated] = await prisma.$transaction([
+        prisma.offer.update({
+          where: { id: req.params.id },
+          data: offerData,
+        }),
+        prisma.application.update({
+          where: { id: offer.applicationId },
+          data: applicationData,
+        }),
+        prisma.offerHistory.create({
+          data: {
+            offerId: req.params.id,
+            event: `Candidate offer status set to ${status}`,
+            actorName: req.user.name,
+            actorId: req.user.id,
+            metadata: { status, reason },
+          },
+        }),
+      ]);
+
+      await auditLog(req, {
+        action: 'updated',
+        entity: 'offers',
+        entityId: req.params.id,
+        before: { status: offer.status },
+        after: { status, reason },
+      });
+
+      return ok(res, updated);
+    } catch (err) { next(err); }
+  },
+);
+
 // ── POST /offers/:id/mark-accepted ────────────────────────────────────
 offersRouter.post('/:id/mark-accepted', canModifyOffer, async (req, res, next) => {
   try {
     const offer = await prisma.offer.findUnique({ where: { id: req.params.id } });
     if (!offer) return notFound(res, 'Offer');
-    if (offer.status !== 'sent') return unprocessable(res, 'Only sent offers can be accepted');
+    if (!['draft', 'approved', 'sent'].includes(offer.status)) {
+      return unprocessable(res, 'Only draft, approved, or sent offers can be accepted');
+    }
 
     const [updated] = await prisma.$transaction([
       prisma.offer.update({
@@ -526,7 +590,7 @@ offersRouter.post('/:id/mark-accepted', canModifyOffer, async (req, res, next) =
       // Move application to hired
       prisma.application.update({
         where: { id: offer.applicationId },
-        data:  { stage: 'hired', stageEnteredAt: new Date() },
+        data:  { stage: 'hired', displayStage: 'Hired', stageEnteredAt: new Date(), isActive: true, disqualifyReason: null },
       }),
       prisma.offerHistory.create({
         data: {
@@ -555,8 +619,8 @@ offersRouter.post(
     try {
       const offer = await prisma.offer.findUnique({ where: { id: req.params.id } });
       if (!offer) return notFound(res, 'Offer');
-      if (!['sent','approved'].includes(offer.status)) {
-        return unprocessable(res, 'Only sent offers can be declined');
+      if (!['draft','approved','sent','accepted'].includes(offer.status)) {
+        return unprocessable(res, 'Only draft, approved, sent, or accepted offers can be declined');
       }
 
       const [updated] = await prisma.$transaction([
@@ -571,7 +635,7 @@ offersRouter.post(
         }),
         prisma.application.update({
           where: { id: offer.applicationId },
-          data:  { stage: 'rejected', stageEnteredAt: new Date(), isActive: false,
+          data:  { stage: 'rejected', displayStage: 'Rejected', stageEnteredAt: new Date(), isActive: false,
                    disqualifyReason: `Offer declined: ${req.body.reason}` },
         }),
         prisma.offerHistory.create({
