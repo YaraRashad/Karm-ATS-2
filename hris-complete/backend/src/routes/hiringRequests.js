@@ -257,6 +257,7 @@ hiringRequestsRouter.patch(
               salaryMin: 0,
               salaryMax: 1,
               priority: 'normal',
+              headcount: 1,
               status: 'open',
               headcountStatus: 'approved',
               headcountApprovedAt: updates.approvedAt,

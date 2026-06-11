@@ -333,6 +333,7 @@ model Position {
   salaryMax           Int
   status              PositionStatus          @default(draft)
   priority            Priority                @default(normal)
+  headcount           Int                     @default(1)
   headcountStatus     HeadcountApprovalStatus @default(not_requested)
   headcountApprovedAt DateTime?
   headcountApprovedBy String?
@@ -397,6 +398,7 @@ model Application {
   positionId      String
   position        Position         @relation(fields: [positionId], references: [id])
   stage           ApplicationStage @default(applied)
+  displayStage    String?
   stageEnteredAt  DateTime         @default(now())
   appliedAt       DateTime         @default(now())
   isActive        Boolean          @default(true)

@@ -154,13 +154,13 @@ applicationsRouter.post(
         // Reactivate withdrawn application
         const reactivated = await prisma.application.update({
           where: { id: existing.id },
-          data:  { isActive: true, stage: 'applied', stageEnteredAt: new Date(), disqualifyReason: null },
+          data:  { isActive: true, stage: 'applied', displayStage: 'Applied', stageEnteredAt: new Date(), disqualifyReason: null },
         });
         return ok(res, reactivated);
       }
 
       const application = await prisma.application.create({
-        data: { candidateId, positionId, stage: 'applied', stageEnteredAt: new Date() },
+        data: { candidateId, positionId, stage: 'applied', displayStage: 'Applied', stageEnteredAt: new Date() },
         include: {
           candidate: { select: { id: true, firstName: true, lastName: true, email: true } },
           position:  { select: { id: true, title: true, entity: true } },
@@ -238,21 +238,31 @@ applicationsRouter.patch(
   async (req, res, next) => {
     if (!validate(req, res)) return;
     try {
-      const { stage, reason } = req.body;
+      const { stage, reason, displayStage } = req.body;
       const application = await prisma.application.findFirst({
         where: { id: req.params.id, ...buildApplicationScopeWhere(req.user) },
-        select: { id: true, stage: true, isActive: true },
+        select: { id: true, stage: true, displayStage: true, isActive: true, disqualifyReason: true },
       });
 
       if (!application) return notFound(res, 'Application');
-      if (!application.isActive) return unprocessable(res, 'Application is not active');
-      if (application.stage === stage) return unprocessable(res, 'Already in this stage');
+      const reactivatingRejected = !application.isActive && application.stage === 'rejected' && stage !== 'rejected';
+      if (!application.isActive && !reactivatingRejected) return unprocessable(res, 'Application is not active');
+      const nextDisplayStage = displayStage || null;
+      if (application.stage === stage && application.displayStage === nextDisplayStage) {
+        return unprocessable(res, 'Already in this stage');
+      }
 
       // Record history and update in a transaction
       const [updated] = await prisma.$transaction([
         prisma.application.update({
           where: { id: req.params.id },
-          data:  { stage, stageEnteredAt: new Date() },
+          data:  {
+            stage,
+            displayStage: nextDisplayStage,
+            stageEnteredAt: new Date(),
+            isActive: stage !== 'rejected',
+            disqualifyReason: stage === 'rejected' ? (reason || application.disqualifyReason) : null,
+          },
         }),
         prisma.applicationStageHistory.create({
           data: {
@@ -295,7 +305,7 @@ applicationsRouter.post(
       const [updated] = await prisma.$transaction([
         prisma.application.update({
           where: { id: req.params.id },
-          data:  { stage: 'rejected', stageEnteredAt: new Date(), disqualifyReason: reason, isActive: false },
+          data:  { stage: 'rejected', displayStage: 'Rejected', stageEnteredAt: new Date(), disqualifyReason: reason, isActive: false },
         }),
         prisma.applicationStageHistory.create({
           data: {

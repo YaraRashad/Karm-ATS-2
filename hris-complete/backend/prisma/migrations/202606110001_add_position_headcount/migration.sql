@@ -1,0 +1,1 @@
+ALTER TABLE "positions" ADD COLUMN "headcount" INTEGER NOT NULL DEFAULT 1;
