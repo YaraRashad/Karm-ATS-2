@@ -398,6 +398,7 @@ model Application {
   positionId      String
   position        Position         @relation(fields: [positionId], references: [id])
   stage           ApplicationStage @default(applied)
+  displayStage    String?
   stageEnteredAt  DateTime         @default(now())
   appliedAt       DateTime         @default(now())
   isActive        Boolean          @default(true)

@@ -853,6 +853,16 @@ function splitName(name) {
   return { firstName: parts[0] || "", lastName: parts.slice(1).join(" ") || "-" };
 }
 
+function normalizeCandidateSource(source) {
+  const normalized = String(source || "").trim().toLowerCase();
+  if (normalized === "linkedin") return "LinkedIn";
+  if (normalized === "forasna" || normalized === "job_board") return "Forasna";
+  if (normalized === "career" || normalized === "career email" || normalized === "career_email" || normalized === "other") return "Career Email";
+  if (normalized === "referral") return "Referral";
+  if (normalized === "internal" || normalized === "internal_transfer") return "Internal Transfer";
+  return source || "Career Email";
+}
+
 function LoginScreen({ onLogin, loading, error }) {
   return (
     <>
@@ -4356,7 +4366,7 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
   const moveApplications = async (ids, stage, notes = "") => {
     if (!canMove) return;
     try {
-      await Promise.all(ids.map(id => backendActions.moveApplication(id, { stage: STAGE_TO_BACKEND[stage] || "applied", reason: notes })));
+      await Promise.all(ids.map(id => backendActions.moveApplication(id, { stage: STAGE_TO_BACKEND[stage] || "applied", displayStage: stage, reason: notes })));
       await reloadData?.();
       setSelectedApps([]);
       return;
@@ -6300,6 +6310,16 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
   const [newNote, setNewNote] = useState("");
   const [notesLog, setNotesLog] = useState(c.notesLog || []);
   const [showCvPreview, setShowCvPreview] = useState(false);
+  const [editingCandidate, setEditingCandidate] = useState(false);
+  const [savingCandidate, setSavingCandidate] = useState(false);
+  const [candidateForm, setCandidateForm] = useState({
+    name: c.name || "",
+    title: c.title || "",
+    email: c.email || "",
+    phone: c.phone || "",
+    nationality: c.nationality || "",
+    source: normalizeCandidateSource(c.source),
+  });
   const cvUrl = c.cvUrl && c.cvUrl !== "#" ? c.cvUrl : "";
   const [cvPreviewUrl, setCvPreviewUrl] = useState("");
   const [cvPreviewLoading, setCvPreviewLoading] = useState(false);
@@ -6309,6 +6329,7 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
   const canMoveCandidate = !!ctx.roleConfig.canMoveCandidates;
   const canScheduleInterview = !!ctx.roleConfig.canScheduleInterviews;
   const canCreateOffer = !!ctx.roleConfig.canCreateOffers;
+  const canEditCandidate = !!ctx.roleConfig.canEditCandidates;
 
   const openJobs = ctx.jobs.filter(j => j.status === "Open");
 
@@ -6342,7 +6363,11 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
   const saveStage = async () => {
     if (!canMoveCandidate) return;
     try {
-      await ctx.backendActions.moveApplication(activeApp.id, { stage: STAGE_TO_BACKEND[selectedStage] || "applied", reason: moveNotes });
+      if (selectedStage === "Rejected") {
+        await ctx.backendActions.rejectApplication(activeApp.id, { reason: moveNotes.trim() || "Rejected from candidate profile" });
+      } else {
+        await ctx.backendActions.moveApplication(activeApp.id, { stage: STAGE_TO_BACKEND[selectedStage] || "applied", displayStage: selectedStage, reason: moveNotes });
+      }
       await ctx.reloadData?.();
       setMovingStage(false);
       closeModal();
@@ -6386,20 +6411,62 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
     setNewNote("");
   };
 
-  const rejectCandidate = () => {
-    if (!canMoveCandidate) return;
-    if (!activeApp) return;
-    ctx.setApplications(prev => prev.map(a => a.id === activeApp.id ? { ...a, stage: "Rejected", status: "Rejected", daysInStage: 0, lastActivityAt: todayISO() } : a));
-    closeModal();
+  const saveCandidateDetails = async () => {
+    if (!canEditCandidate || !candidateForm.name.trim() || !candidateForm.email.trim()) return;
+    setSavingCandidate(true);
+    try {
+      const { firstName, lastName } = splitName(candidateForm.name);
+      await ctx.backendActions.updateCandidate(c.id, {
+        firstName,
+        lastName,
+        email: candidateForm.email.trim(),
+        phone: candidateForm.phone.trim(),
+        nationality: candidateForm.nationality.trim(),
+        currentTitle: candidateForm.title.trim(),
+        source: candidateForm.source,
+      });
+      ctx.setCandidates(prev => prev.map(candidate => candidate.id === c.id ? {
+        ...candidate,
+        name: candidateForm.name.trim(),
+        title: candidateForm.title.trim(),
+        email: candidateForm.email.trim(),
+        phone: candidateForm.phone.trim(),
+        nationality: candidateForm.nationality.trim(),
+        source: candidateForm.source,
+      } : candidate));
+      await ctx.reloadData?.();
+      setEditingCandidate(false);
+    } catch (e) {
+      alert(e.message || "Could not save candidate details.");
+    } finally {
+      setSavingCandidate(false);
+    }
   };
 
-  const moveToNextStage = () => {
+  const rejectCandidate = async () => {
+    if (!canMoveCandidate) return;
+    if (!activeApp) return;
+    try {
+      await ctx.backendActions.rejectApplication(activeApp.id, { reason: "Rejected from candidate profile" });
+      await ctx.reloadData?.();
+      closeModal();
+    } catch (e) {
+      alert(e.message || "Could not reject this application.");
+    }
+  };
+
+  const moveToNextStage = async () => {
     if (!canMoveCandidate) return;
     if (!activeApp) return;
     const idx = STAGES.indexOf(activeApp.stage);
     const nextStage = STAGES[Math.min(idx + 1, PIPELINE_STAGES.length - 1)] || activeApp.stage;
-    ctx.setApplications(prev => prev.map(a => a.id === activeApp.id ? { ...a, stage: nextStage, daysInStage: 0, lastActivityAt: todayISO() } : a));
-    closeModal();
+    try {
+      await ctx.backendActions.moveApplication(activeApp.id, { stage: STAGE_TO_BACKEND[nextStage] || "applied", displayStage: nextStage, reason: "Moved from candidate profile" });
+      await ctx.reloadData?.();
+      closeModal();
+    } catch (e) {
+      alert(e.message || "Could not move this application.");
+    }
   };
 
   const createOfferForCandidate = () => {
@@ -6438,9 +6505,63 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
               </div>
             </div>
           </div>
-          <button className="modal-close" onClick={closeModal}>×</button>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {canEditCandidate && (
+              <button className="btn btn-ghost btn-sm" onClick={() => setEditingCandidate(v => !v)}>
+                <Icon name="edit" size={13} /> {editingCandidate ? "Cancel edit" : "Edit"}
+              </button>
+            )}
+            <button className="modal-close" onClick={closeModal}>×</button>
+          </div>
         </div>
         <div className="modal-body">
+          {editingCandidate && (
+            <div className="card" style={{ marginBottom: 18 }}>
+              <div className="card-header">
+                <div className="card-title">Edit candidate details</div>
+              </div>
+              <div className="card-body">
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Candidate name</label>
+                    <input className="form-input" value={candidateForm.name} onChange={e => setCandidateForm(p => ({ ...p, name: e.target.value }))} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Title</label>
+                    <input className="form-input" value={candidateForm.title} onChange={e => setCandidateForm(p => ({ ...p, title: e.target.value }))} placeholder="Current or target title" />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Email</label>
+                    <input className="form-input" type="email" value={candidateForm.email} onChange={e => setCandidateForm(p => ({ ...p, email: e.target.value }))} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Phone</label>
+                    <input className="form-input" value={candidateForm.phone} onChange={e => setCandidateForm(p => ({ ...p, phone: e.target.value }))} />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Nationality</label>
+                    <input className="form-input" value={candidateForm.nationality} onChange={e => setCandidateForm(p => ({ ...p, nationality: e.target.value }))} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Source</label>
+                    <select className="form-select" value={candidateForm.source} onChange={e => setCandidateForm(p => ({ ...p, source: e.target.value }))}>
+                      {SOURCES.map(source => <option key={source} value={source}>{source}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setEditingCandidate(false)} disabled={savingCandidate}>Cancel</button>
+                  <button className="btn btn-primary btn-sm" onClick={saveCandidateDetails} disabled={savingCandidate || !candidateForm.name.trim() || !candidateForm.email.trim()}>
+                    {savingCandidate ? "Saving..." : "Save candidate"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           <div className="form-row" style={{ marginBottom: 20 }}>
             <div>
               <div className="form-label">Contact</div>
@@ -6694,7 +6815,7 @@ function MoveStageModal({ data, closeModal, ctx }) {
       if (selectedStage === "Rejected") {
         await ctx.backendActions.rejectApplication(app.id, { reason: notes.trim() });
       } else {
-        await ctx.backendActions.moveApplication(app.id, { stage: STAGE_TO_BACKEND[selectedStage] || "applied", reason: notes });
+        await ctx.backendActions.moveApplication(app.id, { stage: STAGE_TO_BACKEND[selectedStage] || "applied", displayStage: selectedStage, reason: notes });
       }
       await ctx.reloadData?.();
       closeModal();

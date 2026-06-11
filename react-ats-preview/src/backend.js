@@ -335,6 +335,7 @@ export function mapBackendData({ positions = [], candidates = [], applications =
   const candidateRows = candidates.map(c => ({
     id: c.id,
     name: `${c.firstName || ""} ${c.lastName || ""}`.trim(),
+    title: c.currentTitle || "",
     email: c.email,
     phone: c.phone || "",
     nationality: c.nationality || "",
@@ -350,7 +351,7 @@ export function mapBackendData({ positions = [], candidates = [], applications =
     id: a.id,
     candidateId: a.candidateId || a.candidate?.id,
     jobId: a.positionId || a.position?.id,
-    stage: stageLabel[a.stage] || a.stage,
+    stage: a.displayStage || stageLabel[a.stage] || a.stage,
     status: a.isActive === false || a.stage === "rejected" ? "Rejected" : "Active",
     recruiterId: a.position?.recruiterId || a.position?.recruiter?.userId || a.position?.recruiter?.user?.id || a.position?.recruiter?.id || "",
     recruiter: fullName(a.position?.recruiter?.user || a.position?.recruiter) || "Recruiter",

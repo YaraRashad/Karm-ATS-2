@@ -155,13 +155,18 @@ candidatesRouter.patch('/:id', requireRoles(CAN_WRITE_CANDIDATES), async (req, r
     if (!candidate) return notFound(res, 'Candidate');
 
     const allowed = [
-      'firstName','lastName','phone','linkedinUrl','currentTitle','currentCompany',
+      'firstName','lastName','email','phone','linkedinUrl','currentTitle','currentCompany',
       'totalYearsExp','location','nationality','noticePeriodDays','salaryExpectation',
       'salaryCurrency','source','tags','resumeUrl',
     ];
 
     const updates = {};
     allowed.forEach(f => { if (req.body[f] !== undefined) updates[f] = req.body[f]; });
+
+    if (updates.email && updates.email !== candidate.email) {
+      const duplicate = await prisma.candidate.findUnique({ where: { email: updates.email } });
+      if (duplicate) return conflict(res, 'A candidate with this email already exists');
+    }
 
     const updated = await prisma.candidate.update({ where: { id: req.params.id }, data: updates });
     return ok(res, updated);
