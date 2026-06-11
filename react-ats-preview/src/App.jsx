@@ -6443,6 +6443,18 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
     }
   };
 
+  const cancelCandidateEdit = () => {
+    setCandidateForm({
+      name: c.name || "",
+      title: c.title || "",
+      email: c.email || "",
+      phone: c.phone || "",
+      nationality: c.nationality || "",
+      source: normalizeCandidateSource(c.source),
+    });
+    setEditingCandidate(false);
+  };
+
   const rejectCandidate = async () => {
     if (!canMoveCandidate) return;
     if (!activeApp) return;
@@ -6507,7 +6519,7 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {canEditCandidate && (
-              <button className="btn btn-ghost btn-sm" onClick={() => setEditingCandidate(v => !v)}>
+              <button className="btn btn-ghost btn-sm" onClick={() => editingCandidate ? cancelCandidateEdit() : setEditingCandidate(true)}>
                 <Icon name="edit" size={13} /> {editingCandidate ? "Cancel edit" : "Edit"}
               </button>
             )}
@@ -6515,63 +6527,34 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
           </div>
         </div>
         <div className="modal-body">
-          {editingCandidate && (
-            <div className="card" style={{ marginBottom: 18 }}>
-              <div className="card-header">
-                <div className="card-title">Edit candidate details</div>
-              </div>
-              <div className="card-body">
-                <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label">Candidate name</label>
-                    <input className="form-input" value={candidateForm.name} onChange={e => setCandidateForm(p => ({ ...p, name: e.target.value }))} />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Title</label>
-                    <input className="form-input" value={candidateForm.title} onChange={e => setCandidateForm(p => ({ ...p, title: e.target.value }))} placeholder="Current or target title" />
-                  </div>
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label">Email</label>
-                    <input className="form-input" type="email" value={candidateForm.email} onChange={e => setCandidateForm(p => ({ ...p, email: e.target.value }))} />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Phone</label>
-                    <input className="form-input" value={candidateForm.phone} onChange={e => setCandidateForm(p => ({ ...p, phone: e.target.value }))} />
-                  </div>
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label">Nationality</label>
-                    <input className="form-input" value={candidateForm.nationality} onChange={e => setCandidateForm(p => ({ ...p, nationality: e.target.value }))} />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Source</label>
-                    <select className="form-select" value={candidateForm.source} onChange={e => setCandidateForm(p => ({ ...p, source: e.target.value }))}>
-                      {SOURCES.map(source => <option key={source} value={source}>{source}</option>)}
-                    </select>
-                  </div>
-                </div>
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setEditingCandidate(false)} disabled={savingCandidate}>Cancel</button>
-                  <button className="btn btn-primary btn-sm" onClick={saveCandidateDetails} disabled={savingCandidate || !candidateForm.name.trim() || !candidateForm.email.trim()}>
-                    {savingCandidate ? "Saving..." : "Save candidate"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
           <div className="form-row" style={{ marginBottom: 20 }}>
             <div>
               <div className="form-label">Contact</div>
-              <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 4 }}>{c.email}</div>
-              <div style={{ fontSize: 13, color: "var(--text2)" }}>{c.phone || "—"}</div>
+              {editingCandidate ? (
+                <div style={{ display: "grid", gap: 8 }}>
+                  <input className="form-input" type="email" value={candidateForm.email} onChange={e => setCandidateForm(p => ({ ...p, email: e.target.value }))} placeholder="Email" />
+                  <input className="form-input" value={candidateForm.phone} onChange={e => setCandidateForm(p => ({ ...p, phone: e.target.value }))} placeholder="Phone" />
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 4 }}>{c.email}</div>
+                  <div style={{ fontSize: 13, color: "var(--text2)" }}>{c.phone || "—"}</div>
+                </>
+              )}
             </div>
             <div>
               <div className="form-label">Nationality</div>
-              <div style={{ fontSize: 13, color: "var(--text2)" }}>{c.nationality}</div>
-              {c.source === "Referral" && (
+              {editingCandidate ? (
+                <div style={{ display: "grid", gap: 8 }}>
+                  <input className="form-input" value={candidateForm.nationality} onChange={e => setCandidateForm(p => ({ ...p, nationality: e.target.value }))} placeholder="Nationality" />
+                  <select className="form-select" value={candidateForm.source} onChange={e => setCandidateForm(p => ({ ...p, source: e.target.value }))}>
+                    {SOURCES.map(source => <option key={source} value={source}>{source}</option>)}
+                  </select>
+                </div>
+              ) : (
+                <div style={{ fontSize: 13, color: "var(--text2)" }}>{c.nationality}</div>
+              )}
+              {!editingCandidate && c.source === "Referral" && (
                 <>
                   <div className="form-label" style={{ marginTop: 10 }}>Referred by</div>
                   <div style={{ fontSize: 13, color: "var(--text2)" }}>{c.referredBy || "—"}</div>
@@ -6579,6 +6562,26 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
               )}
             </div>
           </div>
+          {editingCandidate && (
+            <>
+              <div className="form-row" style={{ marginBottom: 16 }}>
+                <div className="form-group">
+                  <label className="form-label">Candidate name</label>
+                  <input className="form-input" value={candidateForm.name} onChange={e => setCandidateForm(p => ({ ...p, name: e.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Title</label>
+                  <input className="form-input" value={candidateForm.title} onChange={e => setCandidateForm(p => ({ ...p, title: e.target.value }))} placeholder="Current or target title" />
+                </div>
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 18 }}>
+                <button className="btn btn-ghost btn-sm" onClick={cancelCandidateEdit} disabled={savingCandidate}>Cancel</button>
+                <button className="btn btn-primary btn-sm" onClick={saveCandidateDetails} disabled={savingCandidate || !candidateForm.name.trim() || !candidateForm.email.trim()}>
+                  {savingCandidate ? "Saving..." : "Save changes"}
+                </button>
+              </div>
+            </>
+          )}
 
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 18 }}>
             {activeApp && canMoveCandidate && <button className="btn btn-primary btn-sm" onClick={moveToNextStage}>Move to next stage</button>}
