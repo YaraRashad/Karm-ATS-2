@@ -39,6 +39,7 @@ const positionBody = [
   body('currency').notEmpty().withMessage('Currency required'),
   body('salaryMin').isInt({ min: 0 }).withMessage('Salary min must be positive integer'),
   body('salaryMax').isInt({ min: 0 }).withMessage('Salary max must be positive integer'),
+  body('headcount').optional().isInt({ min: 1 }).withMessage('Headcount must be at least 1'),
   body('priority').isIn(['low','normal','high','urgent']).optional(),
   body('requirements').isArray().optional(),
   body('description').isString().optional(),
@@ -130,7 +131,7 @@ positionsRouter.post(
     try {
       const {
         title, departmentId, departmentName, entity, seniority, employmentType,
-        gradeBandId, currency, salaryMin, salaryMax, priority,
+        gradeBandId, currency, salaryMin, salaryMax, priority, headcount,
         hiringManagerId, scorecardTemplateId, description,
         requirements, targetCloseDate, headcountRationale,
       } = req.body;
@@ -160,6 +161,7 @@ positionsRouter.post(
           gradeBandId,
           currency, salaryMin, salaryMax,
           priority: priority || 'normal',
+          headcount: Number(headcount || 1),
           status: 'draft',
           headcountStatus: 'pending',
           hiringManagerId,
@@ -260,7 +262,7 @@ positionsRouter.patch(
 
       const allowed = [
         'title', 'description', 'requirements', 'priority',
-        'salaryMin', 'salaryMax', 'targetCloseDate',
+        'salaryMin', 'salaryMax', 'headcount', 'targetCloseDate',
         'hiringManagerId', 'recruiterId', 'scorecardTemplateId',
         'headcountRationale', 'entity', 'seniority', 'employmentType',
         'departmentId',
@@ -272,6 +274,9 @@ positionsRouter.patch(
 
       if (updates.targetCloseDate) {
         updates.targetCloseDate = new Date(updates.targetCloseDate);
+      }
+      if (updates.headcount !== undefined) {
+        updates.headcount = Math.max(1, parseInt(updates.headcount, 10) || 1);
       }
 
       const salaryMin = updates.salaryMin ?? existing.salaryMin;
