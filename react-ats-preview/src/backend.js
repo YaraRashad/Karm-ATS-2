@@ -257,6 +257,12 @@ const statusLabel = {
   closed: "Closed",
   on_hold: "On Hold",
   pending_approval: "Pending Approval",
+  approved: "Approved",
+  sent: "Sent",
+  accepted: "Accepted",
+  declined: "Declined",
+  expired: "Expired",
+  withdrawn: "Withdrawn",
 };
 
 const positionStatusToApi = {
@@ -383,6 +389,7 @@ export function mapBackendData({ positions = [], candidates = [], applications =
     currency: o.currency,
     startDate: o.startDate?.slice?.(0, 10) || "",
     status: statusLabel[o.status] || o.status,
+    candidateStatus: o.status === "accepted" ? "Accepted" : o.status === "declined" ? "Declined" : "Pending candidate",
     createdBy: "Recruiter",
     approvalNote: o.bandExceptionNote || "",
     createdDate: o.createdAt?.slice?.(0, 10) || "",
@@ -516,6 +523,10 @@ export const backendActions = {
   createInterview: (payload) => api("/interviews", { method: "POST", body: JSON.stringify(payload) }),
   deleteInterview: (id) => api(`/interviews/${id}`, { method: "DELETE" }),
   createOffer: (payload) => api("/offers", { method: "POST", body: JSON.stringify(payload) }),
+  updateOfferCandidateStatus: (id, payload) => api(`/offers/${id}/candidate-status`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  }),
   createHiringRequest: (payload) => api("/hiring-requests", {
     method: "POST",
     body: JSON.stringify({

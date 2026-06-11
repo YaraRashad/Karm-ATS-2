@@ -130,6 +130,10 @@ const css = `
   .badge-purple { background: var(--purple-soft); color: var(--purple); }
   .badge-coral { background: var(--coral-soft); color: var(--coral); }
   .badge-gray { background: rgba(255,255,255,0.05); color: var(--text2); }
+  .badge-select { width: auto; border-radius: 20px; padding: 4px 28px 4px 10px; font-family: var(--mono); font-size: 11px; font-weight: 600; }
+  .badge-select.badge-amber { border-color: rgba(217,119,6,0.28); }
+  .badge-select.badge-green { border-color: rgba(22,163,74,0.28); }
+  .badge-select.badge-red { border-color: rgba(220,38,38,0.28); }
 
   /* TABLES */
   .table-wrap { overflow-x: auto; }
@@ -5081,12 +5085,13 @@ function NotificationLog({ notifications }) {
   );
 }
 
-function OffersPage({ offers, setOffers, applications, candidates, jobs, roleConfig, canViewSalary, openModal }) {
+function OffersPage({ offers, setOffers, applications, candidates, jobs, roleConfig, canViewSalary, openModal, backendActions, reloadData }) {
   const canCreate = !!roleConfig.canCreateOffers;
   const canApprove = hasOfferApprovalAccess(roleConfig);
 
   const [notifications, setNotifications] = useState([]);
   const [viewingEmail, setViewingEmail] = useState(null);
+  const [savingOfferStatusId, setSavingOfferStatusId] = useState(null);
 
   const enriched = offers.map(o => {
     const app = applications.find(a => a.id === o.applicationId);
@@ -5133,8 +5138,39 @@ function OffersPage({ offers, setOffers, applications, candidates, jobs, roleCon
     setOffers(prev => prev.map(o => o.id === id ? { ...o, status: "Rejected" } : o));
   };
 
-  const setCandidateStatus = (id, candidateStatus) => {
-    setOffers(prev => prev.map(o => o.id === id ? { ...o, candidateStatus } : o));
+  const offerStatusValue = (status) => {
+    const normalized = String(status || "").toLowerCase();
+    if (normalized === "accepted") return "accepted";
+    if (normalized === "declined" || normalized === "rejected") return "declined";
+    return "draft";
+  };
+  const offerStatusBadge = (status) => {
+    const value = offerStatusValue(status);
+    return value === "accepted" ? "badge-green" : value === "declined" ? "badge-red" : "badge-amber";
+  };
+  const offerStatusLabel = (status) => {
+    const value = offerStatusValue(status);
+    return value === "accepted" ? "Accepted" : value === "declined" ? "Declined" : "Draft";
+  };
+  const setOfferDecisionStatus = async (offer, nextStatus) => {
+    if (!backendActions?.updateOfferCandidateStatus) return;
+    setSavingOfferStatusId(offer.id);
+    try {
+      await backendActions.updateOfferCandidateStatus(offer.id, {
+        status: nextStatus,
+        reason: nextStatus === "declined" ? "Candidate declined" : undefined,
+      });
+      setOffers(prev => prev.map(o => o.id === offer.id ? {
+        ...o,
+        status: offerStatusLabel(nextStatus),
+        candidateStatus: nextStatus === "accepted" ? "Accepted" : nextStatus === "declined" ? "Declined" : "Pending candidate",
+      } : o));
+      await reloadData?.();
+    } catch (e) {
+      alert(e.message || "Could not update offer status.");
+    } finally {
+      setSavingOfferStatusId(null);
+    }
   };
 
   return (
@@ -5231,17 +5267,23 @@ function OffersPage({ offers, setOffers, applications, candidates, jobs, roleCon
                       ) : "Restricted"}
                     </td>
                     <td style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--text2)" }}>{o.startDate}</td>
-                    <td><span className={`badge ${o.candidateStatus === "Accepted" ? "badge-green" : o.candidateStatus === "Rejected" ? "badge-red" : "badge-blue"}`}>{o.candidateStatus || "Pending candidate"}</span></td>
-                    <td><span className={`badge ${o.status === "Pending Approval" ? "badge-amber" : o.status === "Approved" ? "badge-green" : "badge-red"}`}>{o.status}</span></td>
+                    <td><span className={`badge ${o.candidateStatus === "Accepted" ? "badge-green" : o.candidateStatus === "Declined" || o.candidateStatus === "Rejected" ? "badge-red" : "badge-blue"}`}>{o.candidateStatus || "Pending candidate"}</span></td>
+                    <td>
+                      <select
+                        className={`form-select badge-select ${offerStatusBadge(o.status)}`}
+                        value={offerStatusValue(o.status)}
+                        onChange={e => setOfferDecisionStatus(o, e.target.value)}
+                        disabled={savingOfferStatusId === o.id}
+                        style={{ minWidth: 120 }}
+                      >
+                        <option value="draft">Draft</option>
+                        <option value="accepted">Accepted</option>
+                        <option value="declined">Declined</option>
+                      </select>
+                    </td>
                     <td>
                       <div style={{ display: "flex", gap: 6 }}>
                         <button className="btn btn-ghost btn-sm" onClick={() => openModal("viewOffer", { offer: o })}>View</button>
-                        {o.status === "Approved" && (
-                          <>
-                            <button className="btn btn-ghost btn-sm" onClick={() => setCandidateStatus(o.id, "Accepted")}>Accepted</button>
-                            <button className="btn btn-danger btn-sm" onClick={() => setCandidateStatus(o.id, "Rejected")}>Candidate rejected</button>
-                          </>
-                        )}
                         {o.status === "Approved" && notifications.find(n => n.email.subject.includes(o.cand?.name)) && (
                           <button className="btn btn-ghost btn-sm" style={{ color: "var(--accent)", borderColor: "var(--accent-soft)" }}
                             onClick={() => { const n = notifications.find(nn => nn.email.subject.includes(o.cand?.name)); if (n) setViewingEmail({ email: n.email, sentAt: n.sentAt }); }}>
@@ -6995,7 +7037,7 @@ function AddOfferModal({ data, closeModal, ctx }) {
       alert(e.message);
       return;
     }
-    const newOffer = { id: Date.now(), applicationId: form.applicationId, salary, basicSalary, variablePay, currency: form.currency, startDate: form.startDate, status: "Pending Approval", candidateStatus: "Pending candidate", createdBy: ctx.roleConfig.fullName, approvalNote: form.approvalNote, createdDate: new Date().toISOString().split("T")[0] };
+    const newOffer = { id: Date.now(), applicationId: form.applicationId, salary, basicSalary, variablePay, currency: form.currency, startDate: form.startDate, status: "Draft", candidateStatus: "Pending candidate", createdBy: ctx.roleConfig.fullName, approvalNote: form.approvalNote, createdDate: new Date().toISOString().split("T")[0] };
     ctx.setOffers(prev => [...prev, newOffer]);
     closeModal();
   };
