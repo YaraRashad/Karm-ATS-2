@@ -6373,7 +6373,12 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
   const canCreateOffer = !!ctx.roleConfig.canCreateOffers;
   const canEditCandidate = !!ctx.roleConfig.canEditCandidates;
 
-  const openJobs = ctx.jobs.filter(j => j.status === "Open");
+  const requisitionOptions = [...ctx.jobs].sort((a, b) => {
+    const currentA = String(a.id) === String(activeApp?.jobId) ? -1 : 0;
+    const currentB = String(b.id) === String(activeApp?.jobId) ? -1 : 0;
+    if (currentA !== currentB) return currentA - currentB;
+    return `${a.title} ${a.dept}`.localeCompare(`${b.title} ${b.dept}`);
+  });
 
   useEffect(() => {
     if (!showCvPreview || !cvUrl) return undefined;
@@ -6423,9 +6428,21 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
     closeModal();
   };
 
-  const saveJob = () => {
+  const saveJob = async () => {
     if (!canMoveCandidate) return;
     if (!selectedJobId) return;
+    if (activeApp?.id && ctx.backendActions?.transferApplication) {
+      try {
+        await ctx.backendActions.transferApplication(activeApp.id, { positionId: selectedJobId });
+        await ctx.reloadData?.();
+        setMovingJob(false);
+        closeModal();
+        return;
+      } catch (e) {
+        alert(e.message || "Could not change this candidate's requisition.");
+        return;
+      }
+    }
     ctx.setApplications(prev => prev.map(a => a.id === activeApp.id ? { ...a, jobId: selectedJobId, stage: "Applied", daysInStage: 0, nextAction: "Review CV", lastActivityAt: todayISO() } : a));
     setMovingJob(false);
     closeModal();
@@ -6738,8 +6755,8 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
                     <label className="form-label">Select requisition</label>
                     <select className="form-select" value={selectedJobId} onChange={e => setSelectedJobId(e.target.value)}>
                       <option value="">— Select a requisition —</option>
-                      {openJobs.map(j => (
-                        <option key={j.id} value={j.id}>{j.title} · {j.dept} · {j.entity}</option>
+                      {requisitionOptions.map(j => (
+                        <option key={j.id} value={j.id}>{j.title} · {j.dept} · {j.entity} · {j.status}</option>
                       ))}
                     </select>
                   </div>

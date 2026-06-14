@@ -518,6 +518,7 @@ export const backendActions = {
   deleteCandidate: (id) => api(`/candidates/${id}`, { method: "DELETE" }),
   createApplication: (payload) => api("/applications", { method: "POST", body: JSON.stringify(payload) }),
   moveApplication: (id, payload) => api(`/applications/${id}/stage`, { method: "PATCH", body: JSON.stringify(payload) }),
+  transferApplication: (id, payload) => api(`/applications/${id}/position`, { method: "PATCH", body: JSON.stringify(payload) }),
   rejectApplication: (id, payload) => api(`/applications/${id}/disqualify`, { method: "POST", body: JSON.stringify(payload) }),
   addNote: (id, payload) => api(`/applications/${id}/notes`, { method: "POST", body: JSON.stringify(payload) }),
   createInterview: (payload) => api("/interviews", { method: "POST", body: JSON.stringify(payload) }),

@@ -3,6 +3,7 @@
 // POST   /api/v1/applications
 // GET    /api/v1/applications/:id
 // PATCH  /api/v1/applications/:id/stage      — move stage
+// PATCH  /api/v1/applications/:id/position   — change requisition
 // POST   /api/v1/applications/:id/disqualify
 // POST   /api/v1/applications/:id/notes
 // DELETE /api/v1/applications/:id/notes/:noteId
@@ -229,6 +230,74 @@ applicationsRouter.get('/:id', async (req, res, next) => {
     }));
   } catch (err) { next(err); }
 });
+
+// ── PATCH /applications/:id/position ──────────────────────────────────
+applicationsRouter.patch(
+  '/:id/position',
+  requireRoles(CAN_WRITE_CANDIDATES),
+  [body('positionId').notEmpty().withMessage('Position is required')],
+  async (req, res, next) => {
+    if (!validate(req, res)) return;
+    try {
+      const { positionId } = req.body;
+      const application = await prisma.application.findFirst({
+        where: { id: req.params.id, ...buildApplicationScopeWhere(req.user) },
+        select: { id: true, candidateId: true, positionId: true, stage: true },
+      });
+      if (!application) return notFound(res, 'Application');
+
+      const position = await prisma.position.findUnique({
+        where: { id: positionId },
+        select: { id: true, title: true },
+      });
+      if (!position) return notFound(res, 'Position');
+      if (application.positionId === positionId) {
+        return unprocessable(res, 'Application is already assigned to this requisition');
+      }
+
+      const duplicate = await prisma.application.findUnique({
+        where: { candidateId_positionId: { candidateId: application.candidateId, positionId } },
+      });
+      if (duplicate) {
+        return unprocessable(res, 'Candidate already has an application for this requisition');
+      }
+
+      const now = new Date();
+      const [updated] = await prisma.$transaction([
+        prisma.application.update({
+          where: { id: req.params.id },
+          data: {
+            positionId,
+            stage: 'applied',
+            displayStage: 'Applied',
+            stageEnteredAt: now,
+            isActive: true,
+            disqualifyReason: null,
+          },
+        }),
+        prisma.applicationStageHistory.create({
+          data: {
+            applicationId: req.params.id,
+            fromStage: application.stage,
+            toStage: 'applied',
+            movedById: req.user.id,
+            reason: `Requisition changed to ${position.title}`,
+          },
+        }),
+      ]);
+
+      await auditLog(req, {
+        action: 'requisition_changed',
+        entity: 'applications',
+        entityId: req.params.id,
+        before: { positionId: application.positionId },
+        after: { positionId },
+      });
+
+      return ok(res, updated);
+    } catch (err) { next(err); }
+  },
+);
 
 // ── PATCH /applications/:id/stage ─────────────────────────────────────
 applicationsRouter.patch(
