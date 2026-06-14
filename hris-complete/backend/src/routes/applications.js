@@ -287,11 +287,11 @@ applicationsRouter.patch(
       ]);
 
       await auditLog(req, {
-        action: 'requisition_changed',
+        action: 'updated',
         entity: 'applications',
         entityId: req.params.id,
         before: { positionId: application.positionId },
-        after: { positionId },
+        after: { positionId, change: 'requisition_changed' },
       });
 
       return ok(res, updated);

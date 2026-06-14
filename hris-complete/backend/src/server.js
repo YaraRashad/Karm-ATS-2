@@ -20,6 +20,7 @@ import { auditRouter }        from './routes/audit.js';
 import { usersRouter }        from './routes/users.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
 import { requestLogger }      from './middleware/requestLogger.js';
+import { ensureRuntimeSchema } from './lib/ensureSchema.js';
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
@@ -109,6 +110,16 @@ app.use(notFound);
 app.use(errorHandler);
 
 // ── Start ─────────────────────────────────────────────────────────────
+try {
+  await ensureRuntimeSchema();
+  console.log('Runtime schema check completed.');
+} catch (err) {
+  console.error('Runtime schema check failed.', {
+    message: err.message,
+    code: err.code,
+  });
+}
+
 app.listen(PORT, () => {
   console.log(`
   ┌─────────────────────────────────────────┐
