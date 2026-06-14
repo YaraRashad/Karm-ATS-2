@@ -63,6 +63,6 @@ jobs:
       - name: Deploy backend
         uses: azure/webapps-deploy@v3
         with:
-          app-name: karm-ats-api-g4dzhfe3buagc7e2
+          app-name: karm-ats-api
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_API }}
           package: backend-release.zip
