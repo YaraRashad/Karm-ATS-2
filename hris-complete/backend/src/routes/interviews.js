@@ -34,6 +34,24 @@ function mapRecommendation(value) {
   return 'neutral';
 }
 
+function splitManualName(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  return {
+    firstName: parts[0] || 'External',
+    lastName: parts.slice(1).join(' ') || 'Interviewer',
+  };
+}
+
+function manualInterviewerEmail(name) {
+  const slug = String(name || 'external-interviewer')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '.')
+    .replace(/^\.+|\.+$/g, '')
+    .slice(0, 80) || 'external-interviewer';
+  return `${slug}@manual-interviewer.local`;
+}
+
 // GET /interviews?applicationId=
 interviewsRouter.get('/', requireRoles([ROLES.ADMIN, ROLES.RECRUITER, ROLES.HIRING_MANAGER, ROLES.INTERVIEWER]), async (req, res, next) => {
   try {
@@ -70,6 +88,7 @@ interviewsRouter.post(
     body('applicationId').notEmpty(),
     body('interviewerId').optional(),
     body('interviewerEmail').isEmail().optional(),
+    body('interviewerName').optional().isString(),
     body('type').isIn(['phone_screen','technical','behavioral','panel','final','case_study']),
     body('scheduledAt').isISO8601(),
     body('durationMinutes').isInt({ min: 15, max: 480 }).optional(),
@@ -77,23 +96,44 @@ interviewsRouter.post(
   async (req, res, next) => {
     if (!validate(req, res)) return;
     try {
-      const { applicationId, interviewerId, interviewerEmail, type, scheduledAt, durationMinutes, meetingLink, location } = req.body;
-      if (!interviewerId && !interviewerEmail) {
+      const { applicationId, interviewerId, interviewerEmail, interviewerName, type, scheduledAt, durationMinutes, meetingLink, location } = req.body;
+      const manualName = String(interviewerName || '').trim();
+      if (!interviewerId && !interviewerEmail && !manualName) {
         return badRequest(res, 'Interviewer is required');
       }
 
-      const [application, interviewer] = await Promise.all([
+      const [application, existingInterviewer] = await Promise.all([
         prisma.application.findFirst({
           where: { id: applicationId, ...buildApplicationScopeWhere(req.user) },
           select: { id: true, isActive: true },
         }),
         interviewerId
           ? prisma.user.findUnique({ where: { id: interviewerId }, select: { id: true, isActive: true } })
-          : prisma.user.findUnique({ where: { email: interviewerEmail }, select: { id: true, isActive: true } }),
+          : interviewerEmail
+            ? prisma.user.findUnique({ where: { email: interviewerEmail }, select: { id: true, isActive: true } })
+            : Promise.resolve(null),
       ]);
 
       if (!application) return notFound(res, 'Application');
       if (!application.isActive) return unprocessable(res, 'Application is not active');
+      let interviewer = existingInterviewer;
+      if (!interviewer && manualName) {
+        const { firstName, lastName } = splitManualName(manualName);
+        interviewer = await prisma.user.upsert({
+          where: { email: manualInterviewerEmail(manualName) },
+          update: { firstName, lastName },
+          create: {
+            email: manualInterviewerEmail(manualName),
+            firstName,
+            lastName,
+            role: ROLES.INTERVIEWER,
+            accessScope: 'assigned_interviews',
+            entities: [],
+            isActive: false,
+          },
+          select: { id: true, isActive: true },
+        });
+      }
       if (!interviewer) return notFound(res, 'Interviewer');
 
       const interview = await prisma.interview.create({
