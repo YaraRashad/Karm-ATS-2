@@ -695,7 +695,12 @@ const hiringRequestApprovalButtonLabel = (request) => {
 const pct = (value, total) => total ? Math.round((Number(value) / Number(total)) * 100) : 0;
 const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
 const hasCandidateCv = (candidate) => Boolean((candidate?.cvUrl && candidate.cvUrl !== "#") || candidate?.cvFileName || candidate?.cvTextExtracted);
-const isLowConfidenceCandidate = (candidate) => !candidate?.email || String(candidate.email).includes("@unknown.local") || !candidate?.name || !hasCandidateCv(candidate);
+const isGeneratedCandidateEmail = (email) => /@(no-email|unknown)\.local$/i.test(String(email || ""));
+const candidateEmailDisplay = (email) => {
+  const value = String(email || "").trim();
+  return value && !isGeneratedCandidateEmail(value) ? value : "—";
+};
+const isLowConfidenceCandidate = (candidate) => !candidate?.email || isGeneratedCandidateEmail(candidate.email) || !candidate?.name || !hasCandidateCv(candidate);
 
 const ENTERPRISE_ROADMAP_ITEMS = [
   { id: "ATS-PX-001", priority: "Critical", category: "Resume intelligence", module: "Talent Database", title: "PDF/Word parsing, duplicate detection, source history, and merge review", impact: "High", ux: "High", complexity: "Medium", next: "Track parsing confidence and route possible duplicates to an admin review queue." },
@@ -3403,7 +3408,7 @@ function CandidatesPage({ candidates, setCandidates, applications, setApplicatio
   const filtered = candidates.filter(c => {
     const sourceLabel = normalizeCandidateSource(c.source);
     const matchSource = filterSource === "All" || sourceLabel === filterSource;
-    const matchSearch = c.name.toLowerCase().includes(search.toLowerCase()) || c.email.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = c.name.toLowerCase().includes(search.toLowerCase()) || String(c.email || "").toLowerCase().includes(search.toLowerCase());
     const activeApp = applications.find(a => a.candidateId === c.id && a.status === "Active");
     const activeJob = activeApp ? jobs.find(j => j.id === activeApp.jobId) : null;
     const matchJob = filterJob === "All" || applications.some(a => a.candidateId === c.id && String(a.jobId) === String(filterJob) && a.status === "Active");
@@ -3603,7 +3608,7 @@ function CandidatesPage({ candidates, setCandidates, applications, setApplicatio
                           </div>
                         </div>
                       </td>
-                      <td style={{ color: "var(--text3)", fontFamily: "var(--mono)", fontSize: 12 }}>{c.email}</td>
+                      <td style={{ color: "var(--text3)", fontFamily: "var(--mono)", fontSize: 12 }}>{candidateEmailDisplay(c.email)}</td>
                       <td>{c.nationality}</td>
                       <td>
                         <select
@@ -4215,8 +4220,8 @@ const extractCandidateName = (text) => {
                   <input className="form-input" value={cur.extracted.name} onChange={e => updateField("name", e.target.value)} placeholder="Full name" />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Email *</label>
-                  <input className="form-input" value={cur.extracted.email} onChange={e => updateField("email", e.target.value)} placeholder="email@example.com" />
+                  <label className="form-label">Email</label>
+                  <input className="form-input" value={cur.extracted.email} onChange={e => updateField("email", e.target.value)} placeholder="Optional" />
                 </div>
               </div>
               <div className="form-row">
@@ -6250,14 +6255,14 @@ function AddCandidateModal({ data, closeModal, ctx }) {
   const colors = ["#4f8ef7","#2dd4b4","#a78bfa","#f59e0b","#fb923c","#f87171","#4ade80"];
 
   const submit = async () => {
-    if (!form.name || !form.email) return;
+    if (!form.name.trim()) return;
     if (form.source === "Referral" && !form.referredBy.trim()) return;
     const names = splitName(form.name);
     try {
       const created = await ctx.backendActions.createCandidate({
         firstName: names.firstName,
         lastName: names.lastName,
-        email: form.email,
+        email: form.email.trim(),
         phone: form.phone,
         nationality: form.nationality,
         source: form.source === "Referral" ? "referral" : form.source.toLowerCase().replace(/\s+/g, "_"),
@@ -6301,7 +6306,7 @@ function AddCandidateModal({ data, closeModal, ctx }) {
         <div className="modal-body">
           <div className="form-group"><label className="form-label">Full name *</label><input data-testid="candidate-name-input" className="form-input" value={form.name} onChange={e => set("name", e.target.value)} placeholder="e.g. Ahmed Kamel" /></div>
           <div className="form-row">
-            <div className="form-group"><label className="form-label">Email *</label><input data-testid="candidate-email-input" className="form-input" type="email" value={form.email} onChange={e => set("email", e.target.value)} placeholder="candidate@email.com" /></div>
+            <div className="form-group"><label className="form-label">Email</label><input data-testid="candidate-email-input" className="form-input" type="email" value={form.email} onChange={e => set("email", e.target.value)} placeholder="Optional" /></div>
             <div className="form-group"><label className="form-label">Phone</label><input className="form-input" value={form.phone} onChange={e => set("phone", e.target.value)} placeholder="+20 1xx xxx xxxx" /></div>
           </div>
           <div className="form-row">
@@ -6357,7 +6362,7 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
   const [candidateForm, setCandidateForm] = useState({
     name: c.name || "",
     title: c.title || "",
-    email: c.email || "",
+    email: isGeneratedCandidateEmail(c.email) ? "" : c.email || "",
     phone: c.phone || "",
     nationality: c.nationality || "",
     source: normalizeCandidateSource(c.source),
@@ -6471,7 +6476,7 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
   };
 
   const saveCandidateDetails = async () => {
-    if (!canEditCandidate || !candidateForm.name.trim() || !candidateForm.email.trim()) return;
+    if (!canEditCandidate || !candidateForm.name.trim()) return;
     setSavingCandidate(true);
     try {
       const { firstName, lastName } = splitName(candidateForm.name);
@@ -6506,7 +6511,7 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
     setCandidateForm({
       name: c.name || "",
       title: c.title || "",
-      email: c.email || "",
+      email: isGeneratedCandidateEmail(c.email) ? "" : c.email || "",
       phone: c.phone || "",
       nationality: c.nationality || "",
       source: normalizeCandidateSource(c.source),
@@ -6596,7 +6601,7 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
                 </div>
               ) : (
                 <>
-                  <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 4 }}>{c.email}</div>
+                  <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 4 }}>{candidateEmailDisplay(c.email)}</div>
                   <div style={{ fontSize: 13, color: "var(--text2)" }}>{c.phone || "—"}</div>
                 </>
               )}
@@ -6635,7 +6640,7 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
               </div>
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 18 }}>
                 <button className="btn btn-ghost btn-sm" onClick={cancelCandidateEdit} disabled={savingCandidate}>Cancel</button>
-                <button className="btn btn-primary btn-sm" onClick={saveCandidateDetails} disabled={savingCandidate || !candidateForm.name.trim() || !candidateForm.email.trim()}>
+                <button className="btn btn-primary btn-sm" onClick={saveCandidateDetails} disabled={savingCandidate || !candidateForm.name.trim()}>
                   {savingCandidate ? "Saving..." : "Save changes"}
                 </button>
               </div>
@@ -6646,7 +6651,7 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
             {activeApp && canMoveCandidate && <button className="btn btn-primary btn-sm" onClick={moveToNextStage}>Move to next stage</button>}
             {activeApp && canScheduleInterview && <button className="btn btn-ghost btn-sm" onClick={() => ctx.openModal("scheduleInterview", { applicationId: activeApp.id })}>Schedule interview</button>}
             {activeApp && canCreateOffer && <button className="btn btn-ghost btn-sm" onClick={createOfferForCandidate}>Create offer</button>}
-            <a className="btn btn-ghost btn-sm" href={`mailto:${c.email}?subject=Karm ATS follow-up`} style={{ textDecoration: "none" }}>Send email</a>
+            {c.email && !isGeneratedCandidateEmail(c.email) && <a className="btn btn-ghost btn-sm" href={`mailto:${c.email}?subject=Karm ATS follow-up`} style={{ textDecoration: "none" }}>Send email</a>}
             {activeApp && canMoveCandidate && <button className="btn btn-danger btn-sm" onClick={rejectCandidate}>Reject application</button>}
           </div>
 
