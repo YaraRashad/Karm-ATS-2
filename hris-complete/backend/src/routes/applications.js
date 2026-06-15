@@ -140,9 +140,6 @@ applicationsRouter.post(
 
       if (!candidate) return notFound(res, 'Candidate');
       if (!position)  return notFound(res, 'Position');
-      if (position.status !== 'open') {
-        return unprocessable(res, 'Position is not open for applications');
-      }
 
       // Check for duplicate
       const existing = await prisma.application.findUnique({
