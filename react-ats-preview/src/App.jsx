@@ -6962,6 +6962,7 @@ function ScorecardModal({ data, closeModal, ctx }) {
   const [scores, setScores] = useState({ knowledge: existingScore?.knowledge || 0, attitude: existingScore?.attitude || 0, feedback: existingScore?.feedback || 0 });
   const [recommendation, setRecommendation] = useState(existingScore?.recommendation || "");
   const [notes, setNotes] = useState(existingScore?.notes || "");
+  const [saving, setSaving] = useState(false);
   const readOnly = !!existingScore;
 
   const avg = scores.knowledge && scores.attitude && scores.feedback
@@ -6982,12 +6983,22 @@ function ScorecardModal({ data, closeModal, ctx }) {
     </div>
   );
 
-  const submit = () => {
-    if (!recommendation) return;
+  const submit = async () => {
+    if (!recommendation || !scores.knowledge || !scores.attitude || !scores.feedback || saving) return;
+    setSaving(true);
     const newSc = { id: Date.now(), applicationId: app.id, interviewerId: ctx.roleConfig.fullName, interviewType: interview.type, knowledge: scores.knowledge, attitude: scores.attitude, feedback: scores.feedback, recommendation, notes, submittedDate: new Date().toISOString().split("T")[0] };
-    ctx.setScorecards(prev => [...prev.filter(s => s.applicationId !== app.id), newSc]);
-    ctx.setInterviews(prev => prev.map(i => i.id === interview.id ? { ...i, status: "Completed" } : i));
-    closeModal();
+    try {
+      if (ctx.backendActions?.submitInterviewScore) {
+        await ctx.backendActions.submitInterviewScore(interview.id, { scores, recommendation, notes });
+      }
+      ctx.setScorecards(prev => [...prev.filter(s => s.applicationId !== app.id), newSc]);
+      ctx.setInterviews(prev => prev.map(i => String(i.id) === String(interview.id) ? { ...i, status: "Completed" } : i));
+      await ctx.reloadData?.();
+      closeModal();
+    } catch (e) {
+      alert(e.message || "Could not save this scorecard.");
+      setSaving(false);
+    }
   };
 
   return (
@@ -7029,7 +7040,7 @@ function ScorecardModal({ data, closeModal, ctx }) {
         </div>
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={closeModal}>{readOnly ? "Close" : "Cancel"}</button>
-          {!readOnly && <button className="btn btn-primary" onClick={submit} disabled={!recommendation}>Submit Scorecard</button>}
+          {!readOnly && <button className="btn btn-primary" onClick={submit} disabled={!recommendation || !scores.knowledge || !scores.attitude || !scores.feedback || saving}>{saving ? "Saving..." : "Submit Scorecard"}</button>}
         </div>
       </div>
     </div>
