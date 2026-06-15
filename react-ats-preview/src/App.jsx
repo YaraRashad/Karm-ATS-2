@@ -3391,6 +3391,13 @@ function CandidatesPage({ candidates, setCandidates, applications, setApplicatio
   const [assigningCandidateId, setAssigningCandidateId] = useState(null);
   const [savingSourceId, setSavingSourceId] = useState(null);
   const deptOptions = Array.from(new Set(jobs.map(j => j.dept).filter(Boolean))).sort();
+  const statusDisplayLabel = value => {
+    const normalized = String(value || "").trim().toLowerCase();
+    if (normalized === "open") return "Open";
+    if (normalized === "draft") return "Draft";
+    if (normalized === "closed" || normalized === "archived") return "Closed";
+    return value || "Open";
+  };
   const allPositionOptions = [...jobs].sort((a, b) => {
     const statusOrder = { Open: 0, Draft: 1, Closed: 2 };
     const orderA = statusOrder[statusDisplayLabel(a.status)] ?? 3;
