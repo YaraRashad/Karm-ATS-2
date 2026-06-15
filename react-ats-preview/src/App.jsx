@@ -309,6 +309,7 @@ const css = `
   .chart-metric:last-child { border-right: 0; }
   .chart-metric-value { font-size: 30px; line-height: 1; font-weight: 800; letter-spacing: 0; color: var(--text); }
   .chart-metric-label { font-size: 11px; color: var(--text2); margin-top: 6px; line-height: 1.3; }
+  .chart-metric-breakdown { font-size: 10px; color: var(--text3); margin-top: 4px; line-height: 1.25; }
   .chart-hero-number { text-align: center; padding: 8px 0 2px; }
   .chart-hero-value { font-size: 32px; line-height: 1; font-weight: 800; color: var(--text); }
   .chart-hero-label { color: var(--text2); font-size: 12px; margin-top: 6px; }
@@ -1759,6 +1760,8 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
   const activeApplications = applications.filter(isActiveApplication);
   const activeCandidateIds = new Set(activeApplications.map(app => app.candidateId).filter(Boolean));
   const openJobs = jobs.filter(job => job.status === "Open");
+  const closedJobs = jobs.filter(job => job.status === "Closed");
+  const trackedPositionCount = openJobs.length + closedJobs.length;
   const openRequisitionRows = openJobs
     .map(job => {
       const jobApplications = activeApplications.filter(app => app.jobId === job.id);
@@ -2141,9 +2144,10 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
               </div>
             </div>
             <div className="chart-metric-grid">
-              <button className="chart-metric btn-reset" onClick={() => openKpiModal(kpis[0])} title="View open requisitions">
-                <div className="chart-metric-value" style={{ color: "var(--accent)" }}>{openJobs.length}</div>
-                <div className="chart-metric-label">Open roles</div>
+              <button className="chart-metric btn-reset" onClick={() => setPage?.("jobs")} title="View job requisitions">
+                <div className="chart-metric-value" style={{ color: "var(--accent)" }}>{trackedPositionCount}</div>
+                <div className="chart-metric-label">Positions</div>
+                <div className="chart-metric-breakdown">{openJobs.length} open · {closedJobs.length} closed</div>
               </button>
               <button className="chart-metric btn-reset" onClick={() => openKpiModal(kpis[1])} title="View scheduled interviews">
                 <div className="chart-metric-value" style={{ color: "var(--amber)" }}>{scheduledInterviews.length}</div>
