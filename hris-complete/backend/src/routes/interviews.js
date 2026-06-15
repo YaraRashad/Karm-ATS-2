@@ -18,6 +18,22 @@ function validate(req, res) {
   return true;
 }
 
+function computeComposite(ratings) {
+  const totalWeight = ratings.reduce((sum, r) => sum + r.weight, 0);
+  if (totalWeight === 0) return null;
+  const weightedSum = ratings.reduce((sum, r) => sum + (r.score * (r.weight / 100)), 0);
+  const normalised = weightedSum / (totalWeight / 100);
+  return Math.round(normalised * 100) / 100;
+}
+
+function mapRecommendation(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'strong hire' || normalized === 'strong_yes') return 'strong_yes';
+  if (normalized === 'hire' || normalized === 'yes') return 'yes';
+  if (normalized === 'no hire' || normalized === 'no') return 'no';
+  return 'neutral';
+}
+
 // GET /interviews?applicationId=
 interviewsRouter.get('/', requireRoles([ROLES.ADMIN, ROLES.RECRUITER, ROLES.HIRING_MANAGER, ROLES.INTERVIEWER]), async (req, res, next) => {
   try {
@@ -104,6 +120,155 @@ interviewsRouter.post(
       });
 
       return created(res, interview);
+    } catch (err) { next(err); }
+  }
+);
+
+// POST /interviews/:id/score
+interviewsRouter.post(
+  '/:id/score',
+  requireRoles([ROLES.ADMIN, ROLES.RECRUITER, ROLES.HIRING_MANAGER, ROLES.INTERVIEWER]),
+  [
+    body('scores').isObject(),
+    body('scores.knowledge').isInt({ min: 1, max: 5 }),
+    body('scores.attitude').isInt({ min: 1, max: 5 }),
+    body('scores.feedback').isInt({ min: 1, max: 5 }),
+    body('recommendation').notEmpty(),
+    body('notes').optional().isString(),
+  ],
+  async (req, res, next) => {
+    if (!validate(req, res)) return;
+    try {
+      const interview = await prisma.interview.findFirst({
+        where: {
+          id: req.params.id,
+          application: buildApplicationScopeWhere(req.user),
+        },
+        include: {
+          application: {
+            include: {
+              position: {
+                include: {
+                  scorecardTemplate: { include: { categories: { orderBy: { order: 'asc' } } } },
+                },
+              },
+            },
+          },
+          scorecard: { include: { ratings: true } },
+        },
+      });
+
+      if (!interview) return notFound(res, 'Interview');
+      if (req.user.role === ROLES.INTERVIEWER && interview.interviewerId !== req.user.id) {
+        return badRequest(res, 'Only the assigned interviewer can score this interview');
+      }
+
+      let template = interview.application.position?.scorecardTemplate || null;
+      if (!template || template.categories.length === 0) {
+        template = await prisma.scorecardTemplate.findFirst({
+          where: { isActive: true },
+          include: { categories: { orderBy: { order: 'asc' } } },
+        });
+      }
+      if (!template || template.categories.length === 0) {
+        return unprocessable(res, 'No scorecard template is configured');
+      }
+
+      const scoreValues = [
+        Number(req.body.scores.knowledge),
+        Number(req.body.scores.attitude),
+        Number(req.body.scores.feedback),
+      ];
+      const ratingData = template.categories.map((category, index) => ({
+        categoryId: category.id,
+        score: scoreValues[index] || scoreValues[scoreValues.length - 1],
+        weight: category.weight,
+      }));
+      const compositeScore = computeComposite(ratingData);
+      const recommendation = mapRecommendation(req.body.recommendation);
+      const notes = String(req.body.notes || '').trim() || null;
+
+      const scorecard = await prisma.$transaction(async (tx) => {
+        if (interview.scorecardId || interview.scorecard?.id) {
+          const scorecardId = interview.scorecardId || interview.scorecard.id;
+          await tx.scorecardRating.deleteMany({ where: { scorecardId } });
+          return tx.scorecard.update({
+            where: { id: scorecardId },
+            data: {
+              templateId: template.id,
+              interviewerId: interview.interviewerId,
+              interviewType: interview.type,
+              recommendation,
+              strengthsSummary: notes,
+              concernsSummary: null,
+              compositeScore,
+              submittedAt: new Date(),
+              ratings: {
+                create: ratingData.map(r => ({
+                  categoryId: r.categoryId,
+                  score: r.score,
+                  notes: null,
+                })),
+              },
+            },
+            include: {
+              interviewer: { select: { id: true, firstName: true, lastName: true } },
+              ratings: true,
+            },
+          });
+        }
+
+        const createdScorecard = await tx.scorecard.create({
+          data: {
+            applicationId: interview.applicationId,
+            templateId: template.id,
+            interviewerId: interview.interviewerId,
+            interviewType: interview.type,
+            recommendation,
+            strengthsSummary: notes,
+            concernsSummary: null,
+            compositeScore,
+            submittedAt: new Date(),
+            ratings: {
+              create: ratingData.map(r => ({
+                categoryId: r.categoryId,
+                score: r.score,
+                notes: null,
+              })),
+            },
+          },
+          include: {
+            interviewer: { select: { id: true, firstName: true, lastName: true } },
+            ratings: true,
+          },
+        });
+
+        await tx.interview.update({
+          where: { id: interview.id },
+          data: {
+            status: 'completed',
+            scorecardId: createdScorecard.id,
+          },
+        });
+
+        return createdScorecard;
+      });
+
+      if (interview.scorecardId || interview.scorecard?.id) {
+        await prisma.interview.update({
+          where: { id: interview.id },
+          data: { status: 'completed' },
+        });
+      }
+
+      await auditLog(req, {
+        action: 'feedback_submitted',
+        entity: 'scorecards',
+        entityId: scorecard.id,
+        after: { applicationId: interview.applicationId, recommendation, compositeScore },
+      });
+
+      return ok(res, scorecard);
     } catch (err) { next(err); }
   }
 );

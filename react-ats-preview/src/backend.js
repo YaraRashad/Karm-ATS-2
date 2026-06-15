@@ -267,6 +267,14 @@ const statusLabel = {
   withdrawn: "Withdrawn",
 };
 
+const recommendationLabel = {
+  strong_yes: "Strong Hire",
+  yes: "Hire",
+  neutral: "Neutral",
+  no: "No Hire",
+  strong_no: "No Hire",
+};
+
 const positionStatusToApi = {
   Open: "open",
   Draft: "draft",
@@ -407,7 +415,7 @@ export function mapBackendData({ positions = [], candidates = [], applications =
     knowledge: Number(s.compositeScore || 0),
     attitude: Number(s.compositeScore || 0),
     feedback: Number(s.compositeScore || 0),
-    recommendation: s.recommendation,
+    recommendation: recommendationLabel[s.recommendation] || s.recommendation,
     notes: [s.strengthsSummary, s.concernsSummary].filter(Boolean).join("\n"),
     submittedDate: s.submittedAt?.slice?.(0, 10) || "",
   }));
@@ -524,6 +532,10 @@ export const backendActions = {
   rejectApplication: (id, payload) => api(`/applications/${id}/disqualify`, { method: "POST", body: JSON.stringify(payload) }),
   addNote: (id, payload) => api(`/applications/${id}/notes`, { method: "POST", body: JSON.stringify(payload) }),
   createInterview: (payload) => api("/interviews", { method: "POST", body: JSON.stringify(payload) }),
+  submitInterviewScore: (id, payload) => api(`/interviews/${id}/score`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }),
   deleteInterview: (id) => api(`/interviews/${id}`, { method: "DELETE" }),
   createOffer: (payload) => api("/offers", { method: "POST", body: JSON.stringify(payload) }),
   updateOfferCandidateStatus: (id, payload) => api(`/offers/${id}/candidate-status`, {
