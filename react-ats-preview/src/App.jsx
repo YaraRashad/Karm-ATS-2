@@ -319,7 +319,9 @@ const css = `
   .donut-label { font-size: 11px; color: var(--text3); margin-top: 4px; }
   .chart-legend { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; color: var(--text3); font-size: 11px; }
   .chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
-  .pie-chart { width: 180px; aspect-ratio: 1; border-radius: 50%; margin: 4px auto 12px; box-shadow: inset 0 0 0 1px rgba(15, 23, 42, .06); }
+  .pie-chart-svg { width: 190px; aspect-ratio: 1; display: block; margin: 4px auto 12px; overflow: visible; }
+  .pie-slice { filter: drop-shadow(0 1px 1px rgba(15, 23, 42, .08)); }
+  .pie-label { fill: #fff; font-size: 12px; font-weight: 800; text-anchor: middle; dominant-baseline: middle; paint-order: stroke; stroke: rgba(15, 23, 42, .28); stroke-width: 3px; stroke-linejoin: round; }
   .chart-bars { display: grid; gap: 13px; }
   .chart-bar-row { display: grid; gap: 7px; }
   .chart-bar-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
@@ -1925,15 +1927,37 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
     .map(([source, count], index) => ({ source, count, color: chartColors[index % chartColors.length] }))
     .sort((a, b) => b.count - a.count || a.source.localeCompare(b.source));
   const sourceTotal = sourceRows.reduce((sum, row) => sum + row.count, 0);
-  let sourceOffset = 0;
-  const sourcePieGradient = sourceRows.length
-    ? `conic-gradient(${sourceRows.map(row => {
-        const start = sourceOffset;
-        const end = sourceOffset + (row.count / sourceTotal) * 100;
-        sourceOffset = end;
-        return `${row.color} ${start}% ${end}%`;
-      }).join(", ")})`
-    : "var(--bg4)";
+  const pointOnCircle = (center, radius, angle) => {
+    const radians = (angle * Math.PI) / 180;
+    return {
+      x: center + radius * Math.cos(radians),
+      y: center + radius * Math.sin(radians),
+    };
+  };
+  const sourcePieSlices = (() => {
+    let angle = -90;
+    return sourceRows.map(row => {
+      const percent = sourceTotal ? (row.count / sourceTotal) * 100 : 0;
+      const sweep = (percent / 100) * 360;
+      const startAngle = angle;
+      const endAngle = angle + sweep;
+      const midAngle = startAngle + sweep / 2;
+      angle = endAngle;
+      const start = pointOnCircle(90, 82, startAngle);
+      const end = pointOnCircle(90, 82, endAngle);
+      const label = pointOnCircle(90, percent < 10 ? 62 : 54, midAngle);
+      const largeArc = sweep > 180 ? 1 : 0;
+      return {
+        ...row,
+        percent: Math.round(percent),
+        d: sweep >= 359.99
+          ? null
+          : `M 90 90 L ${start.x.toFixed(2)} ${start.y.toFixed(2)} A 82 82 0 ${largeArc} 1 ${end.x.toFixed(2)} ${end.y.toFixed(2)} Z`,
+        labelX: label.x,
+        labelY: label.y,
+      };
+    });
+  })();
 
   const health = {
     green: { label: "Healthy", className: "health-green" },
@@ -2181,7 +2205,20 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
               <div className="empty-panel">No source data yet.</div>
             ) : (
               <>
-                <div className="pie-chart" style={{ background: sourcePieGradient }} />
+                <svg className="pie-chart-svg" viewBox="0 0 180 180" role="img" aria-label="Talent source mix percentages">
+                  {sourcePieSlices.map(row => (
+                    row.d ? (
+                      <path className="pie-slice" key={row.source} d={row.d} fill={row.color} />
+                    ) : (
+                      <circle className="pie-slice" key={row.source} cx="90" cy="90" r="82" fill={row.color} />
+                    )
+                  ))}
+                  {sourcePieSlices.map(row => (
+                    <text className="pie-label" key={`${row.source}-label`} x={row.labelX} y={row.labelY}>
+                      {row.percent}%
+                    </text>
+                  ))}
+                </svg>
                 <div className="compact-list">
                   {sourceRows.slice(0, 5).map(row => (
                     <div className="compact-row" key={row.source}>
