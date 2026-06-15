@@ -7225,15 +7225,22 @@ function ScheduleInterviewModal({ data, closeModal, ctx }) {
     .filter(u => u?.isActive !== false && u.email && u.fullName)
     .sort((a, b) => a.fullName.localeCompare(b.fullName));
   const defaultInterviewerId = String(interviewerOptions.find(u => u.fullName === "Mohi Mohsen")?.id || interviewerOptions[0]?.id || "");
-  const [form, setForm] = useState({ applicationId: data?.applicationId || eligibleApps[0]?.id || "", type: "1st Interview", scheduledAt: "", format: "In-person", interviewerUserId: defaultInterviewerId });
+  const [form, setForm] = useState({ applicationId: data?.applicationId || eligibleApps[0]?.id || "", type: "1st Interview", scheduledAt: "", format: "In-person", interviewerMode: "list", interviewerUserId: defaultInterviewerId, interviewerName: "" });
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
   const submit = async () => {
     if (!form.applicationId || !form.scheduledAt) return;
-    const selectedInterviewer = interviewerOptions.find(u =>
+    const manualInterviewerName = form.interviewerName.trim();
+    const selectedInterviewer = form.interviewerMode === "manual"
+      ? { fullName: manualInterviewerName, id: "", email: "" }
+      : interviewerOptions.find(u =>
       String(u.id || "") === String(form.interviewerUserId || "") ||
       String(u.email || "") === String(form.interviewerUserId || "")
     );
+    if (form.interviewerMode === "manual" && !manualInterviewerName) {
+      alert("Please enter the interviewer name.");
+      return;
+    }
     if (!selectedInterviewer) {
       alert("Please select an interviewer from the user list.");
       return;
@@ -7242,7 +7249,8 @@ function ScheduleInterviewModal({ data, closeModal, ctx }) {
       const createdInterview = await ctx.backendActions.createInterview({
         applicationId: form.applicationId,
         ...(selectedInterviewer.id ? { interviewerId: selectedInterviewer.id } : {}),
-        interviewerEmail: selectedInterviewer.email,
+        ...(selectedInterviewer.email ? { interviewerEmail: selectedInterviewer.email } : {}),
+        ...(form.interviewerMode === "manual" ? { interviewerName: manualInterviewerName } : {}),
         type: interviewTypeMap[form.type] || "technical",
         scheduledAt: form.scheduledAt,
         location: form.format === "In-person" ? "Office" : "",
@@ -7307,12 +7315,37 @@ function ScheduleInterviewModal({ data, closeModal, ctx }) {
           <div className="form-row">
             <div className="form-group"><label className="form-label">Date & time *</label><input className="form-input" type="datetime-local" value={form.scheduledAt} onChange={e => set("scheduledAt", e.target.value)} /></div>
             <div className="form-group"><label className="form-label">Interviewer</label>
-              <select className="form-select" value={String(form.interviewerUserId || "")} onChange={e => set("interviewerUserId", e.target.value)}>
-                <option value="">Select interviewer</option>
-                {interviewerOptions.map(u => (
-                  <option key={u.id || u.email} value={String(u.id || u.email)}>{u.fullName} — {u.email}</option>
-                ))}
-              </select>
+              <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${form.interviewerMode === "list" ? "btn-primary" : "btn-ghost"}`}
+                  onClick={() => set("interviewerMode", "list")}
+                >
+                  Select user
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${form.interviewerMode === "manual" ? "btn-primary" : "btn-ghost"}`}
+                  onClick={() => set("interviewerMode", "manual")}
+                >
+                  Type name
+                </button>
+              </div>
+              {form.interviewerMode === "manual" ? (
+                <input
+                  className="form-input"
+                  value={form.interviewerName}
+                  onChange={e => set("interviewerName", e.target.value)}
+                  placeholder="Enter interviewer name"
+                />
+              ) : (
+                <select className="form-select" value={String(form.interviewerUserId || "")} onChange={e => set("interviewerUserId", e.target.value)}>
+                  <option value="">Select interviewer</option>
+                  {interviewerOptions.map(u => (
+                    <option key={u.id || u.email} value={String(u.id || u.email)}>{u.fullName} — {u.email}</option>
+                  ))}
+                </select>
+              )}
             </div>
           </div>
         </div>
