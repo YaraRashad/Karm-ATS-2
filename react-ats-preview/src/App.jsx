@@ -3391,7 +3391,14 @@ function CandidatesPage({ candidates, setCandidates, applications, setApplicatio
   const [assigningCandidateId, setAssigningCandidateId] = useState(null);
   const [savingSourceId, setSavingSourceId] = useState(null);
   const deptOptions = Array.from(new Set(jobs.map(j => j.dept).filter(Boolean))).sort();
-  const openJobs = jobs.filter(j => j.status === "Open");
+  const allPositionOptions = [...jobs].sort((a, b) => {
+    const statusOrder = { Open: 0, Draft: 1, Closed: 2 };
+    const orderA = statusOrder[statusDisplayLabel(a.status)] ?? 3;
+    const orderB = statusOrder[statusDisplayLabel(b.status)] ?? 3;
+    if (orderA !== orderB) return orderA - orderB;
+    return `${a.title} ${a.dept || ""}`.localeCompare(`${b.title} ${b.dept || ""}`);
+  });
+  const positionOptionLabel = (job) => `${job.title}${job.dept ? ` · ${job.dept}` : ""} (${statusDisplayLabel(job.status)})`;
   const canCreate = !!roleConfig.canEditCandidates;
   const canDelete = !!roleConfig.canDeleteRecords;
   const canEditSource = !!roleConfig.canEditCandidates;
@@ -3527,7 +3534,7 @@ function CandidatesPage({ candidates, setCandidates, applications, setApplicatio
             <label className="form-label">Position</label>
             <select className="form-select" style={{ width: "auto" }} value={filterJob} onChange={e => setFilterJob(e.target.value)}>
               <option value="All">All positions</option>
-              {openJobs.map(j => <option key={j.id} value={j.id}>{j.title}</option>)}
+              {allPositionOptions.map(j => <option key={j.id} value={j.id}>{positionOptionLabel(j)}</option>)}
             </select>
           </div>
           <div>
@@ -3593,11 +3600,11 @@ function CandidatesPage({ candidates, setCandidates, applications, setApplicatio
                                 onChange={e => assignCandidatePosition(c, e.target.value)}
                                 disabled={assigningCandidateId === c.id}
                                 style={{ marginTop: 6, width: "min(220px, 100%)", height: 34, fontSize: 12 }}
-                                aria-label={`Select active position for ${c.name}`}
+                                aria-label={`Select position for ${c.name}`}
                               >
                                 <option value="">{assigningCandidateId === c.id ? "Assigning..." : "Select position..."}</option>
-                                {openJobs.map(job => (
-                                  <option key={job.id} value={job.id}>{job.title}</option>
+                                {allPositionOptions.map(job => (
+                                  <option key={job.id} value={job.id}>{positionOptionLabel(job)}</option>
                                 ))}
                               </select>
                             ) : (
