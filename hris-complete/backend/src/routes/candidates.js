@@ -18,10 +18,19 @@ function validate(req, res) {
   return true;
 }
 
+function generatedCandidateEmail() {
+  return `no-email-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@no-email.local`;
+}
+
+function normalizeCandidateEmail(value) {
+  const email = String(value || '').trim().toLowerCase();
+  return email || generatedCandidateEmail();
+}
+
 const candidateBody = [
   body('firstName').notEmpty().trim(),
   body('lastName').notEmpty().trim(),
-  body('email').isEmail().normalizeEmail(),
+  body('email').optional({ values: 'falsy' }).isEmail().normalizeEmail(),
   body('source').isIn(['linkedin','referral','direct','agency','job_board','internal','other']).optional(),
   body('totalYearsExp').isInt({ min: 0 }).optional(),
   body('noticePeriodDays').isInt({ min: 0 }).optional(),
@@ -72,12 +81,13 @@ candidatesRouter.get('/', requireRoles(CAN_READ_CANDIDATES), async (req, res, ne
 candidatesRouter.post('/', requireRoles(CAN_WRITE_CANDIDATES), candidateBody, async (req, res, next) => {
   if (!validate(req, res)) return;
   try {
-    const existing = await prisma.candidate.findUnique({ where: { email: req.body.email } });
+    const email = normalizeCandidateEmail(req.body.email);
+    const existing = await prisma.candidate.findUnique({ where: { email } });
     if (existing) {
       if (!existing.isActive) {
         const reactivated = await prisma.candidate.update({
           where: { id: existing.id },
-          data: { ...req.body, isActive: true },
+          data: { ...req.body, email, isActive: true },
         });
         return ok(res, reactivated);
       }
@@ -88,7 +98,7 @@ candidatesRouter.post('/', requireRoles(CAN_WRITE_CANDIDATES), candidateBody, as
       data: {
         firstName:        req.body.firstName,
         lastName:         req.body.lastName,
-        email:            req.body.email,
+        email,
         phone:            req.body.phone,
         linkedinUrl:      req.body.linkedinUrl,
         currentTitle:     req.body.currentTitle,
@@ -162,6 +172,8 @@ candidatesRouter.patch('/:id', requireRoles(CAN_WRITE_CANDIDATES), async (req, r
 
     const updates = {};
     allowed.forEach(f => { if (req.body[f] !== undefined) updates[f] = req.body[f]; });
+
+    if (updates.email !== undefined) updates.email = normalizeCandidateEmail(updates.email);
 
     if (updates.email && updates.email !== candidate.email) {
       const duplicate = await prisma.candidate.findUnique({ where: { email: updates.email } });

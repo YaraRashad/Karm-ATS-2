@@ -70,6 +70,8 @@ const sourceToApi = {
   job_board: "job_board",
 };
 
+const isGeneratedCandidateEmail = (email) => /@(no-email|unknown)\.local$/i.test(String(email || ""));
+
 const seniorityToApi = {
   "Top Management": "director",
   "Middle Management": "lead",
@@ -342,7 +344,7 @@ export function mapBackendData({ positions = [], candidates = [], applications =
     id: c.id,
     name: `${c.firstName || ""} ${c.lastName || ""}`.trim(),
     title: c.currentTitle || "",
-    email: c.email,
+    email: isGeneratedCandidateEmail(c.email) ? "" : c.email,
     phone: c.phone || "",
     nationality: c.nationality || "",
     source: c.source || "",
