@@ -34,6 +34,54 @@ function mapRecommendation(value) {
   return 'neutral';
 }
 
+const DEFAULT_SCORECARD_TEMPLATE_NAME = 'Default Interview Scorecard';
+const DEFAULT_SCORECARD_CATEGORIES = [
+  { name: 'Knowledge', weight: 34, order: 1, colorHex: '#3a5a8a' },
+  { name: 'Attitude', weight: 33, order: 2, colorHex: '#0f9f6e' },
+  { name: 'Feedback', weight: 33, order: 3, colorHex: '#d97706' },
+];
+
+async function ensureDefaultScorecardTemplate() {
+  const include = { categories: { orderBy: { order: 'asc' } } };
+  let template = await prisma.scorecardTemplate.findFirst({
+    where: { name: DEFAULT_SCORECARD_TEMPLATE_NAME, isActive: true },
+    include,
+  });
+
+  if (template?.categories?.length) return template;
+
+  if (template) {
+    await prisma.scorecardTemplateCategory.createMany({
+      data: DEFAULT_SCORECARD_CATEGORIES.map(category => ({
+        ...category,
+        templateId: template.id,
+        description: null,
+        levels: [],
+      })),
+    });
+    return prisma.scorecardTemplate.findUnique({ where: { id: template.id }, include });
+  }
+
+  template = await prisma.scorecardTemplate.create({
+    data: {
+      name: DEFAULT_SCORECARD_TEMPLATE_NAME,
+      description: 'Default interview scorecard used when no role-specific template is configured.',
+      appliesTo: [],
+      isActive: true,
+      categories: {
+        create: DEFAULT_SCORECARD_CATEGORIES.map(category => ({
+          ...category,
+          description: null,
+          levels: [],
+        })),
+      },
+    },
+    include,
+  });
+
+  return template;
+}
+
 function splitManualName(name) {
   const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
   return {
@@ -211,7 +259,7 @@ interviewsRouter.post(
         });
       }
       if (!template || template.categories.length === 0) {
-        return unprocessable(res, 'No scorecard template is configured');
+        template = await ensureDefaultScorecardTemplate();
       }
 
       const scoreValues = [
