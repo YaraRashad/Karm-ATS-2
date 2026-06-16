@@ -2064,7 +2064,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
     .sort((a, b) => a.department.localeCompare(b.department));
   const planTotalHeadcountRequested = jobs.reduce((sum, job) => sum + (Number(job.headcount) || 1), 0);
   const planFilledVacancies = planRows.reduce((sum, row) => sum + row.filled, 0);
-  const planOpenVacancies = planRows.reduce((sum, row) => sum + row.remaining, 0);
+  const planOpenVacancies = openJobs.reduce((sum, job) => sum + (Number(job.headcount) || 1), 0);
   const planOverallAchievement = planTotalHeadcountRequested > 0
     ? Math.round((planFilledVacancies / planTotalHeadcountRequested) * 100)
     : planFilledVacancies > 0 ? 100 : 0;
@@ -2270,7 +2270,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
                     <div className="plan-summary-value">{planFilledVacancies}</div>
                   </div>
                   <div className="plan-summary-card">
-                    <div className="plan-summary-label">Open</div>
+                    <div className="plan-summary-label">Open HC</div>
                     <div className="plan-summary-value open">{planOpenVacancies}</div>
                   </div>
                   <div className="plan-summary-card">
