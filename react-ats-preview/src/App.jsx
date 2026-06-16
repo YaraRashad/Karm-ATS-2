@@ -1733,6 +1733,12 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
     const date = parseDate(value);
     return Boolean(date && date >= monthStart && date < nextMonthStart);
   };
+  const yearStart = new Date(today.getFullYear(), 0, 1);
+  const nextYearStart = new Date(today.getFullYear() + 1, 0, 1);
+  const isThisYear = (value) => {
+    const date = parseDate(value);
+    return Boolean(date && date >= yearStart && date < nextYearStart);
+  };
   const isActiveApplication = (app) => app.status === "Active" && !["Hired", "Rejected", "On Hold"].includes(app.stage);
   const isPlaceholderName = (value) => {
     const normalized = String(value || "").trim().toLowerCase();
@@ -1761,7 +1767,8 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
   const activeCandidateIds = new Set(activeApplications.map(app => app.candidateId).filter(Boolean));
   const openJobs = jobs.filter(job => job.status === "Open");
   const closedJobs = jobs.filter(job => job.status === "Closed");
-  const trackedPositionCount = openJobs.length + closedJobs.length;
+  const draftJobs = jobs.filter(job => job.status === "Draft");
+  const trackedPositionCount = openJobs.length + closedJobs.length + draftJobs.length;
   const openRequisitionRows = openJobs
     .map(job => {
       const jobApplications = activeApplications.filter(app => app.jobId === job.id);
@@ -1841,7 +1848,11 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
     const dateValue = app.hiredAt || app.closedAt || app.updatedAt || app.lastActivityAt;
     return dateValue ? isThisMonth(dateValue) : true;
   });
-  const newJoinerRows = hiresThisMonth
+  const hiresYtd = hiredApplications.filter(app => {
+    const dateValue = app.hiredAt || app.closedAt || app.updatedAt || app.lastActivityAt;
+    return dateValue ? isThisYear(dateValue) : true;
+  });
+  const newJoinerRows = hiresYtd
     .map(app => {
       const candidate = candidateById.get(app.candidateId);
       const job = jobById.get(app.jobId);
@@ -1870,11 +1881,10 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
   const avgTimeToFill = fillDurations.length
     ? Math.round(fillDurations.reduce((sum, days) => sum + days, 0) / fillDurations.length)
     : null;
-  const openPlannedVacancies = openJobs.reduce((sum, job) => sum + (Number(job.headcount) || 1), 0);
-  const totalFilledVacancies = hiredApplications.length;
-  const hiringVsPlanRate = openPlannedVacancies > 0
-    ? Math.min(100, Math.round((totalFilledVacancies / openPlannedVacancies) * 100))
-    : totalFilledVacancies > 0 ? 100 : null;
+  const totalFilledVacancies = hiresYtd.length;
+  const hiringVsPlanRate = trackedPositionCount > 0
+    ? Math.round((hiresYtd.length / trackedPositionCount) * 100)
+    : hiresYtd.length > 0 ? 100 : null;
   const offerAcceptanceRows = offers
     .map((offer, index) => {
       const app = applications.find(item => item.id === offer.applicationId);
@@ -1971,7 +1981,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
   const activeCandidateHealth = openJobs.length > 0 && activeCandidateIds.size === 0 ? health.red : activeCandidateIds.size < openJobs.length ? health.yellow : health.green;
   const interviewsHealth = activeApplications.length > 0 && scheduledInterviews.length === 0 ? health.yellow : health.green;
   const offersHealth = pendingOfferCount >= 5 ? health.red : pendingOfferCount > 0 ? health.yellow : health.green;
-  const hiresHealth = openJobs.length > 0 && hiresThisMonth.length === 0 ? health.yellow : health.green;
+  const hiresHealth = openJobs.length > 0 && hiresYtd.length === 0 ? health.yellow : health.green;
   const fillHealth = avgTimeToFill === null ? health.yellow : avgTimeToFill > 60 ? health.red : avgTimeToFill > 45 ? health.yellow : health.green;
   const hiringVsPlanHealth = hiringVsPlanRate === null ? health.yellow : hiringVsPlanRate >= 80 ? health.green : hiringVsPlanRate >= 50 ? health.yellow : health.red;
   const offerAcceptanceHealth = offerAcceptanceRate === null ? health.yellow : offerAcceptanceRate >= 80 ? health.green : offerAcceptanceRate >= 50 ? health.yellow : health.red;
@@ -1980,9 +1990,9 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
     { label: "Open requisitions", value: openJobs.length, note: `${jobs.length} total requisitions`, action: openJobs.length === 0 ? "Confirm whether hiring plan is current." : "Click to view open requisitions.", health: openReqHealth, modalType: "openRequisitions" },
     { label: "Scheduled interviews", value: scheduledInterviews.length, note: "Interviews awaiting completion", action: scheduledInterviews.length === 0 && activeApplications.length > 0 ? "Click to schedule next interviews." : "Click to review scheduled interview load.", health: interviewsHealth, modalType: "interviewsThisWeek" },
     { label: "Pending offers", value: pendingOfferCount, note: `${offerStageApplications.length} in Offer stage · ${pendingOfferRecords.length} pending records`, action: pendingOfferCount > 0 ? "Click to view pending offers." : "No offer approvals waiting.", health: offersHealth, modalType: "pendingOffers" },
-    { label: "Hires YTD", value: hiresThisMonth.length, note: `${hiredApplications.length} total hired records`, action: hiresThisMonth.length === 0 && openJobs.length > 0 ? "Check final stages and offer readiness." : "Click to view new joiners.", health: hiresHealth, modalType: "newJoiners" },
+    { label: "Hires YTD", value: hiresYtd.length, note: `${hiresYtd.length} year-to-date hired records`, action: hiresYtd.length === 0 && openJobs.length > 0 ? "Check final stages and offer readiness." : "Click to view new joiners.", health: hiresHealth, modalType: "newJoiners" },
     { label: "Average time to fill", value: avgTimeToFill === null ? "N/A" : `${avgTimeToFill}d`, note: avgTimeToFill === null ? "Shown after dated hires exist" : "Applied date to hire date", action: avgTimeToFill === null ? "Historical dates can be incomplete." : avgTimeToFill > 45 ? "Review slow stages and handoffs." : "Hiring cycle is within target.", health: fillHealth },
-    { label: "Hiring vs plan", value: hiringVsPlanRate === null ? "N/A" : `${hiringVsPlanRate}%`, note: `${totalFilledVacancies}/${openPlannedVacancies || 0} open vacancies filled`, action: hiringVsPlanRate === null ? "No open hiring plan data yet." : `${Math.max((openPlannedVacancies || 0) - totalFilledVacancies, 0)} open vacancies remaining.`, health: hiringVsPlanHealth },
+    { label: "Hiring vs plan", value: hiringVsPlanRate === null ? "N/A" : `${hiringVsPlanRate}%`, note: `${hiresYtd.length}/${trackedPositionCount || 0} YTD hires vs positions`, action: hiringVsPlanRate === null ? "No position plan data yet." : "Hires YTD divided by total open, closed, and draft positions.", health: hiringVsPlanHealth },
     { label: "Offer acceptance rate", value: offerAcceptanceRate === null ? "N/A" : `${offerAcceptanceRate}%`, note: `${acceptedOffers} accepted · ${declinedOffers} declined`, action: offerAcceptanceRate === null ? "Awaiting accepted or declined offers." : "Click to view accepted and declined offers.", health: offerAcceptanceHealth, modalType: "offerAcceptance" },
   ];
 
@@ -2029,7 +2039,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
     if (job.status === "Open") current.open += 1;
     planMap.set(key, current);
   });
-  hiredApplications.forEach(app => {
+  hiresYtd.forEach(app => {
     const job = jobById.get(app.jobId);
     const key = normalizePlanDepartment(job?.dept);
     const current = planMap.get(key) || {
@@ -2147,7 +2157,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
               <button className="chart-metric btn-reset" onClick={() => setPage?.("jobs")} title="View job requisitions">
                 <div className="chart-metric-value" style={{ color: "var(--accent)" }}>{trackedPositionCount}</div>
                 <div className="chart-metric-label">Positions</div>
-                <div className="chart-metric-breakdown">{openJobs.length} open · {closedJobs.length} closed</div>
+                <div className="chart-metric-breakdown">{openJobs.length} open · {closedJobs.length} closed · {draftJobs.length} draft</div>
               </button>
               <button className="chart-metric btn-reset" onClick={() => openKpiModal(kpis[1])} title="View scheduled interviews">
                 <div className="chart-metric-value" style={{ color: "var(--amber)" }}>{scheduledInterviews.length}</div>
@@ -2158,7 +2168,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
                 <div className="chart-metric-label">Pending offers</div>
               </button>
               <button className="chart-metric btn-reset" onClick={() => openKpiModal(kpis[3])} title="View new joiners">
-                <div className="chart-metric-value" style={{ color: "var(--accent)" }}>{hiresThisMonth.length}</div>
+                <div className="chart-metric-value" style={{ color: "var(--accent)" }}>{hiresYtd.length}</div>
                 <div className="chart-metric-label">Hires YTD</div>
               </button>
             </div>
@@ -2169,7 +2179,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
               </div>
               <div className="chart-metric">
                 <div className="chart-metric-value" style={{ color: "var(--text)" }}>{hiringVsPlanRate === null ? "N/A" : `${hiringVsPlanRate}%`}</div>
-                <div className="chart-metric-label">Hiring vs plan · {totalFilledVacancies}/{openPlannedVacancies || 0} vacancies filled</div>
+                <div className="chart-metric-label">Hiring vs plan · {totalFilledVacancies}/{trackedPositionCount || 0} YTD hires / positions</div>
               </div>
             </div>
           </section>
