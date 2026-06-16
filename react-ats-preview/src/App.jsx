@@ -1980,7 +1980,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
     { label: "Open requisitions", value: openJobs.length, note: `${jobs.length} total requisitions`, action: openJobs.length === 0 ? "Confirm whether hiring plan is current." : "Click to view open requisitions.", health: openReqHealth, modalType: "openRequisitions" },
     { label: "Scheduled interviews", value: scheduledInterviews.length, note: "Interviews awaiting completion", action: scheduledInterviews.length === 0 && activeApplications.length > 0 ? "Click to schedule next interviews." : "Click to review scheduled interview load.", health: interviewsHealth, modalType: "interviewsThisWeek" },
     { label: "Pending offers", value: pendingOfferCount, note: `${offerStageApplications.length} in Offer stage · ${pendingOfferRecords.length} pending records`, action: pendingOfferCount > 0 ? "Click to view pending offers." : "No offer approvals waiting.", health: offersHealth, modalType: "pendingOffers" },
-    { label: "Hires this month", value: hiresThisMonth.length, note: `${hiredApplications.length} total hired records`, action: hiresThisMonth.length === 0 && openJobs.length > 0 ? "Check final stages and offer readiness." : "Click to view new joiners.", health: hiresHealth, modalType: "newJoiners" },
+    { label: "Hires YTD", value: hiresThisMonth.length, note: `${hiredApplications.length} total hired records`, action: hiresThisMonth.length === 0 && openJobs.length > 0 ? "Check final stages and offer readiness." : "Click to view new joiners.", health: hiresHealth, modalType: "newJoiners" },
     { label: "Average time to fill", value: avgTimeToFill === null ? "N/A" : `${avgTimeToFill}d`, note: avgTimeToFill === null ? "Shown after dated hires exist" : "Applied date to hire date", action: avgTimeToFill === null ? "Historical dates can be incomplete." : avgTimeToFill > 45 ? "Review slow stages and handoffs." : "Hiring cycle is within target.", health: fillHealth },
     { label: "Hiring vs plan", value: hiringVsPlanRate === null ? "N/A" : `${hiringVsPlanRate}%`, note: `${totalFilledVacancies}/${openPlannedVacancies || 0} open vacancies filled`, action: hiringVsPlanRate === null ? "No open hiring plan data yet." : `${Math.max((openPlannedVacancies || 0) - totalFilledVacancies, 0)} open vacancies remaining.`, health: hiringVsPlanHealth },
     { label: "Offer acceptance rate", value: offerAcceptanceRate === null ? "N/A" : `${offerAcceptanceRate}%`, note: `${acceptedOffers} accepted · ${declinedOffers} declined`, action: offerAcceptanceRate === null ? "Awaiting accepted or declined offers." : "Click to view accepted and declined offers.", health: offerAcceptanceHealth, modalType: "offerAcceptance" },
@@ -2159,7 +2159,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
               </button>
               <button className="chart-metric btn-reset" onClick={() => openKpiModal(kpis[3])} title="View new joiners">
                 <div className="chart-metric-value" style={{ color: "var(--accent)" }}>{hiresThisMonth.length}</div>
-                <div className="chart-metric-label">Hires this month</div>
+                <div className="chart-metric-label">Hires YTD</div>
               </button>
             </div>
             <div className="chart-metric-grid chart-metric-grid-secondary">
