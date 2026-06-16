@@ -6095,6 +6095,24 @@ function OfferAcceptanceModal({ data, closeModal, ctx }) {
 
 function PendingOffersModal({ data, closeModal, ctx }) {
   const rows = data?.rows || [];
+  const [deletingCandidateId, setDeletingCandidateId] = useState(null);
+  const canDelete = !!ctx.roleConfig?.canDeleteRecords;
+
+  const deletePendingCandidate = async (row) => {
+    if (!row?.candidate?.id || !canDelete || !ctx.backendActions?.deleteCandidate) return;
+    const ok = window.confirm(`Delete ${row.candidateName || "this candidate"} from ATS?`);
+    if (!ok) return;
+    setDeletingCandidateId(row.candidate.id);
+    try {
+      await ctx.backendActions.deleteCandidate(row.candidate.id);
+      await ctx.reloadData?.();
+      closeModal();
+    } catch (error) {
+      alert(error.message || "Could not delete candidate");
+    } finally {
+      setDeletingCandidateId(null);
+    }
+  };
 
   return (
     <div className="modal-overlay" onClick={closeModal}>
@@ -6146,6 +6164,16 @@ function PendingOffersModal({ data, closeModal, ctx }) {
                             View candidate
                           </button>
                         ) : null}
+                        {canDelete && row.candidate && (
+                          <button
+                            className="btn btn-danger btn-sm"
+                            style={{ marginLeft: 8 }}
+                            onClick={() => deletePendingCandidate(row)}
+                            disabled={deletingCandidateId === row.candidate.id}
+                          >
+                            {deletingCandidateId === row.candidate.id ? "Deleting..." : "Delete"}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

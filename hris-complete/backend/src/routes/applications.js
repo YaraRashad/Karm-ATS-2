@@ -48,6 +48,7 @@ applicationsRouter.get('/', async (req, res, next) => {
 
     const scopedWhere = buildApplicationScopeWhere(req.user);
     const queryWhere = {
+      candidate: { isActive: true },
       OR: [
         { isActive: true },
         { stage: 'rejected' },
@@ -139,6 +140,7 @@ applicationsRouter.post(
       ]);
 
       if (!candidate) return notFound(res, 'Candidate');
+      if (!candidate.isActive) return unprocessable(res, 'Candidate has been deleted');
       if (!position)  return notFound(res, 'Position');
 
       // Check for duplicate
