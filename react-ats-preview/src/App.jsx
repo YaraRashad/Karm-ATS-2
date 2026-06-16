@@ -2062,11 +2062,11 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
       progress: row.plannedRoles ? Math.min(100, Math.round((row.filled / row.plannedRoles) * 100)) : row.filled > 0 ? 100 : 0,
     }))
     .sort((a, b) => a.department.localeCompare(b.department));
-  const planTotalVacancies = planRows.reduce((sum, row) => sum + row.plannedRoles, 0);
+  const planTotalHeadcountRequested = jobs.reduce((sum, job) => sum + (Number(job.headcount) || 1), 0);
   const planFilledVacancies = planRows.reduce((sum, row) => sum + row.filled, 0);
   const planOpenVacancies = planRows.reduce((sum, row) => sum + row.remaining, 0);
-  const planOverallAchievement = planTotalVacancies > 0
-    ? Math.round((planFilledVacancies / planTotalVacancies) * 100)
+  const planOverallAchievement = planTotalHeadcountRequested > 0
+    ? Math.round((planFilledVacancies / planTotalHeadcountRequested) * 100)
     : planFilledVacancies > 0 ? 100 : 0;
   const topPlanRows = [...planRows]
     .sort((a, b) => b.plannedRoles - a.plannedRoles || a.department.localeCompare(b.department))
@@ -2249,7 +2249,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
             <div className="plan-achievement-head">
               <div>
                 <div className="plan-achievement-title">Hiring Plan Achievement by Department</div>
-                <div className="plan-achievement-sub">Vacancies planned vs filled · June 2026</div>
+                <div className="plan-achievement-sub">Headcount requested vs YTD hires · June 2026</div>
               </div>
               <div className="plan-legend" aria-label="Hiring plan chart legend">
                 <span><i className="plan-legend-box plan-legend-planned" /> Planned</span>
@@ -2262,8 +2262,8 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
               <>
                 <div className="plan-summary-grid">
                   <div className="plan-summary-card">
-                    <div className="plan-summary-label">Total vacancies</div>
-                    <div className="plan-summary-value">{planTotalVacancies}</div>
+                    <div className="plan-summary-label">Total HC requested</div>
+                    <div className="plan-summary-value">{planTotalHeadcountRequested}</div>
                   </div>
                   <div className="plan-summary-card">
                     <div className="plan-summary-label">Filled</div>
