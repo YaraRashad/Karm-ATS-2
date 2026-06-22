@@ -622,7 +622,7 @@ const stageColor = (stage) => {
 
 const jobStatusBadge = (s) => s === "Open" ? "badge-green" : s === "Draft" ? "badge-amber" : "badge-gray";
 
-const POSITION_TYPES = ["Manpower", "Additional R.", "Replacement", "Project Hire"];
+const POSITION_TYPES = ["Manpower", "Additional R.", "Replacement", "Project Hire", "Internship"];
 
 const positionTypeBadge = (t) => {
   if (t === "Additional R.") return "badge-coral";
@@ -3219,7 +3219,7 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
   ]));
   const entityOptions = Array.from(new Set(jobs.map(j => entityDisplayLabel(j.entity)).filter(Boolean))).sort();
   const deptOptions = Array.from(new Set([...DEPARTMENTS, ...jobs.map(j => j.dept).filter(Boolean)])).sort();
-  const positionTypeOptions = Array.from(new Set(jobs.map(j => j.positionType).filter(Boolean))).sort();
+  const positionTypeOptions = Array.from(new Set([...POSITION_TYPES, ...jobs.map(j => j.positionType).filter(Boolean)])).sort();
   const recruiterOptions = Array.from(new Set(jobs.map(j => j.recruiter).filter(Boolean))).sort();
 
   const filtered = jobs.filter(j => {
