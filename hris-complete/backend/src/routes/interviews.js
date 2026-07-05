@@ -353,7 +353,16 @@ interviewsRouter.post(
         action: 'feedback_submitted',
         entity: 'scorecards',
         entityId: scorecard.id,
-        after: { applicationId: interview.applicationId, recommendation, compositeScore },
+        after: {
+          applicationId: interview.applicationId,
+          interviewId: interview.id,
+          interviewType: interview.type,
+          interviewerId: interview.interviewerId,
+          recommendation,
+          compositeScore,
+          completedAt: scorecard.submittedAt,
+          edited: Boolean(interview.scorecardId || interview.scorecard?.id),
+        },
       });
 
       return ok(res, scorecard);
