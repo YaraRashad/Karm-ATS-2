@@ -4864,6 +4864,7 @@ function RejectCandidateModal({ appIds, applications, candidates, jobs, onCancel
 // ── INTERVIEWS PAGE ───────────────────────────────────────────────────────────
 function InterviewsPage({ interviews, setInterviews, applications, candidates, jobs, scorecards, roleConfig, openModal, backendActions, reloadData }) {
   const [tab, setTab] = useState("scheduled");
+  const [filterInterviewType, setFilterInterviewType] = useState("All");
   const [deletingInterviewId, setDeletingInterviewId] = useState(null);
 
   const canSchedule = !!roleConfig.canScheduleInterviews;
@@ -4880,7 +4881,9 @@ function InterviewsPage({ interviews, setInterviews, applications, candidates, j
 
   const scheduled = enrichedInterviews.filter(i => i.status === "Scheduled");
   const completed = enrichedInterviews.filter(i => i.status === "Completed");
-  const displayed = tab === "scheduled" ? scheduled : completed;
+  const interviewTypeOptions = Array.from(new Set(enrichedInterviews.map(i => i.type).filter(Boolean))).sort();
+  const tabInterviews = tab === "scheduled" ? scheduled : completed;
+  const displayed = tabInterviews.filter(i => filterInterviewType === "All" || i.type === filterInterviewType);
 
   const deleteInterview = async (interview) => {
     if (!canDelete || !backendActions?.deleteInterview) return;
@@ -4912,6 +4915,14 @@ function InterviewsPage({ interviews, setInterviews, applications, candidates, j
         <div className="tabs" style={{ marginBottom: 16 }}>
           <div className={`tab ${tab === "scheduled" ? "active" : ""}`} onClick={() => setTab("scheduled")}>Scheduled ({scheduled.length})</div>
           <div className={`tab ${tab === "completed" ? "active" : ""}`} onClick={() => setTab("completed")}>Completed ({completed.length})</div>
+        </div>
+        <div className="toolbar" style={{ marginBottom: 16 }}>
+          <div>
+            <label className="form-label">Interview type</label>
+            <select className="form-select" style={{ width: "auto" }} value={filterInterviewType} onChange={e => setFilterInterviewType(e.target.value)}>
+              <option>All</option>{interviewTypeOptions.map(type => <option key={type}>{type}</option>)}
+            </select>
+          </div>
         </div>
         <div className="card">
           <div className="table-wrap">
