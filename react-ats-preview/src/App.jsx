@@ -748,7 +748,7 @@ const AUDIT_SECURITY_CHECKS = [
 const buildRecruiterWorkbench = (applications = [], candidates = [], jobs = [], interviews = [], scorecards = []) => {
   const activeApps = applications.filter(app => app.status === "Active");
   const delayedApps = activeApps.filter(app => (app.daysInStage || 0) >= 5);
-  const pendingFeedback = interviews.filter(interview => interview.status === "Scheduled" && !scorecards.some(score => score.applicationId === interview.applicationId));
+  const pendingFeedback = interviews.filter(interview => interview.status === "Scheduled" && !findScorecardForInterview(scorecards, interview));
   const unassignedJobs = jobs.filter(job => job.status === "Open" && (!job.recruiter || job.recruiter === "Unassigned" || job.recruiter === "—"));
   const missingNextAction = activeApps.filter(app => !app.nextAction);
   const enrich = (app) => {
@@ -859,6 +859,30 @@ const STAGE_TO_BACKEND = {
   "Hired": "hired",
   "Rejected": "rejected",
 };
+
+function scorecardAverage(scorecard) {
+  if (!scorecard) return 0;
+  const values = [scorecard.knowledge, scorecard.attitude, scorecard.feedback].map(Number).filter(n => Number.isFinite(n) && n > 0);
+  return values.length ? values.reduce((sum, n) => sum + n, 0) / values.length : 0;
+}
+
+function scorecardMatchesInterview(scorecard, interview) {
+  if (!scorecard || !interview) return false;
+  if (interview.scorecardId && String(scorecard.id) === String(interview.scorecardId)) return true;
+  if (scorecard.interviewId && String(scorecard.interviewId) === String(interview.id)) return true;
+
+  const scoreType = String(scorecard.interviewType || "").trim().toLowerCase();
+  const interviewType = String(interview.type || "").trim().toLowerCase();
+  const scoreInterviewer = String(scorecard.interviewerId || "").trim().toLowerCase();
+  const interviewInterviewer = String(interview.interviewerId || "").trim().toLowerCase();
+  return String(scorecard.applicationId) === String(interview.applicationId)
+    && (!scoreType || !interviewType || scoreType === interviewType)
+    && (!scoreInterviewer || !interviewInterviewer || scoreInterviewer === interviewInterviewer);
+}
+
+function findScorecardForInterview(scorecards, interview) {
+  return (scorecards || []).find(scorecard => scorecardMatchesInterview(scorecard, interview));
+}
 
 function splitName(name) {
   const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
@@ -1298,7 +1322,7 @@ function OperationalDashboardPanel({ jobs = [], candidates = [], applications = 
   const pendingOffers = offers.filter(offer => offer.status === "Pending Approval");
   const pendingRequests = hiringRequests.filter(request => String(request.status || "").toLowerCase().includes("pending"));
   const pendingFeedback = interviews.filter(interview => {
-    const hasScorecard = scorecards.some(scorecard => scorecard.applicationId === interview.applicationId);
+    const hasScorecard = !!findScorecardForInterview(scorecards, interview);
     return interview.status === "Completed" && !hasScorecard;
   });
   const toDateKey = (value) => {
@@ -1539,7 +1563,7 @@ function HiringManagerWorkspacePanel({ interviews, applications, candidates, job
   const assignedApps = applications
     .filter(app => assignedJobIds.has(app.jobId) && app.status === "Active")
     .map(app => ({ ...app, candidate: candidates.find(c => c.id === app.candidateId), job: jobs.find(j => j.id === app.jobId) }));
-  const pendingScorecards = interviews.filter(interview => interview.status === "Scheduled" && !scorecards.some(score => score.applicationId === interview.applicationId));
+  const pendingScorecards = interviews.filter(interview => interview.status === "Scheduled" && !findScorecardForInterview(scorecards, interview));
   const pendingApprovals = assignedJobs.filter(job => job.status === "Draft" || job.status === "Pending Approval");
 
   return (
@@ -4875,7 +4899,7 @@ function InterviewsPage({ interviews, setInterviews, applications, candidates, j
     const app = applications.find(a => a.id === i.applicationId);
     const cand = app ? candidates.find(c => c.id === app.candidateId) : null;
     const job = app ? jobs.find(j => j.id === app.jobId) : null;
-    const sc = scorecards.find(s => s.applicationId === i.applicationId);
+    const sc = findScorecardForInterview(scorecards, i);
     return { ...i, app, cand, job, sc };
   }).filter(i => i.cand);
 
@@ -7056,15 +7080,63 @@ function MoveStageModal({ data, closeModal, ctx }) {
 
 function ScorecardModal({ data, closeModal, ctx }) {
   const { interview, app, cand, job, existingScore } = data;
+  const [activeInterviewId, setActiveInterviewId] = useState(String(interview?.id || ""));
   const [scores, setScores] = useState({ knowledge: existingScore?.knowledge || 0, attitude: existingScore?.attitude || 0, feedback: existingScore?.feedback || 0 });
   const [recommendation, setRecommendation] = useState(existingScore?.recommendation || "");
   const [notes, setNotes] = useState(existingScore?.notes || "");
   const [saving, setSaving] = useState(false);
-  const readOnly = !!existingScore;
+  const [completing, setCompleting] = useState(false);
+
+  const interviewTabs = useMemo(() => {
+    const scoped = (ctx.interviews || [])
+      .filter(i => String(i.applicationId) === String(app?.id) && i.status !== "Cancelled")
+      .sort((a, b) => new Date(a.scheduledAt || 0) - new Date(b.scheduledAt || 0))
+      .map(i => ({ ...i, existingScore: findScorecardForInterview(ctx.scorecards, i) }));
+    if (interview && !scoped.some(i => String(i.id) === String(interview.id))) {
+      scoped.unshift({ ...interview, existingScore: existingScore || findScorecardForInterview(ctx.scorecards, interview) });
+    }
+    return scoped;
+  }, [ctx.interviews, ctx.scorecards, app?.id, interview, existingScore]);
+
+  const activeInterview = interviewTabs.find(i => String(i.id) === activeInterviewId) || interviewTabs[0] || interview;
+  const activeScore = activeInterview?.existingScore || findScorecardForInterview(ctx.scorecards, activeInterview);
+  const canEditSubmitted = !!ctx.roleConfig?.canDeleteRecords;
+  const readOnly = !!activeScore && !canEditSubmitted;
+  const completedCount = interviewTabs.filter(i => i.existingScore || findScorecardForInterview(ctx.scorecards, i)).length;
+  const allScored = interviewTabs.length > 0 && completedCount === interviewTabs.length;
+  const evaluationCompleteStage = "Interview Evaluation Completed";
+  const evaluationCompleted = app?.stage === evaluationCompleteStage;
+
+  useEffect(() => {
+    setScores({
+      knowledge: activeScore?.knowledge || 0,
+      attitude: activeScore?.attitude || 0,
+      feedback: activeScore?.feedback || 0,
+    });
+    setRecommendation(activeScore?.recommendation || "");
+    setNotes(activeScore?.notes || "");
+  }, [activeInterview?.id, activeScore?.id, activeScore?.knowledge, activeScore?.attitude, activeScore?.feedback, activeScore?.recommendation, activeScore?.notes]);
 
   const avg = scores.knowledge && scores.attitude && scores.feedback
     ? ((scores.knowledge + scores.attitude + scores.feedback) / 3).toFixed(1)
     : "—";
+
+  const completedScorecards = interviewTabs
+    .map(i => ({ interview: i, scorecard: i.existingScore || findScorecardForInterview(ctx.scorecards, i) }))
+    .filter(row => row.scorecard);
+  const averageScore = completedScorecards.length
+    ? (completedScorecards.reduce((sum, row) => sum + scorecardAverage(row.scorecard), 0) / completedScorecards.length).toFixed(1)
+    : "—";
+  const noHireCount = completedScorecards.filter(row => /no hire|reject/i.test(row.scorecard.recommendation || "")).length;
+  const overallRecommendation = !completedScorecards.length
+    ? "—"
+    : noHireCount
+      ? "Reject"
+      : Number(averageScore) >= 4
+        ? "Strong Hire"
+        : Number(averageScore) >= 3
+          ? "Hire"
+          : "Hold";
 
   const StarRow = ({ label, field }) => (
     <div className="score-row">
@@ -7081,35 +7153,102 @@ function ScorecardModal({ data, closeModal, ctx }) {
   );
 
   const submit = async () => {
-    if (!recommendation || !scores.knowledge || !scores.attitude || !scores.feedback || saving) return;
+    if (!activeInterview || !recommendation || !scores.knowledge || !scores.attitude || !scores.feedback || saving) return;
     setSaving(true);
-    const newSc = { id: Date.now(), applicationId: app.id, interviewerId: ctx.roleConfig.fullName, interviewType: interview.type, knowledge: scores.knowledge, attitude: scores.attitude, feedback: scores.feedback, recommendation, notes, submittedDate: new Date().toISOString().split("T")[0] };
     try {
-      if (ctx.backendActions?.submitInterviewScore) {
-        await ctx.backendActions.submitInterviewScore(interview.id, { scores, recommendation, notes });
-      }
-      ctx.setScorecards(prev => [...prev.filter(s => s.applicationId !== app.id), newSc]);
-      ctx.setInterviews(prev => prev.map(i => String(i.id) === String(interview.id) ? { ...i, status: "Completed" } : i));
+      const saved = ctx.backendActions?.submitInterviewScore
+        ? await ctx.backendActions.submitInterviewScore(activeInterview.id, { scores, recommendation, notes })
+        : null;
+      const newSc = {
+        id: saved?.id || activeScore?.id || `local-${Date.now()}`,
+        interviewId: activeInterview.id,
+        applicationId: app.id,
+        interviewerId: activeInterview.interviewerId || ctx.roleConfig.fullName,
+        interviewType: activeInterview.type,
+        knowledge: scores.knowledge,
+        attitude: scores.attitude,
+        feedback: scores.feedback,
+        recommendation,
+        notes,
+        submittedDate: new Date().toISOString().split("T")[0],
+      };
+      ctx.setScorecards(prev => [...prev.filter(s => !scorecardMatchesInterview(s, activeInterview)), newSc]);
+      ctx.setInterviews(prev => prev.map(i => String(i.id) === String(activeInterview.id) ? { ...i, status: "Completed", scorecardId: newSc.id } : i));
       await ctx.reloadData?.();
-      closeModal();
+      setSaving(false);
     } catch (e) {
       alert(e.message || "Could not save this scorecard.");
       setSaving(false);
     }
   };
 
+  const completeEvaluation = async () => {
+    if (!allScored || completing || evaluationCompleted) return;
+    setCompleting(true);
+    try {
+      if (ctx.backendActions?.moveApplication) {
+        await ctx.backendActions.moveApplication(app.id, {
+          stage: "interview",
+          displayStage: evaluationCompleteStage,
+          reason: "All interview scorecards completed",
+        });
+      }
+      ctx.setApplications(prev => prev.map(a => String(a.id) === String(app.id) ? { ...a, stage: evaluationCompleteStage } : a));
+      await ctx.reloadData?.();
+      setCompleting(false);
+    } catch (e) {
+      alert(e.message || "Could not complete this evaluation.");
+      setCompleting(false);
+    }
+  };
+
   return (
     <div className="modal-overlay" onClick={closeModal}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
+      <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <div>
-            <div className="modal-title">Interview Scorecard</div>
-            <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>{cand?.name} · {interview?.type}</div>
+            <div className="modal-title">Interview Scorecards</div>
+            <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>{cand?.name} · {job?.title || activeInterview?.type}</div>
           </div>
           <button className="modal-close" onClick={closeModal}>×</button>
         </div>
         <div className="modal-body">
-          {readOnly && <div className="alert alert-info" style={{ marginBottom: 16 }}><Icon name="alert" size={14} />Scorecard submitted on {existingScore.submittedDate}</div>}
+          {interviewTabs.length > 1 && (
+            <div className="tabs" style={{ marginBottom: 18, width: "100%", flexWrap: "wrap" }}>
+              {interviewTabs.map(item => {
+                const done = !!(item.existingScore || findScorecardForInterview(ctx.scorecards, item));
+                return (
+                  <div
+                    key={item.id}
+                    className={`tab ${String(activeInterview?.id) === String(item.id) ? "active" : ""}`}
+                    onClick={() => setActiveInterviewId(String(item.id))}
+                    style={{ display: "flex", alignItems: "center", gap: 8 }}
+                  >
+                    <span>{item.type || "Interview"}</span>
+                    <span className={`badge ${done ? "badge-green" : "badge-amber"}`}>{done ? "Done" : "Pending"}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{activeInterview?.type || "Interview"}</div>
+              <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
+                {activeInterview?.interviewerId || "Interviewer"} · {formatDisplayDate(activeInterview?.scheduledAt)}
+              </div>
+            </div>
+            <span className={`badge ${activeScore ? "badge-green" : "badge-amber"}`}>{activeScore ? "Scorecard completed" : "Awaiting scorecard"}</span>
+          </div>
+
+          {activeScore && (
+            <div className="alert alert-info" style={{ marginBottom: 16 }}>
+              <Icon name="alert" size={14} />
+              Scorecard submitted on {activeScore.submittedDate || "recorded date"}{canEditSubmitted ? " · Admin can edit and resubmit" : ""}
+            </div>
+          )}
+
           <StarRow label="Knowledge" field="knowledge" />
           <StarRow label="Attitude" field="attitude" />
           <StarRow label="Feedback" field="feedback" />
@@ -7134,10 +7273,49 @@ function ScorecardModal({ data, closeModal, ctx }) {
             <label className="form-label">Notes {readOnly ? "" : "(visible to Admin only)"}</label>
             <textarea className="form-textarea" value={notes} onChange={e => setNotes(e.target.value)} readOnly={readOnly} placeholder="Strengths, concerns, overall impression..." />
           </div>
+
+          {allScored && (
+            <div className="card" style={{ marginTop: 18 }}>
+              <div className="card-header">
+                <div>
+                  <div className="card-title">Consolidated Summary</div>
+                  <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 4 }}>
+                    {completedScorecards.length} scorecards · Average {averageScore}/5 · Overall {overallRecommendation}
+                  </div>
+                </div>
+                <span className="badge badge-green">Ready to complete</span>
+              </div>
+              <div className="card-body" style={{ paddingTop: 12 }}>
+                {completedScorecards.map(row => (
+                  <div key={row.interview.id} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{row.interview.type}</div>
+                      <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
+                        {row.interview.interviewerId || row.scorecard.interviewerId} · Completed {row.scorecard.submittedDate || "today"}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 13, fontFamily: "var(--mono)", color: "var(--text)" }}>{scorecardAverage(row.scorecard).toFixed(1)}/5</div>
+                      <div style={{ fontSize: 12, color: /no hire|reject/i.test(row.scorecard.recommendation || "") ? "var(--red)" : "var(--green)", marginTop: 2 }}>{row.scorecard.recommendation}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
         <div className="modal-footer">
-          <button className="btn btn-ghost" onClick={closeModal}>{readOnly ? "Close" : "Cancel"}</button>
-          {!readOnly && <button className="btn btn-primary" onClick={submit} disabled={!recommendation || !scores.knowledge || !scores.attitude || !scores.feedback || saving}>{saving ? "Saving..." : "Submit Scorecard"}</button>}
+          <button className="btn btn-ghost" onClick={closeModal}>Close</button>
+          {!readOnly && (
+            <button className="btn btn-primary" onClick={submit} disabled={!recommendation || !scores.knowledge || !scores.attitude || !scores.feedback || saving}>
+              {saving ? "Saving..." : activeScore ? "Update Scorecard" : "Submit Scorecard"}
+            </button>
+          )}
+          {allScored && (
+            <button className="btn btn-primary" onClick={completeEvaluation} disabled={completing || evaluationCompleted}>
+              {evaluationCompleted ? "Evaluation Completed" : completing ? "Completing..." : "Complete Evaluation"}
+            </button>
+          )}
         </div>
       </div>
     </div>

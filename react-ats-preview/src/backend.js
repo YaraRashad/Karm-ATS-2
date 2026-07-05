@@ -388,6 +388,7 @@ export function mapBackendData({ positions = [], candidates = [], applications =
       interviewerId: fullName(i.interviewer),
       interviewerUserId: i.interviewer?.id || "",
       interviewerEmail: i.interviewer?.email || "",
+      scorecardId: i.scorecardId || i.scorecard?.id || "",
       status: rawStatus === "completed" ? "Completed" : rawStatus === "cancelled" ? "Cancelled" : "Scheduled",
     };
   });
@@ -410,6 +411,7 @@ export function mapBackendData({ positions = [], candidates = [], applications =
   const scorecardRows = scorecards.map(s => ({
     id: s.id,
     applicationId: s.applicationId,
+    interviewId: s.interviewId || "",
     interviewerId: fullName(s.interviewer),
     interviewType: s.interviewType,
     knowledge: Number(s.compositeScore || 0),
