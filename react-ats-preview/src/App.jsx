@@ -884,6 +884,24 @@ function findScorecardForInterview(scorecards, interview) {
   return (scorecards || []).find(scorecard => scorecardMatchesInterview(scorecard, interview));
 }
 
+const normalizeInterviewStageLabel = (type = "") => {
+  const text = String(type || "").trim();
+  const lower = text.toLowerCase();
+  if (/hr director/.test(lower)) return "HR Director Interview";
+  if (/final|panel|excom|ceo/.test(lower)) return "Final Panel Interview";
+  if (/direct manager|hiring manager|manager/.test(lower)) return "Direct Manager Interview";
+  if (/hr|screen/.test(lower)) return "HR Interview";
+  if (/technical/.test(lower)) return "Technical Interview";
+  return text || "Interview";
+};
+
+const interviewStageOrder = (type = "") => {
+  const label = normalizeInterviewStageLabel(type);
+  const order = ["HR Interview", "Direct Manager Interview", "Technical Interview", "HR Director Interview", "Final Panel Interview"];
+  const index = order.indexOf(label);
+  return index === -1 ? order.length : index;
+};
+
 function splitName(name) {
   const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
   return { firstName: parts[0] || "", lastName: parts.slice(1).join(" ") || "-" };
@@ -4889,6 +4907,8 @@ function RejectCandidateModal({ appIds, applications, candidates, jobs, onCancel
 function InterviewsPage({ interviews, setInterviews, applications, candidates, jobs, scorecards, roleConfig, openModal, backendActions, reloadData }) {
   const [tab, setTab] = useState("scheduled");
   const [filterInterviewType, setFilterInterviewType] = useState("All");
+  const [filterRecruiter, setFilterRecruiter] = useState("All");
+  const [filterInterviewStatus, setFilterInterviewStatus] = useState("All");
   const [deletingInterviewId, setDeletingInterviewId] = useState(null);
 
   const canSchedule = !!roleConfig.canScheduleInterviews;
@@ -4906,8 +4926,14 @@ function InterviewsPage({ interviews, setInterviews, applications, candidates, j
   const scheduled = enrichedInterviews.filter(i => i.status === "Scheduled");
   const completed = enrichedInterviews.filter(i => i.status === "Completed");
   const interviewTypeOptions = Array.from(new Set(enrichedInterviews.map(i => i.type).filter(Boolean))).sort();
+  const recruiterOptions = Array.from(new Set(enrichedInterviews.map(i => i.job?.recruiter).filter(Boolean))).sort();
   const tabInterviews = tab === "scheduled" ? scheduled : completed;
-  const displayed = tabInterviews.filter(i => filterInterviewType === "All" || i.type === filterInterviewType);
+  const displayed = tabInterviews.filter(i => {
+    const statusLabel = i.sc ? "Scorecard completed" : "Missing scorecard";
+    return (filterInterviewType === "All" || i.type === filterInterviewType)
+      && (filterRecruiter === "All" || i.job?.recruiter === filterRecruiter)
+      && (tab !== "completed" || filterInterviewStatus === "All" || statusLabel === filterInterviewStatus);
+  });
 
   const deleteInterview = async (interview) => {
     if (!canDelete || !backendActions?.deleteInterview) return;
@@ -4946,6 +4972,26 @@ function InterviewsPage({ interviews, setInterviews, applications, candidates, j
             <select className="form-select" style={{ width: "auto" }} value={filterInterviewType} onChange={e => setFilterInterviewType(e.target.value)}>
               <option>All</option>{interviewTypeOptions.map(type => <option key={type}>{type}</option>)}
             </select>
+          </div>
+          <div>
+            <label className="form-label">Recruiter</label>
+            <select className="form-select" style={{ width: "auto" }} value={filterRecruiter} onChange={e => setFilterRecruiter(e.target.value)}>
+              <option>All</option>{recruiterOptions.map(recruiter => <option key={recruiter}>{recruiter}</option>)}
+            </select>
+          </div>
+          {tab === "completed" && (
+            <div>
+              <label className="form-label">Interview status</label>
+              <select className="form-select" style={{ width: "auto" }} value={filterInterviewStatus} onChange={e => setFilterInterviewStatus(e.target.value)}>
+                <option>All</option>
+                <option>Scorecard completed</option>
+                <option>Missing scorecard</option>
+              </select>
+            </div>
+          )}
+          <div className="toolbar-summary">
+            <div className="toolbar-count">{displayed.length}</div>
+            <div className="toolbar-label">Interviews shown</div>
           </div>
         </div>
         <div className="card">
@@ -7090,7 +7136,11 @@ function ScorecardModal({ data, closeModal, ctx }) {
   const interviewTabs = useMemo(() => {
     const scoped = (ctx.interviews || [])
       .filter(i => String(i.applicationId) === String(app?.id) && i.status !== "Cancelled")
-      .sort((a, b) => new Date(a.scheduledAt || 0) - new Date(b.scheduledAt || 0))
+      .sort((a, b) => {
+        const orderDiff = interviewStageOrder(a.type) - interviewStageOrder(b.type);
+        if (orderDiff) return orderDiff;
+        return new Date(a.scheduledAt || 0) - new Date(b.scheduledAt || 0);
+      })
       .map(i => ({ ...i, existingScore: findScorecardForInterview(ctx.scorecards, i) }));
     if (interview && !scoped.some(i => String(i.id) === String(interview.id))) {
       scoped.unshift({ ...interview, existingScore: existingScore || findScorecardForInterview(ctx.scorecards, interview) });
@@ -7101,7 +7151,17 @@ function ScorecardModal({ data, closeModal, ctx }) {
   const activeInterview = interviewTabs.find(i => String(i.id) === activeInterviewId) || interviewTabs[0] || interview;
   const activeScore = activeInterview?.existingScore || findScorecardForInterview(ctx.scorecards, activeInterview);
   const canEditSubmitted = !!ctx.roleConfig?.canDeleteRecords;
-  const readOnly = !!activeScore && !canEditSubmitted;
+  const activeStageLabel = normalizeInterviewStageLabel(activeInterview?.type);
+  const sessionName = String(ctx.roleConfig?.fullName || ctx.sessionUser?.fullName || "").trim().toLowerCase();
+  const sessionEmail = String(ctx.sessionUser?.email || ctx.roleConfig?.email || "").trim().toLowerCase();
+  const activeInterviewerName = String(activeInterview?.interviewerId || "").trim().toLowerCase();
+  const activeInterviewerEmail = String(activeInterview?.interviewerEmail || "").trim().toLowerCase();
+  const ownsActiveInterview = !!activeInterview && (
+    (sessionName && activeInterviewerName && sessionName === activeInterviewerName)
+    || (sessionEmail && activeInterviewerEmail && sessionEmail === activeInterviewerEmail)
+  );
+  const canSubmitActive = canEditSubmitted || ownsActiveInterview;
+  const readOnly = (!!activeScore && !canEditSubmitted) || !canSubmitActive;
   const completedCount = interviewTabs.filter(i => i.existingScore || findScorecardForInterview(ctx.scorecards, i)).length;
   const allScored = interviewTabs.length > 0 && completedCount === interviewTabs.length;
   const evaluationCompleteStage = "Interview Evaluation Completed";
@@ -7224,7 +7284,7 @@ function ScorecardModal({ data, closeModal, ctx }) {
                     onClick={() => setActiveInterviewId(String(item.id))}
                     style={{ display: "flex", alignItems: "center", gap: 8 }}
                   >
-                    <span>{item.type || "Interview"}</span>
+                    <span>{normalizeInterviewStageLabel(item.type)}</span>
                     <span className={`badge ${done ? "badge-green" : "badge-amber"}`}>{done ? "Done" : "Pending"}</span>
                   </div>
                 );
@@ -7234,7 +7294,7 @@ function ScorecardModal({ data, closeModal, ctx }) {
 
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
             <div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{activeInterview?.type || "Interview"}</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{activeStageLabel}</div>
               <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
                 {activeInterview?.interviewerId || "Interviewer"} · {formatDisplayDate(activeInterview?.scheduledAt)}
               </div>
@@ -7246,6 +7306,12 @@ function ScorecardModal({ data, closeModal, ctx }) {
             <div className="alert alert-info" style={{ marginBottom: 16 }}>
               <Icon name="alert" size={14} />
               Scorecard submitted on {activeScore.submittedDate || "recorded date"}{canEditSubmitted ? " · Admin can edit and resubmit" : ""}
+            </div>
+          )}
+          {!canSubmitActive && !activeScore && (
+            <div className="alert alert-info" style={{ marginBottom: 16 }}>
+              <Icon name="alert" size={14} />
+              This scorecard is assigned to {activeInterview?.interviewerId || "the selected interviewer"}. You can view all stages, but only that interviewer or Admin can submit this tab.
             </div>
           )}
 
@@ -7270,8 +7336,11 @@ function ScorecardModal({ data, closeModal, ctx }) {
             </div>
           </div>
           <div className="form-group">
-            <label className="form-label">Notes {readOnly ? "" : "(visible to Admin only)"}</label>
+            <label className="form-label">Notes</label>
             <textarea className="form-textarea" value={notes} onChange={e => setNotes(e.target.value)} readOnly={readOnly} placeholder="Strengths, concerns, overall impression..." />
+            <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 6 }}>
+              Notes are visible to authorized recruiters, hiring managers, interviewers, and Admins working on this candidate.
+            </div>
           </div>
 
           {allScored && (
@@ -7289,7 +7358,7 @@ function ScorecardModal({ data, closeModal, ctx }) {
                 {completedScorecards.map(row => (
                   <div key={row.interview.id} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
                     <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{row.interview.type}</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{normalizeInterviewStageLabel(row.interview.type)}</div>
                       <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
                         {row.interview.interviewerId || row.scorecard.interviewerId} · Completed {row.scorecard.submittedDate || "today"}
                       </div>
