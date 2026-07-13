@@ -22,6 +22,7 @@ import {
   buildPositionScopeWhere, stripSalaryFields, ROLES,
 } from '../middleware/auth.js';
 import { auditLog } from '../lib/audit.js';
+import { sendEmail } from '../lib/email.js';
 
 export const positionsRouter = Router();
 
@@ -49,6 +50,88 @@ function validate(req, res) {
   const e = validationResult(req);
   if (!e.isEmpty()) { badRequest(res, 'Validation failed', e.array()); return false; }
   return true;
+}
+
+function userDisplayName(user) {
+  return [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim()
+    || user?.name
+    || user?.email
+    || 'there';
+}
+
+function formatEntity(entity) {
+  const labels = { egypt: 'Karm Egypt', cyprus: 'Karm Cyprus', uk: 'HoldCo. (UK)', tunisia: 'Karm Tunisia' };
+  return labels[entity] || entity || 'Unassigned entity';
+}
+
+function formatDate(value) {
+  if (!value) return 'Not set';
+  return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value));
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function buildRecruiterAssignmentEmail({ position, recruiter, assignedBy }) {
+  const appUrl = process.env.ATS_WEB_URL || process.env.FRONTEND_URL || process.env.APP_URL || 'https://karm-ats-web.azurewebsites.net/';
+  const recruiterName = userDisplayName(recruiter);
+  const assignedByName = assignedBy?.name || assignedBy?.email || 'Karm ATS';
+  const department = position.department?.name || 'Unassigned department';
+  const entity = formatEntity(position.entity);
+  const lines = [
+    `Hi ${recruiterName},`,
+    '',
+    'A position has been assigned to you in Karm ATS.',
+    '',
+    `Position: ${position.title}`,
+    `Department: ${department}`,
+    `Entity: ${entity}`,
+    `Headcount: ${position.headcount || 1}`,
+    `Status: ${position.status}`,
+    `Open date: ${formatDate(position.openDate)}`,
+    `Assigned by: ${assignedByName}`,
+    '',
+    'Please start working on this requisition and update candidate progress in ATS.',
+    '',
+    `Open ATS: ${appUrl}`,
+  ];
+
+  const details = [
+    ['Position', position.title],
+    ['Department', department],
+    ['Entity', entity],
+    ['Headcount', position.headcount || 1],
+    ['Status', position.status],
+    ['Open date', formatDate(position.openDate)],
+    ['Assigned by', assignedByName],
+  ];
+
+  return {
+    subject: `New position assigned: ${position.title}`,
+    text: lines.join('\n'),
+    html: `
+      <div style="font-family:Arial,sans-serif;color:#172033;line-height:1.5">
+        <p>Hi ${escapeHtml(recruiterName)},</p>
+        <p>A position has been assigned to you in <strong>Karm ATS</strong>.</p>
+        <table style="border-collapse:collapse;margin:16px 0">
+          ${details.map(([label, value]) => `
+            <tr>
+              <td style="padding:6px 16px 6px 0;color:#667085">${escapeHtml(label)}</td>
+              <td style="padding:6px 0;font-weight:600">${escapeHtml(value)}</td>
+            </tr>
+          `).join('')}
+        </table>
+        <p>Please start working on this requisition and update candidate progress in ATS.</p>
+        <p><a href="${escapeHtml(appUrl)}" style="color:#2563eb">Open Karm ATS</a></p>
+      </div>
+    `,
+  };
 }
 
 // ── GET /positions ────────────────────────────────────────────────────
@@ -348,6 +431,27 @@ positionsRouter.patch(
         before: { recruiterId: existing.recruiterId, recruiter: existing.recruiter },
         after: { recruiterId: recruiter.id, recruiter },
       });
+
+      if (existing.recruiterId !== recruiter.id) {
+        const email = buildRecruiterAssignmentEmail({ position: updated, recruiter, assignedBy: req.user });
+        sendEmail({ to: recruiter.email, ...email })
+          .then(result => {
+            if (result?.skipped) {
+              console.warn('Recruiter assignment email skipped', {
+                positionId: updated.id,
+                recruiterId: recruiter.id,
+                reason: result.reason,
+              });
+            }
+          })
+          .catch(error => {
+            console.error('Recruiter assignment email failed', {
+              positionId: updated.id,
+              recruiterId: recruiter.id,
+              error: error.message,
+            });
+          });
+      }
 
       return ok(res, updated);
     } catch (err) { next(err); }
