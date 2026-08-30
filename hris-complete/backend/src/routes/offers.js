@@ -86,7 +86,6 @@ offersRouter.get('/', requireRoles(CAN_READ_OFFERS), async (req, res, next) => {
       AND: [
         entityWhere,
         { application: buildApplicationScopeWhere(req.user) },
-        { application: { candidate: { isActive: true } } },
       ],
       ...(status     && { status }),
       ...(positionId && { positionId }),

@@ -2312,10 +2312,6 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
                     <div className="plan-summary-value">{planFilledVacancies}</div>
                   </div>
                   <div className="plan-summary-card">
-                    <div className="plan-summary-label">Open HC</div>
-                    <div className="plan-summary-value open">{planOpenVacancies}</div>
-                  </div>
-                  <div className="plan-summary-card">
                     <div className="plan-summary-label">Overall achievement</div>
                     <div className="plan-summary-value percent">{planOverallAchievement}%</div>
                   </div>
@@ -5273,10 +5269,21 @@ function OffersPage({ offers, setOffers, applications, candidates, jobs, roleCon
 
   const enriched = offers.map(o => {
     const app = applications.find(a => a.id === o.applicationId);
-    const cand = app ? candidates.find(c => c.id === app.candidateId) : null;
-    const job = app ? jobs.find(j => j.id === app.jobId) : null;
+    const cand = (app ? candidates.find(c => c.id === app.candidateId) : null) || {
+      id: o.candidateId || "",
+      name: o.candidateName || "Candidate",
+      title: o.candidateTitle || "",
+      email: o.candidateEmail || "",
+      color: "#4f8ef7",
+    };
+    const job = (app ? jobs.find(j => j.id === app.jobId) : null) || {
+      id: o.jobId || "",
+      title: o.jobTitle || "Unassigned role",
+      dept: o.jobDept || "Unassigned department",
+      entity: o.jobEntity || "Unassigned entity",
+    };
     return { ...o, app, cand, job };
-  }).filter(o => o.cand);
+  });
 
   const approveOffer = (id) => {
     const offer = enriched.find(o => o.id === id);
