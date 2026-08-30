@@ -74,6 +74,27 @@ function canApproveAdminStep(reqUser) {
   return reqUser.role === ROLES.ADMIN || !!reqUser.canApproveRequisitions;
 }
 
+function currentApprovalStep(item) {
+  if (!item.managerApproved) return 'manager';
+  if (!item.hrApproved) return 'hr';
+  if (!item.adminApproved) return 'admin';
+  return '';
+}
+
+function canActOnApprovalStep(reqUser, item, step) {
+  if (step === 'manager') return canApproveManagerStep(reqUser, item);
+  if (step === 'hr') return canApproveHrStep(reqUser);
+  if (step === 'admin') return canApproveAdminStep(reqUser);
+  return false;
+}
+
+function approvalStepForbiddenMessage(step) {
+  if (step === 'manager') return 'Only the assigned hiring manager or an admin can reject this step';
+  if (step === 'hr') return 'Only HR or an admin can reject this step';
+  if (step === 'admin') return 'Only an admin or requisition approver can reject this step';
+  return 'You cannot reject this hiring request';
+}
+
 hiringRequestsRouter.get(
   '/',
   [
@@ -290,6 +311,75 @@ hiringRequestsRouter.patch(
           hrApproved: updated.hrApproved,
           adminApproved: updated.adminApproved,
           createdRequisition: createsApprovedRequisition,
+        },
+      });
+
+      return ok(res, toFrontendRequest(updated));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+hiringRequestsRouter.patch(
+  '/:id/reject-step',
+  [param('id').isString(), body('reason').optional().isString()],
+  async (req, res, next) => {
+    if (!validate(req, res)) return;
+    try {
+      const existing = await prisma.hiringRequest.findUnique({
+        where: { id: req.params.id },
+        include: {
+          department: { select: { id: true, name: true } },
+          requestedBy: { select: { id: true, email: true, firstName: true, lastName: true } },
+        },
+      });
+      if (!existing || !existing.isActive) return notFound(res, 'Hiring request');
+
+      if (req.entityFilter && !req.entityFilter.includes(existing.entity)) {
+        return forbidden(res, 'Access denied to this entity');
+      }
+      if (!canViewRequest(req.user, existing)) {
+        return forbidden(res, 'You do not have access to this hiring request');
+      }
+      if (existing.status === 'approved') {
+        return unprocessable(res, 'Approved hiring requests cannot be rejected');
+      }
+      if (existing.status === 'rejected') {
+        return unprocessable(res, 'Hiring request is already rejected');
+      }
+
+      const step = currentApprovalStep(existing);
+      if (!step) {
+        return unprocessable(res, 'No approval step is currently available');
+      }
+      if (!canActOnApprovalStep(req.user, existing, step)) {
+        return forbidden(res, approvalStepForbiddenMessage(step));
+      }
+
+      const updated = await prisma.hiringRequest.update({
+        where: { id: existing.id },
+        data: { status: 'rejected' },
+        include: {
+          department: { select: { id: true, name: true } },
+          requestedBy: { select: { id: true, email: true, firstName: true, lastName: true } },
+        },
+      });
+
+      await auditLog(req, {
+        action: 'rejected',
+        entity: 'hiring_requests',
+        entityId: updated.id,
+        before: {
+          status: existing.status,
+          managerApproved: existing.managerApproved,
+          hrApproved: existing.hrApproved,
+          adminApproved: existing.adminApproved,
+        },
+        after: {
+          status: updated.status,
+          rejectedStep: step,
+          reason: req.body.reason || null,
         },
       });
 

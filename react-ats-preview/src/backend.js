@@ -558,6 +558,10 @@ export const backendActions = {
     method: "PATCH",
     body: JSON.stringify(payload),
   }),
+  rejectHiringRequestStep: (id, payload = {}) => api(`/hiring-requests/${id}/reject-step`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  }),
   uploadCv: (payload) => api("/files/cv", { method: "POST", body: JSON.stringify(payload) }),
   createUser: (payload) => api("/users", { method: "POST", body: JSON.stringify(payload) }),
   updateUser: (id, payload) => api(`/users/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),

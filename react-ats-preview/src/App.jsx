@@ -679,7 +679,7 @@ const nextHiringRequestApprovalStep = (request) => {
 };
 const canApproveHiringRequestStep = (request, currentRole, roleConfig) => {
   const step = nextHiringRequestApprovalStep(request);
-  if (!step || request?.status === "Approved") return false;
+  if (!step || request?.status === "Approved" || request?.status === "Rejected") return false;
   if (currentRole === "Admin") return true;
   if (step === "hr") return currentRole === "Recruiter";
   if (step === "admin") return hasRequisitionApprovalAccess(roleConfig);
@@ -2436,6 +2436,26 @@ function HiringRequestsPage({ hiringRequests, setHiringRequests, currentRole, ro
     }
   };
 
+  const rejectStep = async (id) => {
+    const confirmed = window.confirm("Reject this hiring request? It will stay visible in Hiring Requests as Rejected.");
+    if (!confirmed) return;
+    try {
+      setSavingId(id);
+      if (backendActions?.rejectHiringRequestStep) {
+        const updated = await backendActions.rejectHiringRequestStep(id, { reason: "Rejected from hiring request approval flow" });
+        const mapped = mapHiringRequest(updated);
+        setHiringRequests(prev => prev.map(req => (req.id === id ? { ...req, ...mapped } : req)));
+        await reloadData?.();
+        return;
+      }
+      setHiringRequests(prev => prev.map(req => (req.id === id ? { ...req, status: "Rejected" } : req)));
+    } catch (error) {
+      window.alert(`Could not reject this hiring request: ${error.message || "Unknown error"}`);
+    } finally {
+      setSavingId("");
+    }
+  };
+
   return (
     <>
       <div className="page-header">
@@ -2482,8 +2502,15 @@ function HiringRequestsPage({ hiringRequests, setHiringRequests, currentRole, ro
                         <span className={`badge ${req.hrApproved ? "badge-green" : "badge-amber"}`}>HR</span>{" "}
                         <span className={`badge ${req.ceoApproved ? "badge-green" : "badge-amber"}`}>Admin</span>
                       </td>
-                      <td><span className={`badge ${req.status === "Approved" ? "badge-green" : "badge-amber"}`}>{req.status}</span></td>
-                      <td>{canApproveStep && <button className="btn btn-ghost btn-sm" onClick={() => approveStep(req.id)} disabled={savingId === req.id}>{savingId === req.id ? "Saving..." : hiringRequestApprovalButtonLabel(req)}</button>}</td>
+                      <td><span className={`badge ${req.status === "Approved" ? "badge-green" : req.status === "Rejected" ? "badge-red" : "badge-amber"}`}>{req.status}</span></td>
+                      <td>
+                        {canApproveStep && (
+                          <div className="row-actions">
+                            <button className="btn btn-ghost btn-sm" onClick={() => approveStep(req.id)} disabled={savingId === req.id}>{savingId === req.id ? "Saving..." : hiringRequestApprovalButtonLabel(req)}</button>
+                            <button className="btn btn-danger btn-sm" onClick={() => rejectStep(req.id)} disabled={savingId === req.id}>{savingId === req.id ? "Saving..." : "Reject"}</button>
+                          </div>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
