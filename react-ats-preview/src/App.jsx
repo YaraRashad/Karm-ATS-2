@@ -1,3 +1,4 @@
+import { PIPELINE_STAGE_NAMES as STAGES, ACTIVE_PIPELINE_STAGES as PIPELINE_STAGES, PIPELINE_STAGE_API as STAGE_TO_BACKEND, normalizePipelineStage, pipelineRecruiter } from "./pipeline-stages.js";
 import ThankYouLettersPage from "./ThankYouLettersPage.jsx";
 import { countRequisitions } from "./requisition-counts.js";
 import { useEffect, useState, useMemo } from "react";
@@ -425,8 +426,7 @@ const css = `
 `;
 
 // ── MOCK DATA ──────────────────────────────────────────────────────────────────
-const STAGES = ["Applied","HR Screening","HM Review","1st Interview","Technical Interview","Final Interview","Offer","Hired","Rejected","On Hold"];
-const PIPELINE_STAGES = STAGES.slice(0, 7);
+
 
 // Real Karm team
 const TEAM = [
@@ -534,7 +534,7 @@ const initApplications = [
   { id: 1, candidateId: 1, jobId: 1, stage: "Technical Interview", status: "Active", recruiter: "Islam Ahmed", appliedDate: "2025-04-05", notes: "Strong technical background, 5 yrs exp", daysInStage: 3, priority: "Top candidate", nextAction: "Schedule technical interview", lastActivityAt: "2026-05-09" },
   { id: 2, candidateId: 2, jobId: 2, stage: "Final Interview", status: "Active", recruiter: "Islam Ahmed", appliedDate: "2025-03-20", notes: "Excellent communication skills", daysInStage: 1, priority: "Urgent", nextAction: "Prepare offer approval", lastActivityAt: "2026-05-10" },
   { id: 3, candidateId: 3, jobId: 3, stage: "HR Screening", status: "Active", recruiter: "Islam Ahmed", appliedDate: "2025-04-12", notes: "Good technical fit", daysInStage: 2, priority: "Backup", nextAction: "Complete HR screening", lastActivityAt: "2026-05-09" },
-  { id: 4, candidateId: 4, jobId: 2, stage: "1st Interview", status: "Active", recruiter: "Islam Ahmed", appliedDate: "2025-04-08", notes: "CFA qualified", daysInStage: 5, priority: "Urgent", nextAction: "Await HM feedback", lastActivityAt: "2026-05-06" },
+  { id: 4, candidateId: 4, jobId: 2, stage: "HR 1 Interview", status: "Active", recruiter: "Islam Ahmed", appliedDate: "2025-04-08", notes: "CFA qualified", daysInStage: 5, priority: "Urgent", nextAction: "Await HM feedback", lastActivityAt: "2026-05-06" },
   { id: 5, candidateId: 5, jobId: 1, stage: "HM Review", status: "Active", recruiter: "Islam Ahmed", appliedDate: "2025-04-15", notes: "Promising profile", daysInStage: 2, priority: "Top candidate", nextAction: "HM review decision", lastActivityAt: "2026-05-09" },
   { id: 6, candidateId: 6, jobId: 2, stage: "Applied", status: "Active", recruiter: "Islam Ahmed", appliedDate: "2025-04-18", notes: "", daysInStage: 1, priority: "Backup", nextAction: "Review CV", lastActivityAt: "2026-05-10" },
   { id: 7, candidateId: 7, jobId: 3, stage: "Applied", status: "Active", recruiter: "Islam Ahmed", appliedDate: "2025-04-18", notes: "", daysInStage: 1, priority: "Backup", nextAction: "Review CV", lastActivityAt: "2026-05-10" },
@@ -557,7 +557,7 @@ const initHiringRequests = [
 const initInterviews = [
   { id: 1, applicationId: 1, type: "Technical Interview", scheduledAt: "2025-04-22 10:00", format: "In-person", interviewerId: "Ahmed Farid", status: "Scheduled" },
   { id: 2, applicationId: 2, type: "Final Interview", scheduledAt: "2025-04-21 14:00", format: "Video call", interviewerId: "Yara Rashad", status: "Completed" },
-  { id: 3, applicationId: 4, type: "1st Interview", scheduledAt: "2025-04-23 11:00", format: "In-person", interviewerId: "Mohi Mohsen", status: "Scheduled" },
+  { id: 3, applicationId: 4, type: "HR 1 Interview", scheduledAt: "2025-04-23 11:00", format: "In-person", interviewerId: "Mohi Mohsen", status: "Scheduled" },
 ];
 
 // ── ICONS (inline SVG) ────────────────────────────────────────────────────────
@@ -595,8 +595,10 @@ const stageBadge = (stage) => {
     "Applied": "badge-gray",
     "HR Screening": "badge-blue",
     "HM Review": "badge-purple",
-    "1st Interview": "badge-teal",
+    "HR 1 Interview": "badge-teal",
     "Technical Interview": "badge-teal",
+    "HR 2 Interview": "badge-teal",
+    "ExCom Interview": "badge-coral",
     "Final Interview": "badge-coral",
     "Offer": "badge-amber",
     "Hired": "badge-green",
@@ -611,8 +613,10 @@ const stageColor = (stage) => {
     "Applied": "#555e78",
     "HR Screening": "#4f8ef7",
     "HM Review": "#a78bfa",
-    "1st Interview": "#2dd4b4",
+    "HR 1 Interview": "#2dd4b4",
     "Technical Interview": "#2dd4b4",
+    "HR 2 Interview": "#2dd4b4",
+    "ExCom Interview": "#fb923c",
     "Final Interview": "#fb923c",
     "Offer": "#f59e0b",
     "Hired": "#4ade80",
@@ -668,6 +672,7 @@ const normalizeApplications = (apps) => (apps || []).map((app, index) => ({
   nextAction: app.stage === "Technical Interview" ? "Schedule technical interview" : app.stage === "HM Review" ? "Await HM feedback" : "Review CV",
   lastActivityAt: app.lastActivityAt || app.appliedDate || todayISO(),
   ...app,
+  stage: normalizePipelineStage(app.stage),
 }));
 
 const hasSalaryAccess = (user) => !!(user?.canViewSalary || user?.canSeeAll || user?.canApproveOffer);
@@ -850,17 +855,7 @@ const ROLE_TO_BACKEND = {
   Interviewer: "interviewer",
 };
 
-const STAGE_TO_BACKEND = {
-  "Applied": "applied",
-  "HR Screening": "screening",
-  "HM Review": "screening",
-  "1st Interview": "interview",
-  "Technical Interview": "assessment",
-  "Final Interview": "interview",
-  "Offer": "offer",
-  "Hired": "hired",
-  "Rejected": "rejected",
-};
+
 
 function scorecardAverage(scorecard) {
   if (!scorecard) return 0;
@@ -2044,9 +2039,11 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
   const funnelDefinitions = [
     { label: "Applied/New", stages: ["Applied"] },
     { label: "Screening", stages: ["HR Screening", "HM Review"] },
-    { label: "HR Interview", stages: ["1st Interview"] },
+    { label: "HR 1 Interview", stages: ["HR 1 Interview"] },
     { label: "Technical Interview", stages: ["Technical Interview"] },
-    { label: "Final/EXCOM/CEO", stages: ["Final Interview"] },
+    { label: "HR 2 Interview", stages: ["HR 2 Interview"] },
+    { label: "ExCom Interview", stages: ["ExCom Interview"] },
+    { label: "Final Interview", stages: ["Final Interview"] },
     { label: "Offer", stages: ["Offer"] },
     { label: "Hired", stages: ["Hired"] },
     { label: "Rejected", stages: ["Rejected"] },
@@ -4483,6 +4480,7 @@ const extractCandidateName = (text) => {
 
 // ── PIPELINE PAGE ─────────────────────────────────────────────────────────────
 function PipelinePage({ applications, setApplications, candidates, setCandidates, jobs, setJobs, interviews, scorecards = [], roleConfig, openModal, backendActions, reloadData }) {
+  const [filterRecruiter, setFilterRecruiter] = useState("All");
   const [filterJob, setFilterJob] = useState("All");
   const [filterEntity, setFilterEntity] = useState("All");
   const [filterDept, setFilterDept] = useState("All");
@@ -4499,11 +4497,14 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
 
   const openJobs = jobs.filter(j => j.status === "Open");
   const deptOptions = Array.from(new Set(jobs.map(j => j.dept).filter(Boolean))).sort();
+  const recruiterOptions = [...new Set(applications.map(a => pipelineRecruiter(a, jobs)))].sort((a,b) => a.localeCompare(b));
+  useEffect(() => { setSelectedApps([]); }, [filterRecruiter, filterJob, filterEntity, filterDept, pipelineSearch, showDelayedOnly]);
   const canMove = !!roleConfig.canMoveCandidates;
   const canUpload = !!roleConfig.canEditCandidates;
 
-  const activeApplications = applications.filter(a => a.status === "Active");
-  const visiblePipelineApplications = applications.filter(a => a.status === "Active" || a.stage === "Rejected" || a.status === "Rejected");
+  const recruiterApplications = applications.filter(a => filterRecruiter === "All" || pipelineRecruiter(a, jobs) === filterRecruiter);
+  const activeApplications = recruiterApplications.filter(a => a.status === "Active");
+  const visiblePipelineApplications = recruiterApplications.filter(a => a.status === "Active" || a.stage === "Rejected" || a.status === "Rejected");
   const pipelineStages = [...PIPELINE_STAGES, "Rejected"];
   const delayedApps = activeApplications.filter(a => (a.daysInStage || 0) >= 5);
 
@@ -4687,7 +4688,7 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
           </span>
         </div>
         <RecruiterWorkbenchPanel
-          applications={applications}
+          applications={recruiterApplications}
           candidates={candidates}
           jobs={jobs}
           interviews={interviews}
@@ -4717,6 +4718,12 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
             <label className="form-label">Entity</label>
             <select className="form-select" style={{ width: "auto" }} value={filterEntity} onChange={e => setFilterEntity(e.target.value)}>
               <option>All</option>{ENTITIES.map(e => <option key={e}>{e}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="form-label" htmlFor="pipeline-recruiter">Recruiter</label>
+            <select id="pipeline-recruiter" className="form-select" value={filterRecruiter} onChange={e => setFilterRecruiter(e.target.value)}>
+              <option value="All">All recruiters</option>{recruiterOptions.map(name => <option key={name} value={name}>{name}</option>)}
             </select>
           </div>
           {canMove && selectedApps.length > 0 && (
@@ -7610,7 +7617,7 @@ function ScheduleInterviewModal({ data, closeModal, ctx }) {
   const eligibleApps = ctx.applications.filter(a => a.status === "Active" && !["Applied", "Hired", "Rejected", "On Hold"].includes(a.stage));
   const interviewTypeMap = {
     "HR Screening": "phone_screen",
-    "1st Interview": "behavioral",
+    "HR 1 Interview": "behavioral",
     "Technical Interview": "technical",
     "Panel Interview": "panel",
     "Final Interview": "final",
@@ -7626,7 +7633,7 @@ function ScheduleInterviewModal({ data, closeModal, ctx }) {
     .filter(u => u?.isActive !== false && u.email && u.fullName)
     .sort((a, b) => a.fullName.localeCompare(b.fullName));
   const defaultInterviewerId = String(interviewerOptions.find(u => u.fullName === "Mohi Mohsen")?.id || interviewerOptions[0]?.id || "");
-  const [form, setForm] = useState({ applicationId: data?.applicationId || eligibleApps[0]?.id || "", type: "1st Interview", scheduledAt: "", format: "In-person", interviewerMode: "list", interviewerUserId: defaultInterviewerId, interviewerName: "" });
+  const [form, setForm] = useState({ applicationId: data?.applicationId || eligibleApps[0]?.id || "", type: "HR 1 Interview", scheduledAt: "", format: "In-person", interviewerMode: "list", interviewerUserId: defaultInterviewerId, interviewerName: "" });
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
   const submit = async () => {
@@ -7704,7 +7711,7 @@ function ScheduleInterviewModal({ data, closeModal, ctx }) {
           <div className="form-row">
             <div className="form-group"><label className="form-label">Interview type</label>
               <select className="form-select" value={form.type} onChange={e => set("type", e.target.value)}>
-                {["HR Screening","1st Interview","Technical Interview","Panel Interview","Final Interview"].map(t => <option key={t}>{t}</option>)}
+                {["HR Screening","HR 1 Interview","Technical Interview","Panel Interview","Final Interview"].map(t => <option key={t}>{t}</option>)}
               </select>
             </div>
             <div className="form-group"><label className="form-label">Format</label>

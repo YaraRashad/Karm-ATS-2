@@ -1,3 +1,4 @@
+import { normalizePipelineStage } from "./pipeline-stages.js";
 import { PublicClientApplication } from "@azure/msal-browser";
 
 export const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api/v1";
@@ -246,7 +247,7 @@ export function mapHiringRequest(r = {}) {
 const stageLabel = {
   applied: "Applied",
   screening: "HR Screening",
-  interview: "1st Interview",
+  interview: "HR 1 Interview",
   assessment: "Technical Interview",
   offer: "Offer",
   hired: "Hired",
@@ -368,7 +369,7 @@ export function mapBackendData({ positions = [], candidates = [], applications =
     id: a.id,
     candidateId: a.candidateId || a.candidate?.id,
     jobId: a.positionId || a.position?.id,
-    stage: a.displayStage || stageLabel[a.stage] || a.stage,
+    stage: normalizePipelineStage(a.displayStage || stageLabel[a.stage] || a.stage),
     status: a.isActive === false || a.stage === "rejected" ? "Rejected" : "Active",
     recruiterId: a.position?.recruiterId || a.position?.recruiter?.userId || a.position?.recruiter?.user?.id || a.position?.recruiter?.id || "",
     recruiter: fullName(a.position?.recruiter?.user || a.position?.recruiter) || "Recruiter",
