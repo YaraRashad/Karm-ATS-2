@@ -519,6 +519,7 @@ export const backendActions = {
       recruiterId: payload.recruiterId || undefined,
       hiringManagerId: payload.hiringManagerId || undefined,
     };
+    if (payload.approvalDate !== undefined) body.approvalDate = payload.approvalDate;
     if (payload.salaryMin !== undefined && payload.salaryMin !== "" && payload.salaryMax !== undefined && payload.salaryMax !== "") {
       const salaryMin = Number(payload.salaryMin || 0);
       body.salaryMin = salaryMin;

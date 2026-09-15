@@ -3057,6 +3057,7 @@ function JobDetailModal({ job, applications, candidates, jobs, setJobs, openModa
                 <div className="form-group"><label className="form-label">Salary min (EGP)</label><input className="form-input" type="number" value={form.salaryMin} onChange={e => set("salaryMin", parseFloat(e.target.value) || 0)} /></div>
                 <div className="form-group"><label className="form-label">Salary max (EGP)</label><input className="form-input" type="number" value={form.salaryMax} onChange={e => set("salaryMax", parseFloat(e.target.value) || 0)} /></div>
               </div>
+              <div className="form-group"><label className="form-label" htmlFor="job-approval-date">Approval date</label><input id="job-approval-date" className="form-input" type="date" value={form.approvalDate || ""} onChange={e => set("approvalDate", e.target.value)} /></div>
               <div className="form-group"><label className="form-label">Description</label><textarea className="form-textarea" value={form.description} onChange={e => set("description", e.target.value)} /></div>
             </div>
           ) : (
