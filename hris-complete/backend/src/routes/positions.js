@@ -1,3 +1,4 @@
+import { approvalDateUpdate } from '../lib/positionApprovalDate.js';
 import { replacementFields } from '../lib/positionReplacement.js';
 // ─── Positions Routes ─────────────────────────────────────────────────
 // GET    /api/v1/positions
@@ -332,7 +333,10 @@ positionsRouter.patch(
       let replacement;
       try { replacement = replacementFields(req.body, existing); }
       catch (error) { return badRequest(res, error.message); }
-      const updates = { ...replacement };
+      let approvalDate;
+      try { approvalDate = approvalDateUpdate(req.body.approvalDate); }
+      catch (error) { return badRequest(res, error.message); }
+      const updates = { ...replacement, ...approvalDate };
       const nextEntity = req.body.entity || existing.entity;
 
       if (req.body.departmentName && !req.body.departmentId) {
