@@ -1,3 +1,4 @@
+import ThankYouLettersPage from "./ThankYouLettersPage.jsx";
 import { countRequisitions } from "./requisition-counts.js";
 import { useEffect, useState, useMemo } from "react";
 import * as XLSX from "xlsx";
@@ -1176,11 +1177,12 @@ function LegacyAtsApp({ sessionUser, backendData, dataError, reloadData, logout:
     { id: "candidates", label: "Talent Database",   icon: "candidates" },
     { id: "interviews", label: "Interviews",        icon: "interviews", badge: pendingScorecards, badgeColor: "amber" },
     { id: "offers",     label: "Offers",            icon: "offers",     badge: pendingOffers, badgeColor: "red" },
+    { id: "thankYouLetters", label: "Thank You Letters", icon: "offers" },
   ];
   if (isAdmin) allNav.push({ id: "settings", label: "Settings", icon: "settings" });
   const roleNav = {
-    Admin: ["dashboard", "requests", "jobs", "candidates", "pipeline", "interviews", "offers", "settings"],
-    Recruiter: ["dashboard", "requests", "jobs", "candidates", "pipeline", "interviews", "offers"],
+    Admin: ["dashboard", "requests", "jobs", "candidates", "pipeline", "interviews", "offers", "thankYouLetters", "settings"],
+    Recruiter: ["dashboard", "requests", "jobs", "candidates", "pipeline", "interviews", "offers", "thankYouLetters"],
     "Hiring Manager": ["dashboard", "requests", "jobs", "candidates", "interviews", "offers"],
     Interviewer: ["interviews"],
   };
@@ -1188,7 +1190,7 @@ function LegacyAtsApp({ sessionUser, backendData, dataError, reloadData, logout:
   const nav = allNav.filter(item => allowedPages.includes(item.id));
   const activePage = allowedPages.includes(page) ? page : allowedPages[0];
 
-  const pages = { dashboard: DashboardPage, requests: HiringRequestsPage, jobs: JobsPage, candidates: CandidatesPage, pipeline: PipelinePage, interviews: InterviewsPage, offers: OffersPage, settings: SettingsPage };
+  const pages = { dashboard: DashboardPage, requests: HiringRequestsPage, jobs: JobsPage, candidates: CandidatesPage, pipeline: PipelinePage, interviews: InterviewsPage, offers: OffersPage, thankYouLetters: ThankYouLettersPage, settings: SettingsPage };
   const PageComponent = pages[activePage] || DashboardPage;
 
   const ctx = { jobs: scopedJobs, setJobs, candidates: scopedCandidates, setCandidates, applications: scopedApplications, setApplications, scorecards, setScorecards, offers: scopedOffers, setOffers, interviews: scopedInterviews, setInterviews, hiringRequests: scopedHiringRequests, setHiringRequests, roleAssignments, setRoleAssignments, ROLES_CONFIG, auditLogs: derivedAuditLogs, dashboardAuditLogs: auditLogs, backendUsers: allUsers, openModal, closeModal, currentRole, roleConfig, canViewSalary, canApproveOffers, allUsers, stageIndex, backendActions, reloadData, sessionUser, setPage };
