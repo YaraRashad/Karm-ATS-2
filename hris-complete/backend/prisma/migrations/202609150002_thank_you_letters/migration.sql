@@ -1,0 +1,8 @@
+ALTER TABLE "applications"
+  ADD COLUMN IF NOT EXISTS "thankYouStatus" TEXT,
+  ADD COLUMN IF NOT EXISTS "thankYouQueuedAt" TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "thankYouSentAt" TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "thankYouApprovedBy" TEXT,
+  ADD COLUMN IF NOT EXISTS "thankYouRecipient" TEXT,
+  ADD COLUMN IF NOT EXISTS "thankYouSubject" TEXT,
+  ADD COLUMN IF NOT EXISTS "thankYouBody" TEXT;

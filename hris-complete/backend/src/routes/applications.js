@@ -341,6 +341,10 @@ applicationsRouter.patch(
             reason,
           },
         }),
+        prisma.application.updateMany({
+          where: { id: req.params.id, stage: 'rejected', thankYouStatus: null },
+          data: { thankYouStatus: 'pending', thankYouQueuedAt: new Date() },
+        }),
       ]);
 
       await auditLog(req, {
@@ -383,6 +387,10 @@ applicationsRouter.post(
             movedById:     req.user.id,
             reason,
           },
+        }),
+        prisma.application.updateMany({
+          where: { id: req.params.id, stage: 'rejected', thankYouStatus: null },
+          data: { thankYouStatus: 'pending', thankYouQueuedAt: new Date() },
         }),
       ]);
 

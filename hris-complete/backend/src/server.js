@@ -1,3 +1,4 @@
+import { thankYouRouter } from './routes/thankYouLetters.js';
 // ─── HRIS Platform API — Server Entry Point ──────────────────────────
 import 'dotenv/config';
 import express from 'express';
@@ -96,6 +97,7 @@ app.use(`${v1}/hiring-requests`, hiringRequestsRouter);
 app.use(`${v1}/positions`,    positionsRouter);
 app.use(`${v1}/candidates`,   candidatesRouter);
 app.use(`${v1}/applications`, applicationsRouter);
+app.use(`${v1}/thank-you-letters`, thankYouRouter);
 app.use(`${v1}/interviews`,   interviewsRouter);
 app.use(`${v1}/scorecards`,   scorecardsRouter);
 app.use(`${v1}/offers`,       offersRouter);

@@ -404,6 +404,14 @@ model Application {
   appliedAt       DateTime         @default(now())
   isActive        Boolean          @default(true)
   disqualifyReason String?
+  thankYouStatus String?
+  thankYouQueuedAt DateTime?
+  thankYouSentAt DateTime?
+  thankYouApprovedBy String?
+  thankYouRecipient String?
+  thankYouSubject String?
+  thankYouBody String?
+
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
