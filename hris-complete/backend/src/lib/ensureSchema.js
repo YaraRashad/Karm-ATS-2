@@ -3,6 +3,8 @@ import { prisma } from './prisma.js';
 export async function ensureRuntimeSchema() {
   if (process.env.SKIP_RUNTIME_SCHEMA_ENSURE === 'true') return;
 
+  await prisma.$executeRawUnsafe(`ALTER TABLE IF EXISTS "positions" ADD COLUMN IF NOT EXISTS "replacedEmployeeName" TEXT;`);
+
   await prisma.$executeRawUnsafe(`
     ALTER TABLE IF EXISTS "positions"
     ADD COLUMN IF NOT EXISTS "headcount" INTEGER NOT NULL DEFAULT 1;

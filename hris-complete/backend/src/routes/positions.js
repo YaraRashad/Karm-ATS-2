@@ -1,3 +1,4 @@
+import { replacementFields } from '../lib/positionReplacement.js';
 // ─── Positions Routes ─────────────────────────────────────────────────
 // GET    /api/v1/positions
 // POST   /api/v1/positions
@@ -219,6 +220,10 @@ positionsRouter.post(
         requirements, targetCloseDate, headcountRationale,
       } = req.body;
 
+      let replacement;
+      try { replacement = replacementFields(req.body); }
+      catch (error) { return badRequest(res, error.message); }
+
       if (salaryMin >= salaryMax) {
         return badRequest(res, 'Salary min must be less than salary max');
       }
@@ -254,6 +259,7 @@ positionsRouter.post(
           requirements: requirements || [],
           targetCloseDate: targetCloseDate ? new Date(targetCloseDate) : null,
           headcountRationale,
+          ...replacement,
         },
         include: {
           department: { select: { id: true, name: true } },
@@ -323,7 +329,10 @@ positionsRouter.patch(
         return unprocessable(res, 'Cannot edit a closed position');
       }
 
-      const updates = {};
+      let replacement;
+      try { replacement = replacementFields(req.body, existing); }
+      catch (error) { return badRequest(res, error.message); }
+      const updates = { ...replacement };
       const nextEntity = req.body.entity || existing.entity;
 
       if (req.body.departmentName && !req.body.departmentId) {

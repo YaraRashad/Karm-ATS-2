@@ -337,6 +337,7 @@ model Position {
   headcountStatus     HeadcountApprovalStatus @default(not_requested)
   headcountApprovedAt DateTime?
   headcountApprovedBy String?
+  replacedEmployeeName String?
   headcountRationale  String?
   openDate            DateTime?
   targetCloseDate     DateTime?
