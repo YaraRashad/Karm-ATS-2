@@ -1,3 +1,4 @@
+import { countRequisitions } from "./requisition-counts.js";
 import { useEffect, useState, useMemo } from "react";
 import * as XLSX from "xlsx";
 import * as pdfjsLib from "pdfjs-dist";
@@ -3215,6 +3216,7 @@ function AssignRecruiterModal({ job, users = [], setJobs, backendActions, reload
 }
 
 function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canViewSalary, openModal, backendActions, reloadData, allUsers = [] }) {
+  const totals = countRequisitions(jobs);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("All");
   const [filterEntity, setFilterEntity] = useState("All");
@@ -3379,7 +3381,7 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
       <div className="page-header">
         <div>
           <div className="page-title">Job Requisitions</div>
-          <div className="page-sub">{jobs.length} total requisitions across all entities</div>
+          <div className="page-sub">{totals.positions} distinct positions · {totals.headcount} total HC across all entities</div>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
           <ExportButton onClick={exportJobs} />
@@ -3423,10 +3425,14 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
               <option>All</option>{recruiterOptions.map(name => <option key={name}>{name}</option>)}
             </select>
           </div>
-          <div className="toolbar-summary">
-            <div className="toolbar-count" aria-live="polite">
-              <div className="toolbar-count-value">{filtered.length}</div>
-              <div className="toolbar-count-label">{filterStatus === "All" ? "Positions shown" : `${statusDisplayLabel(filterStatus)} positions`}</div>
+          <div className="toolbar-summary" style={{ display: "flex", gap: 12, flexWrap: "wrap" }} aria-live="polite">
+            <div className="toolbar-count" title="Distinct job titles within each department and entity, matching the current filters.">
+              <div className="toolbar-count-value">{countRequisitions(filtered).positions}</div>
+              <div className="toolbar-count-label">Distinct positions shown</div>
+            </div>
+            <div className="toolbar-count" title="Sum of requested headcount for requisitions matching the current filters.">
+              <div className="toolbar-count-value">{countRequisitions(filtered).headcount}</div>
+              <div className="toolbar-count-label">Headcount (HC) shown</div>
             </div>
           </div>
         </div>
