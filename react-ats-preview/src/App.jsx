@@ -2635,6 +2635,7 @@ function ManpowerPlanImporter({ closeModal, jobs, setJobs, backendActions, reloa
     entity: normalizePlanEntity(j.entity),
     positionType: POSITION_TYPES.includes(j.positionType || j["position type"]) ? (j.positionType || j["position type"]) : "Manpower",
     level: JOB_FAMILIES.includes(j.level || j["job family"]) ? (j.level || j["job family"]) : "Staff",
+    replacedEmployeeName: j.replacedEmployeeName || j["person being replaced"] || "",
     headcount: parseHeadcountFromPlanRow(j),
     salaryMin: parseFloat(j.salaryMin || j["salary min"] || j.min || 0) || 0,
     salaryMax: parseFloat(j.salaryMax || j["salary max"] || j.max || 0) || 0,
@@ -2667,6 +2668,7 @@ function ManpowerPlanImporter({ closeModal, jobs, setJobs, backendActions, reloa
             entity: obj.entity || row[2],
             positionType: obj["position type"] || obj["contract type"] || "Manpower",
             level: obj["job family"] || obj.level || "Staff",
+            replacedEmployeeName: obj["person being replaced"] || obj.replacedemployeename || "",
             headcount: parseHeadcountFromPlanRow(obj),
             hiringManager: obj["hiring manager"] || row[4],
             description: obj.description || "",
@@ -2718,6 +2720,11 @@ function ManpowerPlanImporter({ closeModal, jobs, setJobs, backendActions, reloa
     setImporting(true);
     setError("");
     const toImport = parsedJobs.filter(j => j._selected);
+    if (toImport.some(j => j.positionType === "Replacement" && !String(j.replacedEmployeeName || "").trim())) {
+      setError("Enter the person being replaced for every selected replacement requisition.");
+      setImporting(false);
+      return;
+    }
     try {
       const created = [];
       for (const { id, _selected, _error, ...job } of toImport) {
@@ -2908,6 +2915,7 @@ function ManpowerPlanImporter({ closeModal, jobs, setJobs, backendActions, reloa
                           <select className="form-select" style={{ padding: "5px 8px", fontSize: 12 }} value={job.positionType || "Manpower"} onChange={e => updateJob(job.id, "positionType", e.target.value)}>
                             {POSITION_TYPES.map(t => <option key={t}>{t}</option>)}
                           </select>
+                          {job.positionType === "Replacement" && <input className="form-input" aria-label={`Person being replaced for ${job.title}`} required maxLength={200} value={job.replacedEmployeeName || ""} onChange={e => updateJob(job.id, "replacedEmployeeName", e.target.value)} placeholder="Person being replaced *" />}
                         </td>
                         <td style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>
                           <select className="form-select" style={{ padding: "5px 8px", fontSize: 12 }} value={job.level} onChange={e => updateJob(job.id, "level", e.target.value)}>
@@ -2988,6 +2996,7 @@ function JobDetailModal({ job, applications, candidates, jobs, setJobs, openModa
   const jobApps = applications.filter(a => a.jobId === job.id && a.status === "Active");
 
   const saveEdit = async () => {
+    if (form.positionType === "Replacement" && !String(form.replacedEmployeeName || "").trim()) { alert("Person being replaced is required."); return; }
     setSaving(true);
     try {
       const nextJob = { ...job, ...form };
@@ -3039,6 +3048,7 @@ function JobDetailModal({ job, applications, candidates, jobs, setJobs, openModa
                 <div className="form-group"><label className="form-label">Position type</label><select className="form-select" value={form.positionType || "Manpower"} onChange={e => set("positionType", e.target.value)}>{POSITION_TYPES.map(t => <option key={t}>{t}</option>)}</select></div>
                 <div className="form-group"><label className="form-label">Job family</label><select className="form-select" value={form.level} onChange={e => set("level", e.target.value)}>{JOB_FAMILIES.map(f => <option key={f}>{f}</option>)}</select></div>
               </div>
+              <ReplacementNameField form={form} set={set} />
               <div className="form-row">
                 <div className="form-group"><label className="form-label">Headcount</label><input className="form-input" type="number" min="1" value={form.headcount} onChange={e => set("headcount", parseInt(e.target.value) || 1)} /></div>
                 <div className="form-group"><label className="form-label">Status</label><select className="form-select" value={form.status} onChange={e => set("status", e.target.value)}><option>Open</option><option>Draft</option><option>Closed</option></select></div>
@@ -3055,6 +3065,7 @@ function JobDetailModal({ job, applications, candidates, jobs, setJobs, openModa
               <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 24 }}>
                 {[
                   { label: "Headcount", value: viewJob.headcount },
+                  ...(viewJob.positionType === "Replacement" ? [{ label: "Person being replaced", value: viewJob.replacedEmployeeName || "Not recorded" }] : []),
                   { label: "Applications", value: jobApps.length },
                   { label: "Budget", value: canViewSalary ? (viewJob.salaryMin ? `${viewJob.salaryMin.toLocaleString()} – ${viewJob.salaryMax.toLocaleString()} EGP` : "—") : "Restricted" },
                   { label: "Recruiter", value: viewJob.recruiter || "Unassigned" },
@@ -3333,10 +3344,10 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
   };
 
   const exportJobs = () => {
-    const headers = ["Job Title", "Department", "Entity", "Position Type", "Job Family", "Headcount", "Active Applications", "Open Date", "Recruiter", "Hiring Manager", "Salary Min (EGP)", "Salary Max (EGP)", "Status"];
+    const headers = ["Job Title", "Department", "Entity", "Position Type", "Person Being Replaced", "Job Family", "Headcount", "Active Applications", "Open Date", "Recruiter", "Hiring Manager", "Salary Min (EGP)", "Salary Max (EGP)", "Status"];
     const rows = filtered.map(j => {
       const appCount = applications.filter(a => a.jobId === j.id && a.status === "Active").length;
-      return [j.title, j.dept, j.entity, j.positionType || "Manpower", j.level, j.headcount, appCount, j.openDate, j.recruiter, j.hiringManager, canViewSalary ? j.salaryMin : "Restricted", canViewSalary ? j.salaryMax : "Restricted", j.status];
+      return [j.title, j.dept, j.entity, j.positionType || "Manpower", j.replacedEmployeeName || "", j.level, j.headcount, appCount, j.openDate, j.recruiter, j.hiringManager, canViewSalary ? j.salaryMin : "Restricted", canViewSalary ? j.salaryMax : "Restricted", j.status];
     });
     const dateStr = new Date().toISOString().split("T")[0];
     exportToCSV(`Karm_ATS_Job_Requisitions_${dateStr}.csv`, headers, rows);
@@ -3452,7 +3463,7 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
                       <td className="strong" style={{ color: "var(--accent)" }}>{job.title}</td>
                       <td>{job.dept}</td>
                       <td><span className="tag">{entityDisplayLabel(job.entity)}</span></td>
-                      <td><span className={`badge ${positionTypeBadge(job.positionType)}`}>{job.positionType || "Manpower"}</span></td>
+                      <td><span className={`badge ${positionTypeBadge(job.positionType)}`}>{job.positionType || "Manpower"}</span>{job.positionType === "Replacement" && <div style={{ fontSize: 12, marginTop: 4 }}>Replacing: {job.replacedEmployeeName || "Not recorded"}</div>}</td>
                       <td style={{ fontFamily: "var(--mono)", color: "var(--text2)" }}>{canViewSalary ? `${(job.salaryMin || 0).toLocaleString()}–${(job.salaryMax || 0).toLocaleString()}` : "Restricted"}</td>
                       <td>{job.approvedBy || "—"}</td>
                       <td style={{ fontFamily: "var(--mono)", color: "var(--text3)" }} title={approvalDate.title}>{approvalDate.text}</td>
@@ -6380,6 +6391,14 @@ function AddHiringRequestModal({ data, closeModal, ctx }) {
   );
 }
 
+function ReplacementNameField({ form, set }) {
+  if (form.positionType !== "Replacement") return null;
+  return <div className="form-group">
+    <label className="form-label" htmlFor="replaced-employee-name">Person being replaced *</label>
+    <input id="replaced-employee-name" className="form-input" required maxLength={200} value={form.replacedEmployeeName || ""} onChange={e => set("replacedEmployeeName", e.target.value)} placeholder="Full name of the person being replaced" />
+  </div>;
+}
+
 function AddJobModal({ data, closeModal, ctx }) {
   const [form, setForm] = useState({ title: "", dept: DEPARTMENTS[0], entity: ENTITIES[0], positionType: "Manpower", level: JOB_FAMILIES[0], headcount: 1, status: "Open", description: "", salaryMin: "", salaryMax: "", approvedBy: ctx.roleConfig.fullName, approvalDate: new Date().toISOString().split("T")[0] });
   const [saving, setSaving] = useState(false);
@@ -6387,6 +6406,7 @@ function AddJobModal({ data, closeModal, ctx }) {
 
   const submit = async () => {
     if (!form.title) return;
+    if (form.positionType === "Replacement" && !String(form.replacedEmployeeName || "").trim()) { alert("Person being replaced is required."); return; }
     const salaryMin = ctx.canViewSalary ? (parseFloat(form.salaryMin) || 0) : 0;
     const salaryMax = ctx.canViewSalary ? (parseFloat(form.salaryMax) || 0) : 1;
     if (salaryMax <= salaryMin) {
@@ -6436,6 +6456,7 @@ function AddJobModal({ data, closeModal, ctx }) {
             </div>
             <div className="form-group"><label className="form-label">Job family</label><select className="form-select" value={form.level} onChange={e => set("level", e.target.value)}>{JOB_FAMILIES.map(f => <option key={f}>{f}</option>)}</select></div>
           </div>
+          <ReplacementNameField form={form} set={set} />
           <div className="form-row">
             <div className="form-group"><label className="form-label">Headcount</label><input className="form-input" type="number" min="1" value={form.headcount} onChange={e => set("headcount", e.target.value)} /></div>
             <div className="form-group"><label className="form-label">Initial status</label><select className="form-select" value={form.status} onChange={e => set("status", e.target.value)}><option>Draft</option><option>Open</option></select></div>

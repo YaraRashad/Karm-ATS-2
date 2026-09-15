@@ -332,6 +332,7 @@ export function mapBackendData({ positions = [], candidates = [], applications =
     title: p.title,
     dept: p.department?.name || "",
     entity: entityLabel[p.entity] || p.entity || "",
+    replacedEmployeeName: p.replacedEmployeeName || "",
     positionType: p.headcountRationale || p.positionType || "Manpower",
     status: statusLabel[p.status] || p.status,
     level: p.seniority || "",
@@ -502,6 +503,7 @@ export const backendActions = {
       description: payload.description || "",
       requirements: [],
       headcountRationale: payload.positionType || "Manpower",
+      replacedEmployeeName: payload.positionType === "Replacement" ? String(payload.replacedEmployeeName || "").trim() : null,
     }),
   }),
   updatePosition: (id, payload) => {
@@ -513,6 +515,7 @@ export const backendActions = {
       headcount: Math.max(1, Number(payload.headcount || 1)),
       description: payload.description || "",
       headcountRationale: payload.positionType || "Manpower",
+      replacedEmployeeName: payload.positionType === "Replacement" ? String(payload.replacedEmployeeName || "").trim() : null,
       recruiterId: payload.recruiterId || undefined,
       hiringManagerId: payload.hiringManagerId || undefined,
     };
