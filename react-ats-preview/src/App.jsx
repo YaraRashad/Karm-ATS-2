@@ -1172,8 +1172,8 @@ function LegacyAtsApp({ sessionUser, backendData, dataError, reloadData, logout:
     { id: "dashboard",  label: "Dashboard",        icon: "dashboard" },
     { id: "requests",   label: "Hiring Requests",   icon: "jobs",       badge: scopedHiringRequests.filter(r => r.status.includes("Pending")).length, badgeColor: "amber" },
     { id: "jobs",       label: "Job Requisitions",  icon: "jobs",       badge: openJobs },
-    { id: "candidates", label: "Talent Database",   icon: "candidates" },
     { id: "pipeline",   label: "Active Hiring Pipeline", icon: "pipeline" },
+    { id: "candidates", label: "Talent Database",   icon: "candidates" },
     { id: "interviews", label: "Interviews",        icon: "interviews", badge: pendingScorecards, badgeColor: "amber" },
     { id: "offers",     label: "Offers",            icon: "offers",     badge: pendingOffers, badgeColor: "red" },
   ];
