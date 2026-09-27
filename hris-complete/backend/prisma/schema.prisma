@@ -431,6 +431,8 @@ model ApplicationStageHistory {
   application   Application      @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   fromStage     ApplicationStage?
   toStage       ApplicationStage
+  fromDisplayStage String?
+  toDisplayStage   String?
   movedAt       DateTime         @default(now())
   movedById     String?
   reason        String?

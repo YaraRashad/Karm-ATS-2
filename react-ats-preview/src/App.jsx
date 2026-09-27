@@ -1,3 +1,4 @@
+import { recruitmentAnalysis } from "./recruitment-analysis.js";
 import { PIPELINE_STAGE_NAMES as STAGES, ACTIVE_PIPELINE_STAGES as PIPELINE_STAGES, PIPELINE_STAGE_API as STAGE_TO_BACKEND, normalizePipelineStage, pipelineRecruiter } from "./pipeline-stages.js";
 import ThankYouLettersPage from "./ThankYouLettersPage.jsx";
 import { countRequisitions } from "./requisition-counts.js";
@@ -2036,25 +2037,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
     { label: "Offer acceptance rate", value: offerAcceptanceRate === null ? "N/A" : `${offerAcceptanceRate}%`, note: `${acceptedOffers} accepted · ${declinedOffers} declined`, action: offerAcceptanceRate === null ? "Awaiting accepted or declined offers." : "Click to view accepted and declined offers.", health: offerAcceptanceHealth, modalType: "offerAcceptance" },
   ];
 
-  const funnelDefinitions = [
-    { label: "Applied/New", stages: ["Applied"] },
-    { label: "Screening", stages: ["HR Screening", "HM Review"] },
-    { label: "HR 1 Interview", stages: ["HR 1 Interview"] },
-    { label: "Technical Interview", stages: ["Technical Interview"] },
-    { label: "HR 2 Interview", stages: ["HR 2 Interview"] },
-    { label: "ExCom Interview", stages: ["ExCom Interview"] },
-    { label: "Final Interview", stages: ["Final Interview"] },
-    { label: "Offer", stages: ["Offer"] },
-    { label: "Hired", stages: ["Hired"] },
-    { label: "Rejected", stages: ["Rejected"] },
-  ];
-  const funnelRows = funnelDefinitions.map(item => ({
-    ...item,
-    count: applications.filter(app => item.stages.includes(app.stage)).length,
-  }));
-  const maxFunnel = Math.max(...funnelRows.map(row => row.count), 1);
-  const activeFunnelRows = funnelRows.filter(row => !["Hired", "Rejected"].includes(row.label));
-  const bottleneck = activeFunnelRows.reduce((max, row) => row.count > max.count ? row : max, { label: "None", count: 0 });
+  const recruitment = recruitmentAnalysis(candidates, applications);
 
   const normalizePlanDepartment = (dept) => {
     const label = (dept || "Unassigned").trim() || "Unassigned";
@@ -2346,32 +2329,28 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
           <section className="chart-card chart-card-wide">
             <div className="chart-card-head">
               <div>
-                <div className="chart-card-title">Recruitment Funnel</div>
-                <div className="chart-card-sub">Stage volume highlights where candidates are collecting.</div>
+                <div className="chart-card-title">Recruitment Analysis · All Time</div>
+                <div className="chart-card-sub">Unique talents across their recorded recruitment history.</div>
               </div>
-              {bottleneck.count > 0 && <span className="badge badge-amber">Largest: {bottleneck.label}</span>}
             </div>
-            {applications.length === 0 ? (
-              <div className="empty-panel">No candidate pipeline records are available yet.</div>
-            ) : (
-              <div className="funnel-stack">
-                {funnelRows.map((row, index) => (
-                  <div className="funnel-stack-row" key={row.label}>
-                    <div className="funnel-stack-stage">{row.label}</div>
-                    <div className="funnel-stack-track">
-                      <div
-                        className="funnel-stack-fill"
-                        style={{
-                          width: row.count === 0 ? 0 : `${Math.max(4, Math.round((row.count / maxFunnel) * 100))}%`,
-                          background: row.label === "Hired" ? "var(--teal)" : chartColors[index % chartColors.length],
-                        }}
-                      />
-                    </div>
-                    <div className="funnel-stack-count">{row.count}</div>
-                  </div>
-                ))}
-              </div>
-            )}
+            <div className="chart-card-sub" style={{ marginBottom: 16 }}>
+              <strong>{recruitment.total} talents in Talent Database</strong> · {recruitment.applied} with applications · {recruitment.unassigned} without an application
+            </div>
+            <div style={{ overflowX: "auto" }}>
+              <table>
+                <thead><tr><th>Stage</th><th>Ever reached</th><th>Passed / moved forward</th><th>Currently here</th><th>% of talents reached</th></tr></thead>
+                <tbody>{recruitment.rows.map(row => <tr key={row.label}>
+                  <td>{row.label === "Applied" ? "Applied / entered recruitment" : row.label}</td>
+                  <td>{row.reached}</td><td>{row.label === "Hired" ? "—" : row.passed}</td><td>{row.current}</td>
+                  <td>{recruitment.total ? `${Math.round(row.reached / recruitment.total * 100)}%` : "—"}</td>
+                </tr>)}</tbody>
+              </table>
+            </div>
+            <div className="chart-card-sub" style={{ marginTop: 16 }}>
+              {recruitment.rejected} talents currently have a rejected application. Each talent is counted once per stage, even with multiple applications; rows overlap and should not be added together.
+              <br />Passed / moved forward means a recorded move from that stage to a later stage. Skipped stages are not counted as passed.
+              {recruitment.incomplete > 0 && <><br /><strong>{recruitment.incomplete} talents have incomplete stage history.</strong> Historical stage totals are confirmed minimums; unspecified interview rounds are not guessed.</>}
+            </div>
           </section>
 
           <section className="chart-card">

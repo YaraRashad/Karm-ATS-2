@@ -1,3 +1,4 @@
+import { fetchAllPages } from "./pagination.js";
 import { normalizePipelineStage } from "./pipeline-stages.js";
 import { PublicClientApplication } from "@azure/msal-browser";
 
@@ -111,7 +112,7 @@ export function clearSessionTokens() {
   sessionStorage.removeItem(REFRESH_KEY);
 }
 
-export async function api(path, options = {}, retry = true) {
+export async function api(path, options = {}, retry = true, includeMeta = false) {
   const { accessToken } = readSessionTokens();
   const headers = {
     "Content-Type": "application/json",
@@ -137,7 +138,7 @@ export async function api(path, options = {}, retry = true) {
           body: JSON.stringify({ refreshToken }),
         }, false);
         writeSessionTokens(refreshed);
-        return api(path, options, false);
+        return api(path, options, false, includeMeta);
       } catch {
         clearSessionTokens();
       }
@@ -154,7 +155,7 @@ export async function api(path, options = {}, retry = true) {
       : errorMessage || body?.message || `API request failed (${res.status})`;
     throw new Error(message);
   }
-  return body?.data ?? body;
+  return includeMeta ? body : body?.data ?? body;
 }
 
 export async function fetchFileBlob(path) {
@@ -370,6 +371,7 @@ export function mapBackendData({ positions = [], candidates = [], applications =
     candidateId: a.candidateId || a.candidate?.id,
     jobId: a.positionId || a.position?.id,
     stage: normalizePipelineStage(a.displayStage || stageLabel[a.stage] || a.stage),
+    stageHistory: a.stageHistory,
     status: a.isActive === false || a.stage === "rejected" ? "Rejected" : "Active",
     recruiterId: a.position?.recruiterId || a.position?.recruiter?.userId || a.position?.recruiter?.user?.id || a.position?.recruiter?.id || "",
     recruiter: fullName(a.position?.recruiter?.user || a.position?.recruiter) || "Recruiter",
@@ -448,10 +450,11 @@ export function mapBackendData({ positions = [], candidates = [], applications =
 }
 
 export async function fetchAtsData({ includeAudit = false, includeUsers = false } = {}) {
+  const allPages = path => fetchAllPages(path, url => api(url, {}, true, true));
   const [positions, candidates, applications, interviews, offers, scorecards, hiringRequests, audit, users] = await Promise.all([
-    api("/positions?pageSize=200&includeArchivedClosed=true"),
-    api("/candidates?pageSize=500"),
-    api("/applications?pageSize=500"),
+    allPages("/positions?pageSize=200&includeArchivedClosed=true"),
+    allPages("/candidates?pageSize=500"),
+    allPages("/applications?pageSize=500"),
     api("/interviews"),
     api("/offers?pageSize=500"),
     api("/scorecards?pageSize=500"),

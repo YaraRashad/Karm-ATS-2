@@ -2,6 +2,9 @@ import { prisma } from './prisma.js';
 
 export async function ensureRuntimeSchema() {
   if (process.env.SKIP_RUNTIME_SCHEMA_ENSURE === 'true') return;
+  await prisma.$executeRawUnsafe(`ALTER TABLE "application_stage_history"
+    ADD COLUMN IF NOT EXISTS "fromDisplayStage" TEXT,
+    ADD COLUMN IF NOT EXISTS "toDisplayStage" TEXT;`);
 
   await prisma.$executeRawUnsafe(`ALTER TABLE "applications"
   ADD COLUMN IF NOT EXISTS "thankYouStatus" TEXT,

@@ -74,6 +74,7 @@ applicationsRouter.get('/', async (req, res, next) => {
         where, skip: (parseInt(page)-1) * parseInt(pageSize), take: parseInt(pageSize),
         orderBy: { [sortBy]: sortDir },
         include: {
+          stageHistory: { orderBy: { movedAt: 'asc' } },
           candidate: {
             select: {
               id: true, firstName: true, lastName: true, email: true,
@@ -241,7 +242,7 @@ applicationsRouter.patch(
       const { positionId } = req.body;
       const application = await prisma.application.findFirst({
         where: { id: req.params.id, ...buildApplicationScopeWhere(req.user) },
-        select: { id: true, candidateId: true, positionId: true, stage: true },
+        select: { id: true, candidateId: true, positionId: true, stage: true, displayStage: true },
       });
       if (!application) return notFound(res, 'Application');
 
@@ -279,6 +280,8 @@ applicationsRouter.patch(
             applicationId: req.params.id,
             fromStage: application.stage,
             toStage: 'applied',
+            fromDisplayStage: application.displayStage,
+            toDisplayStage: 'Applied',
             movedById: req.user.id,
             reason: `Requisition changed to ${position.title}`,
           },
@@ -337,6 +340,8 @@ applicationsRouter.patch(
             applicationId: req.params.id,
             fromStage:     application.stage,
             toStage:       stage,
+            fromDisplayStage: application.displayStage,
+            toDisplayStage: nextDisplayStage,
             movedById:     req.user.id,
             reason,
           },
@@ -384,6 +389,8 @@ applicationsRouter.post(
             applicationId: req.params.id,
             fromStage:     application.stage,
             toStage:       'rejected',
+            fromDisplayStage: application.displayStage,
+            toDisplayStage: 'Rejected',
             movedById:     req.user.id,
             reason,
           },
