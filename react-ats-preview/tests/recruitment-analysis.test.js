@@ -15,7 +15,7 @@ test('reconciles talents and counts historical forward moves once per talent', (
   assert.equal(result.applied, 1);
   assert.equal(result.unassigned, 1);
   assert.equal(result.rejected, 1);
-  assert.deepEqual(result.rows.find(r => r.label === 'HR 1 Interview'), { label: 'HR 1 Interview', reached: 1, passed: 1, current: 0 });
+  assert.deepEqual(result.rows.find(r => r.label === 'HR 1 Interview'), { label: 'HR 1 Interview', reached: 1, passed: 1, rejected: 0, current: 0, conversion: 100 });
   assert.equal(result.rows.find(r => r.label === 'Technical Interview').passed, 0);
 });
 
@@ -31,4 +31,15 @@ test('backward moves and pending interviews do not count as passes', () => {
   assert.equal(result.rows.find(r => r.label === 'HR 1 Interview').current, 1);
   assert.equal(result.rows.find(r => r.label === 'HR 1 Interview').passed, 0);
   assert.equal(result.rows.find(r => r.label === 'Technical Interview').passed, 0);
+});
+
+
+test('rejections are attributed to their recorded stage and conversion uses reached', () => {
+  const result = recruitmentAnalysis([{ id: 1 }, { id: 2 }, { id: 3 }], [
+    { candidateId: 1, stage: 'Offer', stageHistory: [{ fromDisplayStage: 'HR 1 Interview', toDisplayStage: 'Offer' }] },
+    { candidateId: 2, stage: 'Rejected', stageHistory: [{ fromDisplayStage: 'HR 1 Interview', toStage: 'rejected' }] },
+    { candidateId: 3, stage: 'HR 1 Interview', stageHistory: [] },
+  ]);
+  assert.deepEqual(result.rows.find(r => r.label === 'HR 1 Interview'), { label: 'HR 1 Interview', reached: 3, passed: 1, rejected: 1, current: 1, conversion: 33 });
+  assert.equal(result.rows.find(r => r.label === 'Hired').conversion, null);
 });

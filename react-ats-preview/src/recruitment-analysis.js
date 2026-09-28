@@ -12,7 +12,7 @@ export function recruitmentAnalysis(candidates, applications) {
   const linked = new Set();
   const incomplete = new Set();
   const rejected = new Set();
-  const rows = stages.map(label => ({ label, reached: new Set(), passed: new Set(), current: new Set() }));
+  const rows = stages.map(label => ({ label, reached: new Set(), passed: new Set(), rejected: new Set(), current: new Set() }));
   const mark = (label, column, id) => rows.find(row => row.label === label)?.[column].add(id);
   for (const app of applications) {
     const id = String(app.candidateId);
@@ -30,6 +30,7 @@ export function recruitmentAnalysis(candidates, applications) {
       if ((event.fromStage && !from) || !to) incomplete.add(id);
       mark(from, 'reached', id);
       mark(to, 'reached', id);
+      if (to === 'Rejected') mark(from, 'rejected', id);
       // Only recorded forward moves count as passing. Skipped stages, rejection,
       // return moves and generic historical interviews do not imply a pass.
       if (stages.includes(from) && stages.indexOf(to) > stages.indexOf(from)) mark(from, 'passed', id);
@@ -38,6 +39,6 @@ export function recruitmentAnalysis(candidates, applications) {
   return {
     total: talents.size, applied: linked.size, unassigned: talents.size - linked.size,
     incomplete: incomplete.size, rejected: rejected.size,
-    rows: rows.map(row => ({ label: row.label, reached: row.reached.size, passed: row.passed.size, current: row.current.size })),
+    rows: rows.map(row => ({ label: row.label, reached: row.reached.size, passed: row.passed.size, rejected: row.rejected.size, current: row.current.size, conversion: row.reached.size && row.label !== 'Hired' ? Math.round(row.passed.size / row.reached.size * 100) : null })),
   };
 }

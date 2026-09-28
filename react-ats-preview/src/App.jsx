@@ -1,3 +1,4 @@
+import RecruitmentFunnel from "./RecruitmentFunnel.jsx";
 import { recruitmentAnalysis } from "./recruitment-analysis.js";
 import { PIPELINE_STAGE_NAMES as STAGES, ACTIVE_PIPELINE_STAGES as PIPELINE_STAGES, PIPELINE_STAGE_API as STAGE_TO_BACKEND, normalizePipelineStage, pipelineRecruiter } from "./pipeline-stages.js";
 import ThankYouLettersPage from "./ThankYouLettersPage.jsx";
@@ -2326,32 +2327,7 @@ function DashboardPage({ jobs, candidates, applications, offers, interviews, hir
             )}
           </section>
 
-          <section className="chart-card chart-card-wide">
-            <div className="chart-card-head">
-              <div>
-                <div className="chart-card-title">Recruitment Analysis · All Time</div>
-                <div className="chart-card-sub">Unique talents across their recorded recruitment history.</div>
-              </div>
-            </div>
-            <div className="chart-card-sub" style={{ marginBottom: 16 }}>
-              <strong>{recruitment.total} talents in Talent Database</strong> · {recruitment.applied} with applications · {recruitment.unassigned} without an application
-            </div>
-            <div style={{ overflowX: "auto" }}>
-              <table>
-                <thead><tr><th>Stage</th><th>Ever reached</th><th>Passed / moved forward</th><th>Currently here</th><th>% of talents reached</th></tr></thead>
-                <tbody>{recruitment.rows.map(row => <tr key={row.label}>
-                  <td>{row.label === "Applied" ? "Applied / entered recruitment" : row.label}</td>
-                  <td>{row.reached}</td><td>{row.label === "Hired" ? "—" : row.passed}</td><td>{row.current}</td>
-                  <td>{recruitment.total ? `${Math.round(row.reached / recruitment.total * 100)}%` : "—"}</td>
-                </tr>)}</tbody>
-              </table>
-            </div>
-            <div className="chart-card-sub" style={{ marginTop: 16 }}>
-              {recruitment.rejected} talents currently have a rejected application. Each talent is counted once per stage, even with multiple applications; rows overlap and should not be added together.
-              <br />Passed / moved forward means a recorded move from that stage to a later stage. Skipped stages are not counted as passed.
-              {recruitment.incomplete > 0 && <><br /><strong>{recruitment.incomplete} talents have incomplete stage history.</strong> Historical stage totals are confirmed minimums; unspecified interview rounds are not guessed.</>}
-            </div>
-          </section>
+          <RecruitmentFunnel analysis={recruitment} />
 
           <section className="chart-card">
             <div className="chart-card-head">
