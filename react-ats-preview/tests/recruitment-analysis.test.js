@@ -26,11 +26,11 @@ test('does not infer skipped stages or specific historical interview rounds', ()
   assert.equal(result.rows.find(r => r.label === 'HR 2 Interview').passed, 0);
 });
 
-test('backward moves and pending interviews do not count as passes', () => {
+test('actual moves are counted independently of display order; pending interviews are not passes', () => {
   const result = recruitmentAnalysis([{ id: 1 }], [{ candidateId: 1, stage: 'HR 1 Interview', stageHistory: [{ fromDisplayStage: 'Technical Interview', toDisplayStage: 'HR 1 Interview' }] }]);
   assert.equal(result.rows.find(r => r.label === 'HR 1 Interview').current, 1);
   assert.equal(result.rows.find(r => r.label === 'HR 1 Interview').passed, 0);
-  assert.equal(result.rows.find(r => r.label === 'Technical Interview').passed, 0);
+  assert.equal(result.rows.find(r => r.label === 'Technical Interview').passed, 1);
 });
 
 
@@ -42,4 +42,24 @@ test('rejections are attributed to their recorded stage and conversion uses reac
   ]);
   assert.deepEqual(result.rows.find(r => r.label === 'HR 1 Interview'), { label: 'HR 1 Interview', reached: 3, passed: 1, rejected: 1, current: 1, conversion: 33 });
   assert.equal(result.rows.find(r => r.label === 'Hired').conversion, null);
+});
+
+
+test('skipped stages and duplicate moves produce only actual unique-candidate transitions', () => {
+  const app = { candidateId: 1, stage: 'Offer', stageHistory: [
+    { fromStage: 'screening', toStage: 'assessment' },
+    { fromStage: 'assessment', toStage: 'offer' },
+  ] };
+  const result = recruitmentAnalysis([{ id: 1 }], [app, app]);
+  assert.equal(result.pipelineRows.find(r => r.label === 'HR Interview').reached, 0);
+  assert.equal(result.pipelineRows.find(r => r.label === 'Technical Interview').conversion, 100);
+  assert.deepEqual(result.transitions, [
+    { from: 'Screening', to: 'Technical Interview', count: 1 },
+    { from: 'Technical Interview', to: 'Offer', count: 1 },
+  ]);
+});
+
+test('HR rounds are combined using unique candidates', () => {
+  const result = recruitmentAnalysis([{ id: 1 }], [{ candidateId: 1, stage: 'HR 2 Interview', stageHistory: [{ fromDisplayStage: 'HR 1 Interview', toDisplayStage: 'Technical Interview' }] }]);
+  assert.equal(result.pipelineRows.find(r => r.label === 'HR Interview').reached, 1);
 });
