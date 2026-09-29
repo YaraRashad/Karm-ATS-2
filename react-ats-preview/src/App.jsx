@@ -1,3 +1,4 @@
+import { offerExportRows } from "./offer-export.js";
 import RecruitmentFunnel from "./RecruitmentFunnel.jsx";
 import { recruitmentAnalysis } from "./recruitment-analysis.js";
 import { PIPELINE_STAGE_NAMES as STAGES, ACTIVE_PIPELINE_STAGES as PIPELINE_STAGES, PIPELINE_STAGE_API as STAGE_TO_BACKEND, normalizePipelineStage, pipelineRecruiter } from "./pipeline-stages.js";
@@ -5267,6 +5268,18 @@ function OffersPage({ offers, setOffers, applications, candidates, jobs, roleCon
     return { ...o, app, cand, job };
   });
 
+  const exportOffers = () => {
+    try {
+      const sheet = XLSX.utils.json_to_sheet(offerExportRows(enriched, canViewSalary));
+      sheet['!cols'] = Array.from({ length: canViewSalary ? 14 : 10 }, () => ({ wch: 24 }));
+      const book = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(book, sheet, "Offers");
+      XLSX.writeFile(book, `Karm_Offers_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (error) {
+      alert(error.message || "Could not export offers. Please try again.");
+    }
+  };
+
   const approveOffer = (id) => {
     const offer = enriched.find(o => o.id === id);
     if (!offer) return;
@@ -5354,7 +5367,7 @@ function OffersPage({ offers, setOffers, applications, candidates, jobs, roleCon
           <div className="page-title">Offer Approvals</div>
           <div className="page-sub">{offers.filter(o => o.status === "Pending Approval").length} pending approval</div>
         </div>
-        {canCreate && <button className="btn btn-primary" onClick={() => openModal("addOffer")}><Icon name="plus" size={14} /> Create Offer</button>}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button className="btn" onClick={exportOffers} disabled={!enriched.length}><Icon name="download" size={14} /> Export Excel</button>{canCreate && <button className="btn btn-primary" onClick={() => openModal("addOffer")}><Icon name="plus" size={14} /> Create Offer</button>}</div>
       </div>
       <div className="page-content">
         {enriched.filter(o => o.status === "Pending Approval").length > 0 && canApprove && (

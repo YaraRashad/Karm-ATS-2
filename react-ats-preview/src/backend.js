@@ -456,7 +456,7 @@ export async function fetchAtsData({ includeAudit = false, includeUsers = false 
     allPages("/candidates?pageSize=500"),
     allPages("/applications?pageSize=500"),
     api("/interviews"),
-    api("/offers?pageSize=500"),
+    allPages("/offers?pageSize=500"),
     api("/scorecards?pageSize=500"),
     api("/hiring-requests").catch(() => []),
     includeAudit ? api("/audit?pageSize=200").catch(() => []) : Promise.resolve([]),
