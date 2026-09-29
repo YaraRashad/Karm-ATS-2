@@ -1,3 +1,4 @@
+import { positionJoiners } from "./position-joiners.js";
 import { offerExportRows } from "./offer-export.js";
 import RecruitmentFunnel from "./RecruitmentFunnel.jsx";
 import { recruitmentAnalysis } from "./recruitment-analysis.js";
@@ -3182,7 +3183,7 @@ function AssignRecruiterModal({ job, users = [], setJobs, backendActions, reload
   );
 }
 
-function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canViewSalary, openModal, backendActions, reloadData, allUsers = [] }) {
+function JobsPage({ jobs, setJobs, applications, candidates, offers = [], roleConfig, canViewSalary, openModal, backendActions, reloadData, allUsers = [] }) {
   const totals = countRequisitions(jobs);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("All");
@@ -3300,10 +3301,11 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
   };
 
   const exportJobs = () => {
-    const headers = ["Job Title", "Department", "Entity", "Position Type", "Person Being Replaced", "Job Family", "Headcount", "Active Applications", "Open Date", "Recruiter", "Hiring Manager", "Salary Min (EGP)", "Salary Max (EGP)", "Status"];
+    const headers = ["Job Title", "Department", "Entity", "Position Type", "Person Being Replaced", "Job Family", "Headcount", "Active Applications", "Open Date", "Recruiter", "Hiring Manager", "Salary Min (EGP)", "Salary Max (EGP)", "Status", "Joiner name", "Joining date"];
     const rows = filtered.map(j => {
+      const joiners = positionJoiners(j, applications, candidates, offers);
       const appCount = applications.filter(a => a.jobId === j.id && a.status === "Active").length;
-      return [j.title, j.dept, j.entity, j.positionType || "Manpower", j.replacedEmployeeName || "", j.level, j.headcount, appCount, j.openDate, j.recruiter, j.hiringManager, canViewSalary ? j.salaryMin : "Restricted", canViewSalary ? j.salaryMax : "Restricted", j.status];
+      return [j.title, j.dept, j.entity, j.positionType || "Manpower", j.replacedEmployeeName || "", j.level, j.headcount, appCount, j.openDate, j.recruiter, j.hiringManager, canViewSalary ? j.salaryMin : "Restricted", canViewSalary ? j.salaryMax : "Restricted", j.status, joiners.map(person => person.name).join("\n"), joiners.map(person => person.date || "Not recorded").join("\n")];
     });
     const dateStr = new Date().toISOString().split("T")[0];
     exportToCSV(`Karm_ATS_Job_Requisitions_${dateStr}.csv`, headers, rows);
@@ -3406,7 +3408,7 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
         <div className="card">
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Job title</th><th>Department</th><th>Entity</th><th>Position type</th><th>Budget</th><th>Approved by</th><th>Approval date</th><th>HC</th><th>Applications</th><th>Recruiter</th><th>Status</th><th></th></tr></thead>
+              <thead><tr><th>Job title</th><th>Department</th><th>Entity</th><th>Position type</th><th>Budget</th><th>Approved by</th><th>Approval date</th><th>HC</th><th>Applications</th><th>Recruiter</th><th>Status</th><th>Joiner name</th><th>Joining date</th><th></th></tr></thead>
               <tbody>
                 {filtered.map(job => {
                   const appCount = applications.filter(a => a.jobId === job.id && a.status === "Active").length;
@@ -3414,6 +3416,7 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
                   const statusActionLabel = job.status === "Closed" ? "Reopen" : "Close";
                   const statusActionReason = statusActionDisabled ? "Open the draft before closing it." : "";
                   const approvalDate = approvalDateDisplay(job);
+                  const joiners = positionJoiners(job, applications, candidates, offers);
                   return (
                     <tr key={job.id} style={{ cursor: "pointer" }} onClick={() => setSelectedJob(job)}>
                       <td className="strong" style={{ color: "var(--accent)" }}>{job.title}</td>
@@ -3427,6 +3430,8 @@ function JobsPage({ jobs, setJobs, applications, candidates, roleConfig, canView
                       <td style={{ fontFamily: "var(--mono)", color: "var(--accent)", fontWeight: 600 }}>{appCount}</td>
                       <td>{job.recruiter || "Unassigned"}</td>
                       <td><span className={`badge ${jobStatusBadge(statusDisplayLabel(job.status))}`}>{statusDisplayLabel(job.status)}</span></td>
+                      <td style={{ whiteSpace: "pre-line" }}>{joiners.length ? joiners.map(person => person.name).join("\n") : job.status === "Closed" ? "Not recorded" : "—"}</td>
+                      <td style={{ whiteSpace: "pre-line" }} title="Start date from the accepted offer">{joiners.length ? joiners.map(person => person.date ? formatDisplayDate(person.date) : "Not recorded").join("\n") : job.status === "Closed" ? "Not recorded" : "—"}</td>
                       <td onClick={e => e.stopPropagation()}>
                         {(canCreate || canDelete) && (
                           <div className="row-actions">
