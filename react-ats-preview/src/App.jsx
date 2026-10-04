@@ -1,3 +1,4 @@
+import { talentApplications } from "./talent-applications.js";
 import { positionJoiners } from "./position-joiners.js";
 import { offerExportRows } from "./offer-export.js";
 import RecruitmentFunnel from "./RecruitmentFunnel.jsx";
@@ -3513,16 +3514,14 @@ function CandidatesPage({ candidates, setCandidates, applications, setApplicatio
     return "";
   };
 
+  const matchesFor = candidate => talentApplications(candidate.id, applications, jobs, { job: filterJob, department: filterDept, stage: filterStage });
   const filtered = candidates.filter(c => {
-    const sourceLabel = normalizeCandidateSource(c.source);
-    const matchSource = filterSource === "All" || sourceLabel === filterSource;
-    const matchSearch = c.name.toLowerCase().includes(search.toLowerCase()) || String(c.email || "").toLowerCase().includes(search.toLowerCase());
-    const activeApp = applications.find(a => a.candidateId === c.id && a.status === "Active");
-    const activeJob = activeApp ? jobs.find(j => j.id === activeApp.jobId) : null;
-    const matchJob = filterJob === "All" || applications.some(a => a.candidateId === c.id && String(a.jobId) === String(filterJob) && a.status === "Active");
-    const matchDept = filterDept === "All" || activeJob?.dept === filterDept;
-    const matchStage = filterStage === "All" || activeApp?.stage === filterStage;
-    return matchSource && matchSearch && matchJob && matchDept && matchStage;
+    const matchSource = filterSource === "All" || normalizeCandidateSource(c.source) === filterSource;
+    const matches = matchesFor(c);
+    const term = search.trim().toLowerCase();
+    const matchSearch = [c.name, c.email, ...matches.map(item => item.job?.title)].some(value => String(value || "").toLowerCase().includes(term));
+    const hasAppFilters = filterJob !== "All" || filterDept !== "All" || filterStage !== "All";
+    return matchSource && matchSearch && (!hasAppFilters || matches.length > 0);
   });
 
   const deleteCandidate = async (candidate) => {
@@ -3595,16 +3594,17 @@ function CandidatesPage({ candidates, setCandidates, applications, setApplicatio
   };
 
   const exportCandidates = () => {
-    const headers = ["Full Name", "Email", "Phone", "Nationality", "Source", "Referred By", "Active Applications", "Current Stage", "Applied Job", "Date Added", "Tags"];
+    const headers = ["Full Name", "Email", "Phone", "Nationality", "Source", "Referred By", "Active Applications", "Application Stages", "Applied Positions", "Date Added", "Tags"];
     const rows = filtered.map(c => {
-      const activeApp = applications.find(a => a.candidateId === c.id && a.status === "Active");
-      const activeJob = activeApp ? jobs.find(j => j.id === activeApp.jobId) : null;
+      const matches = matchesFor(c);
+      const activeApp = matches[0]?.app;
+      const activeJob = matches[0]?.job;
       const appCount = applications.filter(a => a.candidateId === c.id && a.status === "Active").length;
       return [
         c.name, c.email, c.phone || "", c.nationality, normalizeCandidateSource(c.source) || c.source, normalizeCandidateSource(c.source) === "Referral" ? (c.referredBy || "") : "",
         appCount,
-        activeApp?.stage || "—",
-        activeJob?.title || "—",
+        matches.map(item => item.stage).join("\n") || "—",
+        matches.map(item => item.job?.title || "Position not available").join("\n") || "—",
         c.addedDate,
         (c.tags || []).join(", "),
       ];
@@ -3672,11 +3672,12 @@ function CandidatesPage({ candidates, setCandidates, applications, setApplicatio
         <div className="card">
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Candidate</th><th>Email</th><th>Nationality</th><th>Source</th><th>Active apps</th><th>Current stage</th><th>Added</th><th></th></tr></thead>
+              <thead><tr><th>Candidate</th><th>Email</th><th>Nationality</th><th>Source</th><th>Active apps</th><th>Application stages</th><th>Added</th><th></th></tr></thead>
               <tbody>
                 {filtered.map(c => {
-                  const activeApp = applications.find(a => a.candidateId === c.id && a.status === "Active");
-                  const activeJob = activeApp ? jobs.find(j => j.id === activeApp.jobId) : null;
+                  const matches = matchesFor(c);
+                  const activeApp = matches[0]?.app;
+                  const activeJob = matches[0]?.job;
                   return (
                     <tr key={c.id}>
                       <td>
@@ -3690,10 +3691,8 @@ function CandidatesPage({ candidates, setCandidates, applications, setApplicatio
                             >
                               {c.name}
                             </span>
-                            {activeJob ? (
-                              <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 3 }}>
-                                {activeJob.title}
-                              </div>
+                            {matches.length ? (
+                              <div>{matches.map(item => <div key={item.app.id} style={{ fontSize: 12, color: "var(--text3)", marginTop: 3 }}>{item.job?.title || "Position not available"} <span className={`badge ${stageBadge(item.stage)}`}>{item.stage}</span></div>)}</div>
                             ) : canCreate ? (
                               <select
                                 className="form-select"
@@ -3738,7 +3737,7 @@ function CandidatesPage({ candidates, setCandidates, applications, setApplicatio
                         )}
                       </td>
                       <td style={{ fontFamily: "var(--mono)", color: "var(--accent)" }}>{applications.filter(a => a.candidateId === c.id && a.status === "Active").length}</td>
-                      <td>{activeApp ? <span className={`badge ${stageBadge(activeApp.stage)}`}>{activeApp.stage}</span> : <span style={{ color: "var(--text3)", fontSize: 12 }}>—</span>}</td>
+                      <td>{matches.length ? matches.map(item => <div key={item.app.id} style={{ marginBottom: 4 }}><span className={`badge ${stageBadge(item.stage)}`}>{item.stage}</span></div>) : <span style={{ color: "var(--text3)", fontSize: 12 }}>—</span>}</td>
                       <td style={{ fontFamily: "var(--mono)", color: "var(--text3)", fontSize: 12 }}>{c.addedDate}</td>
                       <td>
                         <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap" }}>
