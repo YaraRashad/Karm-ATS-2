@@ -6,7 +6,7 @@ import { recruitmentAnalysis } from "./recruitment-analysis.js";
 import { PIPELINE_STAGE_NAMES as STAGES, ACTIVE_PIPELINE_STAGES as PIPELINE_STAGES, PIPELINE_STAGE_API as STAGE_TO_BACKEND, normalizePipelineStage, pipelineRecruiter } from "./pipeline-stages.js";
 import ThankYouLettersPage from "./ThankYouLettersPage.jsx";
 import { countRequisitions } from "./requisition-counts.js";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import * as XLSX from "xlsx";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.mjs?url";
@@ -3768,6 +3768,8 @@ function CandidatesPage({ candidates, setCandidates, applications, setApplicatio
 
 // ── CV PARSER MODAL ───────────────────────────────────────────────────────────
 function CVParserModal({ jobs, setJobs, candidates, setCandidates, applications, setApplications, closeModal, ctx, initialFiles = null }) {
+  const savingRef = useRef(false);
+  const [saving, setSaving] = useState(false);
   const [phase, setPhase] = useState("drop"); // drop | parsing | review | done
   const [dragOver, setDragOver] = useState(false);
   const [parsedFiles, setParsedFiles] = useState([]); // [{fileName, extracted, editing}]
@@ -4098,6 +4100,7 @@ const extractCandidateName = (text) => {
   };
 
   const confirmCandidate = async () => {
+    if (savingRef.current) return;
     const item = parsedFiles[currentIdx];
     const { extracted } = item;
     if (!extracted.name?.trim()) {
@@ -4108,9 +4111,23 @@ const extractCandidateName = (text) => {
     const typedJob = (item.selectedJobInput || "").trim();
     const matchedJob = uniqueOpenJobs.find(job => jobOptionLabel(job).toLowerCase() === typedJob.toLowerCase());
     if (!selectedJobId && matchedJob) selectedJobId = matchedJob.id;
+    savingRef.current = true;
+    setSaving(true);
     try {
+      let blob;
+      let cvImportHash;
+      if (item.cvUrl?.startsWith("data:") || item.cvUrl?.startsWith("blob:")) {
+        blob = await fetch(item.cvUrl).then(r => r.blob());
+        const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+        cvImportHash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+      }
+      const phone = String(extracted.phone || "").replace(/\D/g, "").replace(/^00/, "");
+      if (!item.createdCandidateId && phone.length >= 7 && candidates.some(c => String(c.phone || "").replace(/\D/g, "").replace(/^00/, "") === phone)) {
+        throw new Error("A candidate with this phone number already exists. Please review their Talent Database profile before uploading again.");
+      }
       const names = splitName(extracted.name);
-      const created = await ctx.backendActions.createCandidate({
+      const created = item.createdCandidateId ? { id: item.createdCandidateId } : await ctx.backendActions.createCandidate({
+        cvImportHash,
         firstName: names.firstName,
         lastName: names.lastName,
         email: extracted.email || `${Date.now()}-${currentIdx}@unknown.local`,
@@ -4121,8 +4138,8 @@ const extractCandidateName = (text) => {
         source: "direct",
         tags: extracted.skills?.slice(0, 4) || [],
       });
-      if (item.cvUrl?.startsWith("data:") || item.cvUrl?.startsWith("blob:")) {
-        const blob = await fetch(item.cvUrl).then(r => r.blob());
+      item.createdCandidateId = created.id;
+      if (blob && !item.cvUploaded) {
         const b64 = item.cvUrl.startsWith("data:")
           ? item.cvUrl.split(",")[1]
           : await new Promise(resolve => {
@@ -4136,9 +4153,11 @@ const extractCandidateName = (text) => {
           mimeType: blob.type || "application/pdf",
           base64: b64,
         });
+        item.cvUploaded = true;
       }
-      if (selectedJobId) {
+      if (selectedJobId && !item.applicationCreated) {
         await ctx.backendActions.createApplication({ candidateId: created.id, positionId: selectedJobId });
+        item.applicationCreated = true;
       }
       await ctx.reloadData?.();
       if (currentIdx < parsedFiles.length - 1) {
@@ -4150,6 +4169,9 @@ const extractCandidateName = (text) => {
     } catch (e) {
       alert(e.message);
       return;
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
     if (!selectedJobId && typedJob && setJobs) {
       const title = typedJob.split("·")[0].trim();
@@ -4425,9 +4447,9 @@ const extractCandidateName = (text) => {
                 if (currentIdx < parsedFiles.length - 1) setCurrentIdx(i => i + 1);
                 else setPhase("done");
               }}>Skip this CV</button>
-              <button className="btn btn-primary" onClick={confirmCandidate}>
+              <button className="btn btn-primary" onClick={confirmCandidate} disabled={saving}>
                 <Icon name="check" size={14} />
-                {currentIdx < parsedFiles.length - 1 ? "Confirm & Next" : "Confirm & Finish"}
+                {saving ? "Saving..." : currentIdx < parsedFiles.length - 1 ? "Confirm & Next" : "Confirm & Finish"}
               </button>
             </>
           )}

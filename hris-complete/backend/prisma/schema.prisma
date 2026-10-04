@@ -365,6 +365,7 @@ model Position {
 // ─────────────────────────────────────────────
 
 model Candidate {
+  cvImportHash       String?         @unique
   id                 String          @id @default(cuid())
   firstName          String
   lastName           String

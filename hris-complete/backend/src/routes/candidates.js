@@ -28,6 +28,7 @@ function normalizeCandidateEmail(value) {
 }
 
 const candidateBody = [
+  body('cvImportHash').optional().matches(/^[a-f0-9]{64}$/),
   body('firstName').notEmpty().trim(),
   body('lastName').notEmpty().trim(),
   body('email').optional({ values: 'falsy' }).isEmail().normalizeEmail(),
@@ -81,6 +82,14 @@ candidatesRouter.get('/', requireRoles(CAN_READ_CANDIDATES), async (req, res, ne
 candidatesRouter.post('/', requireRoles(CAN_WRITE_CANDIDATES), candidateBody, async (req, res, next) => {
   if (!validate(req, res)) return;
   try {
+    const cvImportHash = req.body.cvImportHash;
+    if (cvImportHash) {
+      const [existingImport, existingFile] = await Promise.all([
+        prisma.candidate.findUnique({ where: { cvImportHash }, select: { id: true } }),
+        prisma.fileObject.findFirst({ where: { checksumSha256: cvImportHash, purpose: 'cv', candidateId: { not: null } }, select: { id: true } }),
+      ]);
+      if (existingImport || existingFile) return conflict(res, 'This CV has already been uploaded. Find the existing candidate in Talent Database instead of creating another profile.');
+    }
     const email = normalizeCandidateEmail(req.body.email);
     const existing = await prisma.candidate.findUnique({ where: { email } });
     if (existing) {
@@ -96,6 +105,7 @@ candidatesRouter.post('/', requireRoles(CAN_WRITE_CANDIDATES), candidateBody, as
 
     const candidate = await prisma.candidate.create({
       data: {
+        cvImportHash:     cvImportHash || null,
         firstName:        req.body.firstName,
         lastName:         req.body.lastName,
         email,
@@ -122,7 +132,10 @@ candidatesRouter.post('/', requireRoles(CAN_WRITE_CANDIDATES), candidateBody, as
     });
 
     return created(res, candidate);
-  } catch (err) { next(err); }
+  } catch (err) {
+    if (err.code === 'P2002') return conflict(res, 'This candidate or CV already exists. Please use the existing Talent Database profile.');
+    next(err);
+  }
 });
 
 // GET /candidates/:id

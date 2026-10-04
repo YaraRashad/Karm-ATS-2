@@ -2,6 +2,8 @@ import { prisma } from './prisma.js';
 
 export async function ensureRuntimeSchema() {
   if (process.env.SKIP_RUNTIME_SCHEMA_ENSURE === 'true') return;
+  await prisma.$executeRawUnsafe(`ALTER TABLE "candidates" ADD COLUMN IF NOT EXISTS "cvImportHash" TEXT;`);
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "candidates_cvImportHash_key" ON "candidates"("cvImportHash");`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "application_stage_history"
     ADD COLUMN IF NOT EXISTS "fromDisplayStage" TEXT,
     ADD COLUMN IF NOT EXISTS "toDisplayStage" TEXT;`);
