@@ -5273,6 +5273,7 @@ function NotificationLog({ notifications }) {
 
 function OffersPage({ offers, setOffers, applications, candidates, jobs, roleConfig, canViewSalary, openModal, backendActions, reloadData }) {
   const [filterStatus, setFilterStatus] = useState("All");
+  const [filterJob, setFilterJob] = useState("");
   const [deletingOfferId, setDeletingOfferId] = useState(null);
   const canDelete = !!roleConfig.canDeleteRecords;
   const canCreate = !!roleConfig.canCreateOffers;
@@ -5300,7 +5301,11 @@ function OffersPage({ offers, setOffers, applications, candidates, jobs, roleCon
     return { ...o, app, cand, job };
   });
 
-  const filteredOffers = enriched.filter(offer => filterStatus === "All" || offerStatusValue(offer.status) === filterStatus);
+  const offerJobTitles = [...new Set(enriched.map(offer => offer.job.title))].sort((a, b) => a.localeCompare(b));
+  const filteredOffers = enriched.filter(offer =>
+    (filterStatus === "All" || offerStatusValue(offer.status) === filterStatus) &&
+    (!filterJob || offer.job.title === filterJob)
+  );
   const deleteOffer = async offer => {
     if (!canDelete || deletingOfferId) return;
     if (!window.confirm(`Delete the offer for ${offer.cand.name} (${offer.job?.title || 'position'})? The candidate and application will remain. The offer will be retained in the audit history.`)) return;
@@ -5420,6 +5425,11 @@ function OffersPage({ offers, setOffers, applications, candidates, jobs, roleCon
             <select id="offer-status-filter" className="form-select" value={filterStatus} onChange={event => setFilterStatus(event.target.value)}>
               <option value="All">All</option><option value="draft">Draft</option><option value="accepted">Accepted</option><option value="declined">Declined</option>
             </select></div>
+          <div><label className="form-label" htmlFor="offer-job-filter">Job</label>
+            <select id="offer-job-filter" className="form-select" value={filterJob} onChange={event => setFilterJob(event.target.value)}>
+              <option value="">All jobs</option>
+              {offerJobTitles.map(title => <option key={title} value={title}>{title}</option>)}
+            </select></div>
           <span className="page-sub">{filteredOffers.length} offers shown</span>
         </div>
         {enriched.filter(o => o.status === "Pending Approval").length > 0 && canApprove && (
@@ -5474,7 +5484,7 @@ function OffersPage({ offers, setOffers, applications, candidates, jobs, roleCon
             <table>
               <thead><tr><th>Candidate</th><th>Job</th><th>Salary</th><th>Breakdown</th><th>Start date</th><th>Candidate</th><th>Status</th><th></th></tr></thead>
               <tbody>
-                {!filteredOffers.length && <tr><td colSpan={8} style={{ textAlign: "center", padding: 24 }}>No offers match this status.</td></tr>}
+                {!filteredOffers.length && <tr><td colSpan={8} style={{ textAlign: "center", padding: 24 }}>No offers match the selected filters.</td></tr>}
                 {filteredOffers.map(o => (
                   <tr key={o.id}>
                     <td>
