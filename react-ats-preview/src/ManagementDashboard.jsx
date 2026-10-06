@@ -17,9 +17,15 @@ export default function ManagementDashboard({jobs,candidates,applications,openJo
     if(!Number.isFinite(+start)||!Number.isFinite(+end)||end<start)return [];
     return [{id:app.id,name:candidates.find(c=>c.id===app.candidateId)?.name||'Candidate',job:jobs.find(j=>j.id===app.jobId)?.title||'Unassigned role',start,end,days:Math.round((end-start)/86400000)}];
   });
+  const hireTypeCounts=new Map();
+  hiresYtd.forEach(app=>{
+    const type=jobs.find(job=>job.id===app.jobId)?.positionType?.trim()||'Not recorded';
+    hireTypeCounts.set(type,(hireTypeCounts.get(type)||0)+1);
+  });
+  const hireTypeBreakdown=[...hireTypeCounts].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).map(([type,count])=>`${count} ${type}`).join(' · ');
   const cards=[
     ['Total requisitions',jobs.length,`${openJobs.length} Open · ${jobs.filter(job=>job.status==='Closed').length} Closed · ${jobs.filter(job=>job.status==='Draft').length} Draft`,()=>setPage('jobs')],
-    ['Hires YTD',hiresYtd.length,'Year-to-date hired records',()=>openKpiModal(kpis[3])],
+    ['Hires YTD',hiresYtd.length,`YTD · ${hireTypeBreakdown||'No hired records'}`,()=>openKpiModal(kpis[3])],
     ['Talent database',candidates.length,'Unique talent profiles',()=>setPage('candidates')],
     ['Scheduled interviews',scheduledInterviews.length,'Current scheduled records',()=>openKpiModal(kpis[1])],
     ['Pending offers',pendingOfferCount,'Candidates in the offer step',()=>openKpiModal(kpis[2])],
