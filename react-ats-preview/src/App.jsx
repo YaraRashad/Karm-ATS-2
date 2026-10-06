@@ -1192,10 +1192,10 @@ function LegacyAtsApp({ sessionUser, backendData, dataError, reloadData, logout:
   const nav = allNav.filter(item => allowedPages.includes(item.id));
   const activePage = allowedPages.includes(page) ? page : allowedPages[0];
 
-  const pages = { dashboard: DashboardPage, requests: HiringRequestsPage, jobs: JobsPage, candidates: CandidatesPage, pipeline: PipelinePage, interviews: InterviewsPage, offers: OffersPage, thankYouLetters: ThankYouLettersPage, settings: SettingsPage };
-  const PageComponent = pages[activePage] || DashboardPage;
+  const pages = { dashboard: ManagementDashboard, requests: HiringRequestsPage, jobs: JobsPage, candidates: CandidatesPage, pipeline: PipelinePage, interviews: InterviewsPage, offers: OffersPage, thankYouLetters: ThankYouLettersPage, settings: SettingsPage };
+  const PageComponent = pages[activePage] || ManagementDashboard;
 
-  const ctx = { jobs: scopedJobs, setJobs, candidates: scopedCandidates, setCandidates, applications: scopedApplications, setApplications, scorecards, setScorecards, offers: scopedOffers, setOffers, interviews: scopedInterviews, setInterviews, hiringRequests: scopedHiringRequests, setHiringRequests, roleAssignments, setRoleAssignments, ROLES_CONFIG, auditLogs: derivedAuditLogs, dashboardAuditLogs: auditLogs, backendUsers: allUsers, openModal, closeModal, currentRole, roleConfig, canViewSalary, canApproveOffers, allUsers, stageIndex, backendActions, reloadData, sessionUser, setPage };
+  const ctx = { loadedAt: backendData?.loadedAt, dataError, jobs: scopedJobs, setJobs, candidates: scopedCandidates, setCandidates, applications: scopedApplications, setApplications, scorecards, setScorecards, offers: scopedOffers, setOffers, interviews: scopedInterviews, setInterviews, hiringRequests: scopedHiringRequests, setHiringRequests, roleAssignments, setRoleAssignments, ROLES_CONFIG, auditLogs: derivedAuditLogs, dashboardAuditLogs: auditLogs, backendUsers: allUsers, openModal, closeModal, currentRole, roleConfig, canViewSalary, canApproveOffers, allUsers, stageIndex, backendActions, reloadData, sessionUser, setPage };
 
   return (
     <>
