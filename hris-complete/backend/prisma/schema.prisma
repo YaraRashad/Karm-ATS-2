@@ -319,6 +319,7 @@ model Employee {
 // ─────────────────────────────────────────────
 
 model Position {
+  recruiterIds        String[]                @default([])
   id                  String                  @id @default(cuid())
   title               String
   departmentId        String

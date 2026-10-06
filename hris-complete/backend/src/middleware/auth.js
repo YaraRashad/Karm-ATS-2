@@ -149,7 +149,7 @@ export function buildPositionScopeWhere(user) {
   if (user.role === ROLES.RECRUITER) {
     return user.accessScope === 'all_data' || user.accessScope === 'recruitment_data'
       ? {}
-      : { recruiterId: user.id };
+      : { OR: [{ recruiterId: user.id }, { recruiterIds: { has: user.id } }] };
   }
   if (user.role === ROLES.HIRING_MANAGER) {
     return {
@@ -173,7 +173,7 @@ export function buildApplicationScopeWhere(user) {
   if (user.role === ROLES.RECRUITER) {
     return user.accessScope === 'all_data' || user.accessScope === 'recruitment_data'
       ? {}
-      : { position: { recruiterId: user.id } };
+      : { position: { OR: [{ recruiterId: user.id }, { recruiterIds: { has: user.id } }] } };
   }
   if (user.role === ROLES.HIRING_MANAGER) {
     return {

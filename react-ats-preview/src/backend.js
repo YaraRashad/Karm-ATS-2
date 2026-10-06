@@ -340,6 +340,8 @@ export function mapBackendData({ positions = [], candidates = [], applications =
     level: p.seniority || "",
     headcount: Number(p.headcount || 1),
     openDate: p.openDate?.slice?.(0, 10) || p.createdAt?.slice?.(0, 10) || "",
+    recruiterIds: [...new Set([p.recruiterId, ...(p.recruiterIds || [])].filter(Boolean))],
+    recruiterNames: (p.recruiters || []).map(fullName).filter(Boolean),
     recruiterId: p.recruiterId || p.recruiter?.userId || p.recruiter?.user?.id || p.recruiter?.id || "",
     recruiter: fullName(p.recruiter?.user || p.recruiter),
     hiringManagerId: p.hiringManagerId || p.hiringManager?.id || "",
@@ -535,9 +537,9 @@ export const backendActions = {
       body: JSON.stringify(body),
     });
   },
-  assignPositionRecruiter: (id, recruiterId) => api(`/positions/${id}/recruiter`, {
+  assignPositionRecruiter: (id, recruiterIds) => api(`/positions/${id}/recruiter`, {
     method: "PATCH",
-    body: JSON.stringify({ recruiterId }),
+    body: JSON.stringify({ recruiterIds }),
   }),
   updatePositionStatus: (id, status) => api(`/positions/${id}/status`, {
     method: "PATCH",

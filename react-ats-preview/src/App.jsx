@@ -1,9 +1,10 @@
+import { canSubmitInterviewScore } from "./interview-permissions.js";
 import { talentApplications } from "./talent-applications.js";
 import { positionJoiners } from "./position-joiners.js";
 import { offerExportRows } from "./offer-export.js";
 import RecruitmentFunnel from "./RecruitmentFunnel.jsx";
 import { recruitmentAnalysis } from "./recruitment-analysis.js";
-import { PIPELINE_STAGE_NAMES as STAGES, ACTIVE_PIPELINE_STAGES as PIPELINE_STAGES, PIPELINE_STAGE_API as STAGE_TO_BACKEND, normalizePipelineStage, pipelineRecruiter } from "./pipeline-stages.js";
+import { PIPELINE_STAGE_NAMES as STAGES, ACTIVE_PIPELINE_STAGES as PIPELINE_STAGES, PIPELINE_STAGE_API as STAGE_TO_BACKEND, normalizePipelineStage, pipelineRecruiter, pipelineRecruiters } from "./pipeline-stages.js";
 import ThankYouLettersPage from "./ThankYouLettersPage.jsx";
 import { countRequisitions } from "./requisition-counts.js";
 import { useEffect, useState, useMemo, useRef } from "react";
@@ -1123,7 +1124,7 @@ function LegacyAtsApp({ sessionUser, backendData, dataError, reloadData, logout:
 
   const canAccessJob = (job) => {
     if (isAdmin) return true;
-    if (isRecruiter) return ["All recruitment data", "All system data", "all_data", "recruitment_data"].includes(roleConfig.accessScope) || job.recruiter === roleConfig.fullName;
+    if (isRecruiter) return ["All recruitment data", "All system data", "all_data", "recruitment_data"].includes(roleConfig.accessScope) || job.recruiter === roleConfig.fullName || (job.recruiterIds || []).includes(sessionUser.id);
     if (isHiringManager) return job.hiringManager === roleConfig.fullName || job.dept === roleConfig.department;
     if (isInterviewer) return applications.some(app => app.jobId === job.id && assignedInterviewAppIds.has(app.id));
     return false;
@@ -3116,26 +3117,27 @@ function AssignRecruiterModal({ job, users = [], setJobs, backendActions, reload
   const recruiterOptions = users
     .filter(u => u.active !== false && ["Admin", "Recruiter", "admin", "recruiter"].includes(u.role || u.roleKey))
     .sort((a, b) => String(a.fullName || "").localeCompare(String(b.fullName || "")));
-  const [recruiterId, setRecruiterId] = useState(job.recruiterId || recruiterOptions[0]?.id || "");
+  const [recruiterIds, setRecruiterIds] = useState(job.recruiterIds?.length ? job.recruiterIds : [job.recruiterId].filter(Boolean));
   const [saving, setSaving] = useState(false);
-  const selected = recruiterOptions.find(u => String(u.id) === String(recruiterId));
+  const selected = recruiterOptions.filter(u => recruiterIds.includes(u.id));
 
   const save = async () => {
-    if (!recruiterId) {
+    if (!recruiterIds.length) {
       alert("Please select a recruiter first.");
       return;
     }
     setSaving(true);
     try {
       if (backendActions.assignPositionRecruiter) {
-        await backendActions.assignPositionRecruiter(job.id, recruiterId);
+        await backendActions.assignPositionRecruiter(job.id, recruiterIds);
       } else {
-        await backendActions.updatePosition(job.id, { ...job, recruiterId });
+        await backendActions.updatePosition(job.id, { ...job, recruiterId: recruiterIds[0] });
       }
       setJobs(prev => prev.map(j => j.id === job.id ? {
         ...j,
-        recruiterId,
-        recruiter: selected?.fullName || j.recruiter,
+        recruiterId: recruiterIds.includes(job.recruiterId) ? job.recruiterId : recruiterIds[0],
+        recruiterIds, recruiterNames: selected.map(user => user.fullName),
+        recruiter: selected.map(user => user.fullName).join(", "),
       } : j));
       await reloadData?.();
       onClose();
@@ -3151,7 +3153,7 @@ function AssignRecruiterModal({ job, users = [], setJobs, backendActions, reload
       <div className="modal" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <div>
-            <div className="modal-title">Assign Recruiter</div>
+            <div className="modal-title">Assign Recruiters</div>
             <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>{job.title}</div>
           </div>
           <button className="modal-close" onClick={onClose}>×</button>
@@ -3164,19 +3166,18 @@ function AssignRecruiterModal({ job, users = [], setJobs, backendActions, reload
             </div>
           ) : (
             <div className="form-group">
-              <label className="form-label">Recruiter</label>
-              <select className="form-select" value={recruiterId} onChange={e => setRecruiterId(e.target.value)}>
-                {recruiterOptions.map(user => (
-                  <option key={user.id} value={user.id}>{user.fullName} — {user.email}</option>
-                ))}
-              </select>
+              <label className="form-label">Recruiters — select one or more</label>
+              {recruiterOptions.map(user => <label key={user.id} style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
+                <input type="checkbox" checked={recruiterIds.includes(user.id)} onChange={event => setRecruiterIds(prev => event.target.checked ? [...prev, user.id] : prev.filter(id => id !== user.id))} />
+                <span>{user.fullName} — {user.email}</span>
+              </label>)}
             </div>
           )}
         </div>
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" onClick={save} disabled={saving || recruiterOptions.length === 0}>
-            {saving ? "Saving..." : "Assign recruiter"}
+            {saving ? "Saving..." : "Assign recruiters"}
           </button>
         </div>
       </div>
@@ -3256,7 +3257,7 @@ function JobsPage({ jobs, setJobs, applications, candidates, offers = [], roleCo
   const entityOptions = Array.from(new Set(jobs.map(j => entityDisplayLabel(j.entity)).filter(Boolean))).sort();
   const deptOptions = Array.from(new Set([...DEPARTMENTS, ...jobs.map(j => j.dept).filter(Boolean)])).sort();
   const positionTypeOptions = Array.from(new Set([...POSITION_TYPES, ...jobs.map(j => j.positionType).filter(Boolean)])).sort();
-  const recruiterOptions = Array.from(new Set(jobs.map(j => j.recruiter).filter(Boolean))).sort();
+  const recruiterOptions = Array.from(new Set(jobs.flatMap(j => j.recruiterNames?.length ? j.recruiterNames : [j.recruiter]).filter(Boolean))).sort();
 
   const filtered = jobs.filter(j => {
     const matchesStatus = filterStatus === "All" || canonicalStatus(j.status) === canonicalStatus(filterStatus);
@@ -3265,7 +3266,7 @@ function JobsPage({ jobs, setJobs, applications, candidates, offers = [], roleCo
       normalizeFilterValue(j.dept) === normalizeFilterValue(filterDept) ||
       (normalizeFilterValue(filterDept) === "innovation center" && normalizeFilterValue(j.title) === "innovation center");
     const matchesPositionType = filterPositionType === "All" || normalizeFilterValue(j.positionType || "Manpower") === normalizeFilterValue(filterPositionType);
-    const matchesRecruiter = filterRecruiter === "All" || normalizeFilterValue(j.recruiter || "Unassigned") === normalizeFilterValue(filterRecruiter);
+    const matchesRecruiter = filterRecruiter === "All" || (j.recruiterNames?.length ? j.recruiterNames : [j.recruiter || "Unassigned"]).some(name => normalizeFilterValue(name) === normalizeFilterValue(filterRecruiter));
     const matchesSearch = j.title.toLowerCase().includes(search.toLowerCase());
     return matchesStatus && matchesEntity && matchesDept && matchesPositionType && matchesRecruiter && matchesSearch;
   });
@@ -3306,7 +3307,7 @@ function JobsPage({ jobs, setJobs, applications, candidates, offers = [], roleCo
     const rows = filtered.map(j => {
       const joiners = positionJoiners(j, applications, candidates, offers);
       const appCount = applications.filter(a => a.jobId === j.id && a.status === "Active").length;
-      return [j.title, j.dept, j.entity, j.positionType || "Manpower", j.replacedEmployeeName || "", j.level, j.headcount, appCount, j.openDate, j.recruiter, j.hiringManager, canViewSalary ? j.salaryMin : "Restricted", canViewSalary ? j.salaryMax : "Restricted", j.status, joiners.map(person => person.name).join("\n"), joiners.map(person => person.date || "Not recorded").join("\n")];
+      return [j.title, j.dept, j.entity, j.positionType || "Manpower", j.replacedEmployeeName || "", j.level, j.headcount, appCount, j.openDate, j.recruiterNames?.join(", ") || j.recruiter, j.hiringManager, canViewSalary ? j.salaryMin : "Restricted", canViewSalary ? j.salaryMax : "Restricted", j.status, joiners.map(person => person.name).join("\n"), joiners.map(person => person.date || "Not recorded").join("\n")];
     });
     const dateStr = new Date().toISOString().split("T")[0];
     exportToCSV(`Karm_ATS_Job_Requisitions_${dateStr}.csv`, headers, rows);
@@ -3429,7 +3430,7 @@ function JobsPage({ jobs, setJobs, applications, candidates, offers = [], roleCo
                       <td style={{ fontFamily: "var(--mono)", color: "var(--text3)" }} title={approvalDate.title}>{approvalDate.text}</td>
                       <td style={{ fontFamily: "var(--mono)" }}>{job.headcount}</td>
                       <td style={{ fontFamily: "var(--mono)", color: "var(--accent)", fontWeight: 600 }}>{appCount}</td>
-                      <td>{job.recruiter || "Unassigned"}</td>
+                      <td>{job.recruiterNames?.join(", ") || job.recruiter || "Unassigned"}</td>
                       <td><span className={`badge ${jobStatusBadge(statusDisplayLabel(job.status))}`}>{statusDisplayLabel(job.status)}</span></td>
                       <td style={{ whiteSpace: "pre-line" }}>{joiners.length ? joiners.map(person => person.name).join("\n") : job.status === "Closed" ? "Not recorded" : "—"}</td>
                       <td style={{ whiteSpace: "pre-line" }} title="Start date from the accepted offer">{joiners.length ? joiners.map(person => person.date ? formatDisplayDate(person.date) : "Not recorded").join("\n") : job.status === "Closed" ? "Not recorded" : "—"}</td>
@@ -4479,12 +4480,12 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
 
   const openJobs = jobs.filter(j => j.status === "Open");
   const deptOptions = Array.from(new Set(jobs.map(j => j.dept).filter(Boolean))).sort();
-  const recruiterOptions = [...new Set(applications.map(a => pipelineRecruiter(a, jobs)))].sort((a,b) => a.localeCompare(b));
+  const recruiterOptions = [...new Set(applications.flatMap(a => pipelineRecruiters(a, jobs)))].sort((a,b) => a.localeCompare(b));
   useEffect(() => { setSelectedApps([]); }, [filterRecruiter, filterJob, filterEntity, filterDept, pipelineSearch, showDelayedOnly]);
   const canMove = !!roleConfig.canMoveCandidates;
   const canUpload = !!roleConfig.canEditCandidates;
 
-  const recruiterApplications = applications.filter(a => filterRecruiter === "All" || pipelineRecruiter(a, jobs) === filterRecruiter);
+  const recruiterApplications = applications.filter(a => filterRecruiter === "All" || pipelineRecruiters(a, jobs).includes(filterRecruiter));
   const activeApplications = recruiterApplications.filter(a => a.status === "Active" && a.stage !== "Hired");
   const visiblePipelineApplications = recruiterApplications.filter(a => a.status === "Active" || a.stage === "Rejected" || a.status === "Rejected" || a.stage === "Hired");
   const pipelineStages = [...PIPELINE_STAGES, "Rejected", "Hired"];
@@ -7252,7 +7253,7 @@ function ScorecardModal({ data, closeModal, ctx }) {
     (sessionName && activeInterviewerName && sessionName === activeInterviewerName)
     || (sessionEmail && activeInterviewerEmail && sessionEmail === activeInterviewerEmail)
   );
-  const canSubmitActive = canEditSubmitted || ownsActiveInterview;
+  const canSubmitActive = canSubmitInterviewScore({ role: ctx.sessionUser?.role || ctx.currentRole, canEditSubmitted, ownsInterview: ownsActiveInterview });
   const readOnly = (!!activeScore && !canEditSubmitted) || !canSubmitActive;
   const completedCount = interviewTabs.filter(i => i.existingScore || findScorecardForInterview(ctx.scorecards, i)).length;
   const allScored = interviewTabs.length > 0 && completedCount === interviewTabs.length;
@@ -7403,7 +7404,7 @@ function ScorecardModal({ data, closeModal, ctx }) {
           {!canSubmitActive && !activeScore && (
             <div className="alert alert-info" style={{ marginBottom: 16 }}>
               <Icon name="alert" size={14} />
-              This scorecard is assigned to {activeInterview?.interviewerId || "the selected interviewer"}. You can view all stages, but only that interviewer or Admin can submit this tab.
+              This scorecard is assigned to {activeInterview?.interviewerId || "the selected interviewer"}. You can view all stages, but the assigned interviewer, an authorized recruiter, or Admin can submit this tab.
             </div>
           )}
 

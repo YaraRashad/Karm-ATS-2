@@ -8,3 +8,8 @@ export function pipelineRecruiter(application, jobs) {
   const job = jobs.find(job => String(job.id) === String(application.jobId));
   return String(job?.recruiter || application.recruiter || 'Unassigned').trim() || 'Unassigned';
 }
+
+export function pipelineRecruiters(application, jobs) {
+  const job = jobs.find(job => String(job.id) === String(application.jobId));
+  return job?.recruiterNames?.length ? job.recruiterNames : [pipelineRecruiter(application, jobs)];
+}

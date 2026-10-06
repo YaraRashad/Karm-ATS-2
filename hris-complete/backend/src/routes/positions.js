@@ -160,15 +160,12 @@ positionsRouter.get('/', async (req, res, next) => {
       : { isActive: true };
 
     const where = {
-      ...activeVisibility,
-      ...entityFilter,
-      ...buildPositionScopeWhere(req.user),
+      AND: [activeVisibility, entityFilter, buildPositionScopeWhere(req.user), ...(recruiterId ? [{ OR: [{ recruiterId }, { recruiterIds: { has: recruiterId } }] }] : [])],
       ...(entity        && { entity }),
       ...(department    && { department: { name: { contains: department, mode: 'insensitive' } } }),
       ...(status        && { status }),
       ...(priority      && { priority }),
       ...(hiringManagerId && { hiringManagerId }),
-      ...(recruiterId   && { recruiterId }),
       ...(search        && {
         OR: [
           { title:       { contains: search, mode: 'insensitive' } },
@@ -193,9 +190,14 @@ positionsRouter.get('/', async (req, res, next) => {
       prisma.position.count({ where }),
     ]);
 
+    const assignedUsers = await prisma.user.findMany({
+      where: { id: { in: [...new Set(positions.flatMap(p => [p.recruiterId, ...(p.recruiterIds || [])]).filter(Boolean))] } },
+      select: { id: true, firstName: true, lastName: true },
+    });
     // Compute days open for each position
     const enriched = positions.map(p => ({
       ...p,
+      recruiters: assignedUsers.filter(user => user.id === p.recruiterId || p.recruiterIds.includes(user.id)),
       daysOpen:     p.openDate ? Math.floor((Date.now() - new Date(p.openDate)) / 86400000) : 0,
       candidateCount: p._count.applications,
     }));
@@ -408,29 +410,29 @@ positionsRouter.patch(
 positionsRouter.patch(
   '/:id/recruiter',
   requireRoles(CAN_MANAGE_POSITIONS),
-  [body('recruiterId').notEmpty().isString().withMessage('Recruiter is required')],
+  [body('recruiterId').optional().isString(), body('recruiterIds').optional().isArray({ min: 1, max: 50 }), body('recruiterIds.*').isString().notEmpty()],
   async (req, res, next) => {
     if (!validate(req, res)) return;
     try {
-      const existing = await prisma.position.findUnique({
-        where: { id: req.params.id },
+      const existing = await prisma.position.findFirst({
+        where: { id: req.params.id, ...buildPositionScopeWhere(req.user) },
         include: { recruiter: { select: { id: true, firstName: true, lastName: true, email: true } } },
       });
       if (!existing) return notFound(res, 'Position');
 
-      const recruiter = await prisma.user.findFirst({
-        where: {
-          id: req.body.recruiterId,
-          isActive: true,
-          role: { in: [ROLES.ADMIN, ROLES.RECRUITER] },
-        },
+      const recruiterIds = [...new Set(req.body.recruiterIds || (req.body.recruiterId ? [req.body.recruiterId] : []))];
+      if (!recruiterIds.length) return badRequest(res, 'Select at least one recruiter');
+      const recruiters = await prisma.user.findMany({
+        where: { id: { in: recruiterIds }, isActive: true, role: { in: [ROLES.ADMIN, ROLES.RECRUITER] } },
         select: { id: true, firstName: true, lastName: true, email: true },
       });
-      if (!recruiter) return unprocessable(res, 'Selected user must be an active Admin or Recruiter');
+      if (recruiters.length !== recruiterIds.length) return unprocessable(res, 'Every selected user must be an active Admin or Recruiter');
+      const primaryId = recruiterIds.includes(existing.recruiterId) ? existing.recruiterId : recruiterIds[0];
+      const recruiter = recruiters.find(user => user.id === primaryId);
 
       const updated = await prisma.position.update({
         where: { id: req.params.id },
-        data: { recruiterId: recruiter.id },
+        data: { recruiterId: recruiter.id, recruiterIds },
         include: {
           department: { select: { id: true, name: true } },
           recruiter:  { select: { id: true, firstName: true, lastName: true, email: true } },
@@ -441,8 +443,8 @@ positionsRouter.patch(
         action: 'updated',
         entity: 'positions',
         entityId: existing.id,
-        before: { recruiterId: existing.recruiterId, recruiter: existing.recruiter },
-        after: { recruiterId: recruiter.id, recruiter },
+        before: { recruiterId: existing.recruiterId, recruiterIds: existing.recruiterIds },
+        after: { recruiterId: recruiter.id, recruiterIds },
       });
 
       if (existing.recruiterId !== recruiter.id) {
@@ -466,7 +468,7 @@ positionsRouter.patch(
           });
       }
 
-      return ok(res, updated);
+      return ok(res, { ...updated, recruiters });
     } catch (err) { next(err); }
   }
 );

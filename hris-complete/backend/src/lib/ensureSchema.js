@@ -2,6 +2,7 @@ import { prisma } from './prisma.js';
 
 export async function ensureRuntimeSchema() {
   if (process.env.SKIP_RUNTIME_SCHEMA_ENSURE === 'true') return;
+  await prisma.$executeRawUnsafe(`ALTER TABLE "positions" ADD COLUMN IF NOT EXISTS "recruiterIds" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "offers" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3);`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "candidates" ADD COLUMN IF NOT EXISTS "cvImportHash" TEXT;`);
   await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "candidates_cvImportHash_key" ON "candidates"("cvImportHash");`);
