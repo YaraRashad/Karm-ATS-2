@@ -4485,9 +4485,9 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
   const canUpload = !!roleConfig.canEditCandidates;
 
   const recruiterApplications = applications.filter(a => filterRecruiter === "All" || pipelineRecruiter(a, jobs) === filterRecruiter);
-  const activeApplications = recruiterApplications.filter(a => a.status === "Active");
-  const visiblePipelineApplications = recruiterApplications.filter(a => a.status === "Active" || a.stage === "Rejected" || a.status === "Rejected");
-  const pipelineStages = [...PIPELINE_STAGES, "Rejected"];
+  const activeApplications = recruiterApplications.filter(a => a.status === "Active" && a.stage !== "Hired");
+  const visiblePipelineApplications = recruiterApplications.filter(a => a.status === "Active" || a.stage === "Rejected" || a.status === "Rejected" || a.stage === "Hired");
+  const pipelineStages = [...PIPELINE_STAGES, "Rejected", "Hired"];
   const delayedApps = activeApplications.filter(a => (a.daysInStage || 0) >= 5);
 
   const filteredApps = visiblePipelineApplications.filter(a => {
@@ -4497,7 +4497,7 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
     return (filterJob === "All" || String(a.jobId) === String(filterJob)) &&
       (filterEntity === "All" || (job && job.entity === filterEntity)) &&
       (filterDept === "All" || (job && job.dept === filterDept)) &&
-      (!showDelayedOnly || (a.daysInStage || 0) >= 5) &&
+      (!showDelayedOnly || (a.stage !== "Hired" && (a.daysInStage || 0) >= 5)) &&
       (!q || `${cand?.name} ${job?.title} ${a.stage} ${a.notes}`.toLowerCase().includes(q));
   });
 
@@ -4726,7 +4726,7 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
           {pipelineStages.map(stage => {
             const stageApps = filteredApps.filter(a => a.stage === stage);
             const isApplied = stage === "Applied";
-            const isRejectedStage = stage === "Rejected";
+            const isRejectedStage = stage === "Rejected" || stage === "Hired";
             const isDragTarget = dragOverStage === stage;
             return (
               <div
@@ -4777,13 +4777,14 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
                     const scheduledInterview = interviews
                       .filter(i => i.applicationId === app.id && i.status === "Scheduled")
                       .sort((a, b) => String(a.scheduledAt).localeCompare(String(b.scheduledAt)))[0];
+                    const isHiredApp = app.stage === "Hired";
                     const delayColor = app.daysInStage >= 5 ? "var(--red)" : app.daysInStage >= 3 ? "var(--amber)" : "var(--text3)";
                     const delayBorder = app.daysInStage >= 5 ? "var(--red)" : app.daysInStage >= 3 ? "var(--amber)" : undefined;
                     const delayLabel = app.daysInStage >= 5 ? "Delayed" : app.daysInStage >= 3 ? "Watch" : "Days";
                     const isTopCandidate = app.priority === "Top candidate";
-                    const isDelayed = app.daysInStage >= 5;
+                    const isDelayed = !isHiredApp && app.daysInStage >= 5;
                     const isRejectedApp = app.stage === "Rejected" || app.status === "Rejected";
-                    const canActOnApp = canMove && !isRejectedApp;
+                    const canActOnApp = canMove && !isRejectedApp && !isHiredApp;
                     return (
                       <div
                         key={app.id}
@@ -4796,7 +4797,7 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
                           opacity: isDragging ? 0.4 : 1,
                           cursor: canActOnApp ? "grab" : "default",
                           transition: "opacity 0.15s",
-                          borderColor: isRejectedApp ? "var(--red)" : isTopCandidate ? "var(--amber)" : delayBorder,
+                          borderColor: isHiredApp ? "var(--teal)" : isRejectedApp ? "var(--red)" : isTopCandidate ? "var(--amber)" : delayBorder,
                           borderWidth: isDelayed || isTopCandidate ? 2 : 1,
                           boxShadow: isTopCandidate ? "0 0 0 3px var(--amber-soft)" : undefined,
                           transform: isDelayed ? "scale(1.015)" : undefined,
@@ -4818,6 +4819,7 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
                             </button>
                           )}
                           {isRejectedApp && <span className="badge badge-red">Rejected</span>}
+                          {isHiredApp && <span className="badge badge-green">Hired</span>}
                           {scheduledInterview && (
                             <span className="badge badge-blue">📅 {formatDisplayDate(scheduledInterview.scheduledAt)}</span>
                           )}
@@ -4837,13 +4839,13 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
                           {canActOnApp && <span style={{ marginLeft: "auto", color: "var(--text3)", fontSize: 14, cursor: "grab" }}>⠿</span>}
                         </div>
                         <div className="kanban-card-job">{job?.title}</div>
-                        {app.nextAction && (
+                        {!isHiredApp && app.nextAction && (
                           <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 6 }}>
                             Next: {app.nextAction}
                           </div>
                         )}
                         <div className="kanban-card-meta">
-                          <span className="kanban-card-days" style={{ color: delayColor }}>{delayLabel}: {app.daysInStage}d in stage</span>
+                          <span className="kanban-card-days" style={{ color: isHiredApp ? "var(--teal)" : delayColor }}>{isHiredApp ? "Hiring completed" : `${delayLabel}: ${app.daysInStage}d in stage`}</span>
                           <span className="tag" style={{ fontSize: 9 }}>{job?.entity?.split(" ")[0] || "—"}</span>
                         </div>
                         <div style={{ fontSize: 10, color: "var(--text3)", fontFamily: "var(--mono)", marginTop: 6 }}>
