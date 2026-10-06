@@ -69,6 +69,34 @@ function buildApprovalChain(recruiterUserId, hiringManagerUserId, hrDirectorId) 
   ];
 }
 
+offersRouter.param('id', async (req, res, next, id) => {
+  try {
+    const offer = await prisma.offer.findUnique({ where: { id }, select: { deletedAt: true } });
+    if (offer?.deletedAt) return notFound(res, 'Offer');
+    next();
+  } catch (error) { next(error); }
+});
+
+offersRouter.delete('/:id', requireRoles([ROLES.ADMIN]), async (req, res, next) => {
+  try {
+    const offer = await prisma.offer.findFirst({ where: {
+      id: req.params.id, deletedAt: null,
+      application: buildApplicationScopeWhere(req.user),
+      ...(req.entityFilter ? { position: { entity: { in: req.entityFilter } } } : {}),
+    } });
+    if (!offer) return notFound(res, 'Offer');
+    await prisma.$transaction(async tx => {
+      const result = await tx.offer.updateMany({ where: { id: offer.id, deletedAt: null }, data: { deletedAt: new Date() } });
+      if (result.count) await tx.auditLog.create({ data: {
+        userId: req.user.id, action: 'deleted', entity: 'offers', entityId: offer.id,
+        before: { status: offer.status, applicationId: offer.applicationId },
+        after: { deleted: true }, ipAddress: req.ip, userAgent: req.get('user-agent') || null,
+      } });
+    });
+    return noContent(res);
+  } catch (error) { next(error); }
+});
+
 // ── GET /offers ───────────────────────────────────────────────────────
 offersRouter.get('/', requireRoles(CAN_READ_OFFERS), async (req, res, next) => {
   try {
@@ -83,6 +111,7 @@ offersRouter.get('/', requireRoles(CAN_READ_OFFERS), async (req, res, next) => {
       : {};
 
     const where = {
+      deletedAt: null,
       AND: [
         entityWhere,
         { application: buildApplicationScopeWhere(req.user) },
@@ -179,7 +208,7 @@ offersRouter.post(
 
       // Check no active offer already exists
       const existingOffer = await prisma.offer.findFirst({
-        where: {
+        where: { deletedAt: null,
           applicationId,
           status: { notIn: ['declined','expired','withdrawn'] },
         },

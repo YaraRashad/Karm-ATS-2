@@ -477,6 +477,7 @@ export async function fetchAtsData({ includeAudit = false, includeUsers = false 
 }
 
 export const backendActions = {
+  deleteOffer: id => api(`/offers/${id}`, { method: "DELETE" }),
   createCandidate: (payload) => api("/candidates", {
     method: "POST",
     body: JSON.stringify({

@@ -5271,6 +5271,9 @@ function NotificationLog({ notifications }) {
 }
 
 function OffersPage({ offers, setOffers, applications, candidates, jobs, roleConfig, canViewSalary, openModal, backendActions, reloadData }) {
+  const [filterStatus, setFilterStatus] = useState("All");
+  const [deletingOfferId, setDeletingOfferId] = useState(null);
+  const canDelete = !!roleConfig.canDeleteRecords;
   const canCreate = !!roleConfig.canCreateOffers;
   const canApprove = hasOfferApprovalAccess(roleConfig);
 
@@ -5296,9 +5299,22 @@ function OffersPage({ offers, setOffers, applications, candidates, jobs, roleCon
     return { ...o, app, cand, job };
   });
 
+  const filteredOffers = enriched.filter(offer => filterStatus === "All" || offerStatusValue(offer.status) === filterStatus);
+  const deleteOffer = async offer => {
+    if (!canDelete || deletingOfferId) return;
+    if (!window.confirm(`Delete the offer for ${offer.cand.name} (${offer.job?.title || 'position'})? The candidate and application will remain. The offer will be retained in the audit history.`)) return;
+    setDeletingOfferId(offer.id);
+    try {
+      await backendActions.deleteOffer(offer.id);
+      setOffers(prev => prev.filter(item => item.id !== offer.id));
+      await reloadData?.();
+    } catch (error) { alert(error.message || "Could not delete offer."); }
+    finally { setDeletingOfferId(null); }
+  };
+
   const exportOffers = () => {
     try {
-      const sheet = XLSX.utils.json_to_sheet(offerExportRows(enriched, canViewSalary));
+      const sheet = XLSX.utils.json_to_sheet(offerExportRows(filteredOffers, canViewSalary));
       sheet['!cols'] = Array.from({ length: canViewSalary ? 14 : 10 }, () => ({ wch: 24 }));
       const book = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(book, sheet, "Offers");
@@ -5346,7 +5362,7 @@ function OffersPage({ offers, setOffers, applications, candidates, jobs, roleCon
     setOffers(prev => prev.map(o => o.id === id ? { ...o, status: "Rejected" } : o));
   };
 
-  const offerStatusValue = (status) => {
+  function offerStatusValue(status) {
     const normalized = String(status || "").toLowerCase();
     if (normalized === "accepted") return "accepted";
     if (normalized === "declined" || normalized === "rejected") return "declined";
@@ -5395,9 +5411,16 @@ function OffersPage({ offers, setOffers, applications, candidates, jobs, roleCon
           <div className="page-title">Offer Approvals</div>
           <div className="page-sub">{offers.filter(o => o.status === "Pending Approval").length} pending approval</div>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button className="btn" onClick={exportOffers} disabled={!enriched.length}><Icon name="download" size={14} /> Export Excel</button>{canCreate && <button className="btn btn-primary" onClick={() => openModal("addOffer")}><Icon name="plus" size={14} /> Create Offer</button>}</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button className="btn" onClick={exportOffers} disabled={!filteredOffers.length}><Icon name="download" size={14} /> Export Excel</button>{canCreate && <button className="btn btn-primary" onClick={() => openModal("addOffer")}><Icon name="plus" size={14} /> Create Offer</button>}</div>
       </div>
       <div className="page-content">
+        <div className="toolbar" style={{ marginBottom: 16 }}>
+          <div><label className="form-label" htmlFor="offer-status-filter">Status</label>
+            <select id="offer-status-filter" className="form-select" value={filterStatus} onChange={event => setFilterStatus(event.target.value)}>
+              <option value="All">All</option><option value="draft">Draft</option><option value="accepted">Accepted</option><option value="declined">Declined</option>
+            </select></div>
+          <span className="page-sub">{filteredOffers.length} offers shown</span>
+        </div>
         {enriched.filter(o => o.status === "Pending Approval").length > 0 && canApprove && (
           <div className="alert alert-amber" style={{ marginBottom: 16 }}>
             <Icon name="alert" size={16} />
@@ -5450,7 +5473,8 @@ function OffersPage({ offers, setOffers, applications, candidates, jobs, roleCon
             <table>
               <thead><tr><th>Candidate</th><th>Job</th><th>Salary</th><th>Breakdown</th><th>Start date</th><th>Candidate</th><th>Status</th><th></th></tr></thead>
               <tbody>
-                {enriched.map(o => (
+                {!filteredOffers.length && <tr><td colSpan={8} style={{ textAlign: "center", padding: 24 }}>No offers match this status.</td></tr>}
+                {filteredOffers.map(o => (
                   <tr key={o.id}>
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -5492,6 +5516,7 @@ function OffersPage({ offers, setOffers, applications, candidates, jobs, roleCon
                     <td>
                       <div style={{ display: "flex", gap: 6 }}>
                         <button className="btn btn-ghost btn-sm" onClick={() => openModal("viewOffer", { offer: o })}>View</button>
+                        {canDelete && <button className="btn btn-danger btn-sm" style={{ marginLeft: 6 }} disabled={!!deletingOfferId} onClick={() => deleteOffer(o)}>{deletingOfferId === o.id ? "Deleting..." : "Delete"}</button>}
                         {o.status === "Approved" && notifications.find(n => n.email.subject.includes(o.cand?.name)) && (
                           <button className="btn btn-ghost btn-sm" style={{ color: "var(--accent)", borderColor: "var(--accent-soft)" }}
                             onClick={() => { const n = notifications.find(nn => nn.email.subject.includes(o.cand?.name)); if (n) setViewingEmail({ email: n.email, sentAt: n.sentAt }); }}>

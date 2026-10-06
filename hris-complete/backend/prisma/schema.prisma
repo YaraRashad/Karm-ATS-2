@@ -553,6 +553,7 @@ model ScorecardRating {
 // ─────────────────────────────────────────────
 
 model Offer {
+  deletedAt       DateTime?
   id              String      @id @default(cuid())
   applicationId   String
   application     Application @relation(fields: [applicationId], references: [id])
