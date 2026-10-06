@@ -18,11 +18,11 @@ export default function ManagementDashboard({jobs,candidates,applications,openJo
     return [{id:app.id,name:candidates.find(c=>c.id===app.candidateId)?.name||'Candidate',job:jobs.find(j=>j.id===app.jobId)?.title||'Unassigned role',start,end,days:Math.round((end-start)/86400000)}];
   });
   const cards=[
-    ['Open requisitions',openJobs.length,`${jobs.length} total requisitions`,()=>openKpiModal(kpis[0])],
+    ['Total requisitions',jobs.length,`${openJobs.length} Open · ${jobs.filter(job=>job.status==='Closed').length} Closed · ${jobs.filter(job=>job.status==='Draft').length} Draft`,()=>setPage('jobs')],
+    ['Hires YTD',hiresYtd.length,'Year-to-date hired records',()=>openKpiModal(kpis[3])],
     ['Talent database',candidates.length,'Unique talent profiles',()=>setPage('candidates')],
     ['Scheduled interviews',scheduledInterviews.length,'Current scheduled records',()=>openKpiModal(kpis[1])],
     ['Pending offers',pendingOfferCount,'Candidates in the offer step',()=>openKpiModal(kpis[2])],
-    ['Hires YTD',hiresYtd.length,'Year-to-date hired records',()=>openKpiModal(kpis[3])],
     ['Avg time to fill',avgTimeToFill===null?'—':`${avgTimeToFill}d`,'Application to hire',()=>setShowFill(true)],
     ['Overall recruitment achievement',achievement===null?'—':`${achievement}%`,`${hiresYtd.length} hired records / ${totalHeadcount} total HC`,()=>setShowAchievement(true)]
   ];
