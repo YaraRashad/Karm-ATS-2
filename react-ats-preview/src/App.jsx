@@ -1,4 +1,4 @@
-import { canSubmitInterviewScore } from "./interview-permissions.js";
+import { canSubmitInterviewScore, canEditInterviewScore } from "./interview-permissions.js";
 import { talentApplications } from "./talent-applications.js";
 import { positionJoiners } from "./position-joiners.js";
 import { offerExportRows } from "./offer-export.js";
@@ -7062,7 +7062,7 @@ function ScorecardModal({ data, closeModal, ctx }) {
 
   const activeInterview = interviewTabs.find(i => String(i.id) === activeInterviewId) || interviewTabs[0] || interview;
   const activeScore = activeInterview?.existingScore || findScorecardForInterview(ctx.scorecards, activeInterview);
-  const canEditSubmitted = !!ctx.roleConfig?.canDeleteRecords;
+  const canEditSubmitted = canEditInterviewScore({role: ctx.sessionUser?.role || ctx.currentRole, canEditSubmitted: ctx.roleConfig?.canDeleteRecords});
   const activeStageLabel = normalizeInterviewStageLabel(activeInterview?.type);
   const sessionName = String(ctx.roleConfig?.fullName || ctx.sessionUser?.fullName || "").trim().toLowerCase();
   const sessionEmail = String(ctx.sessionUser?.email || ctx.roleConfig?.email || "").trim().toLowerCase();
@@ -7217,7 +7217,7 @@ function ScorecardModal({ data, closeModal, ctx }) {
           {activeScore && (
             <div className="alert alert-info" style={{ marginBottom: 16 }}>
               <Icon name="alert" size={14} />
-              Scorecard submitted on {activeScore.submittedDate || "recorded date"}{canEditSubmitted ? " · Admin can edit and resubmit" : ""}
+              Scorecard submitted on {activeScore.submittedDate || "recorded date"}{canEditSubmitted ? " · You can edit and resubmit" : ""}
             </div>
           )}
           {!canSubmitActive && !activeScore && (
