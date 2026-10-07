@@ -29,3 +29,12 @@ test('hire employment breakdown preserves interns and project hires despite lega
  assert.deepEqual(Object.fromEntries(m.hireBreakdown.map(g=>[g.label,g.count])),{'FTE':2,'Interns':1,'Not recorded':1,'Project hires':1});
  assert.equal(m.hireBreakdown.reduce((s,g)=>s+g.count,0),m.hires.length);
 });
+test('hire audit reconciles included, undated and outside-period records; HC categories sum people',()=>{
+ const position={...jobs[0],positionType:'Replacement',headcount:4};
+ const rows=[applications[0],{...applications[0],id:'undated',stageHistory:[]},{...applications[0],id:'old',stageHistory:[{toStage:'hired',movedAt:'2025-12-01'}]}];
+ const m=dashboardMetrics({jobs:[position],applications:rows,range});
+ assert.deepEqual(m.hireAudit,{total:3,included:1,missing:1,outside:1,uniqueIncluded:1});
+ assert.equal(m.hireAuditRows.filter(r=>r.included==='Included').length,1);
+ assert.equal(m.hcBreakdown[0].count,4);
+ assert.equal(m.hcBreakdown.reduce((s,g)=>s+g.count,0),m.totalHC);
+});
