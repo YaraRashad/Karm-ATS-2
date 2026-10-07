@@ -55,3 +55,19 @@ test('confirmed 2026 undated hires enter YTD only, with scope, month and duratio
  assert.equal(dashboardMetrics({...args,range:periodRange('YTD','','',new Date('2027-10-07T10:00:00Z'))}).confirmedUndated.length,0);
  assert.equal(dashboardMetrics({...args,entity:'Cyprus',range:ytd}).hires.length,0);
 });
+test('source hires reconcile to KPI including earlier applicants and confirmed undated; exclude historical hired exits',async()=>{
+ const {CONFIRMED_2026_HIRES}=await import('../src/dashboard-metrics.js');
+ const range=periodRange('YTD','','',new Date('2026-10-07T10:00:00Z'));
+ const cs=[{id:'early',source:'referral'},{id:'missing',source:'direct'},{id:'exit',source:'linkedin'}];
+ const rows=[
+ {...applications[0],candidateId:'early',appliedDate:'2025-12-01'},
+ {...applications[0],id:[...CONFIRMED_2026_HIRES][0],candidateId:'missing',stageHistory:[]},
+ {...applications[0],id:'exit',candidateId:'exit',stage:'Rejected'}
+ ];
+ const m=dashboardMetrics({jobs,candidates:cs,applications:rows,range});
+ assert.equal(m.sourceHires,m.hires.length);assert.equal(m.sourceHires,2);
+ const early=m.sources.find(r=>r.source==='referral');assert.equal(early.hires.length,1);assert.equal(early.applicants.length,0);
+ assert.equal(m.sources.find(r=>r.source==='direct').cohortHires.length,1);
+ assert.equal(m.sources.find(r=>r.source==='linkedin').hires.length,0);
+ assert.equal(m.sources.find(r=>r.source==='linkedin').cohortHires.length,0);
+});
