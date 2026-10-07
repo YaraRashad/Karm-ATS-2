@@ -71,3 +71,37 @@ test('source hires reconcile to KPI including earlier applicants and confirmed u
  assert.equal(m.sources.find(r=>r.source==='linkedin').hires.length,0);
  assert.equal(m.sources.find(r=>r.source==='linkedin').cohortHires.length,0);
 });
+test('historical stage without dated evidence is unknown, not fabricated Applied',()=>{
+ const m=dashboardMetrics({jobs,candidates,applications:[{...applications[0],stageHistory:[]}],range});
+ assert.equal(m.analysis.pipelineRows.find(r=>r.label==='Applied').current,0);
+ assert.equal(m.quality.find(q=>q.label==='Historical stage unknown at selected cutoff').rows.length,1);
+});
+test('prior unrelated hire does not convert a new application cohort',()=>{
+ const rows=[{...applications[0],id:'old',appliedDate:'2025-10-01',stageHistory:[{toStage:'hired',movedAt:'2025-12-01'}]},{...applications[0],id:'new',stage:'Applied',stageHistory:[]}];
+ const m=dashboardMetrics({jobs,candidates,applications:rows,range});
+ assert.equal(m.sources[0].cohortHires.length,0);
+});
+test('hire-offer reconciliation uses application links across offer dates',()=>{
+ const offers=[{id:'past',jobId:'j',applicationId:'a',rawStatus:'accepted',acceptedAt:'2025-12-20'}];
+ const m=dashboardMetrics({jobs,candidates,applications,offers,range});
+ assert.equal(m.decisions.length,0);
+ assert.equal(m.hireOfferRows[0].acceptedOffers,1);
+ assert.equal(m.quality.find(q=>q.label==='Period hires without a linked accepted offer').rows.length,0);
+});
+test('breakdowns, monthly dates and stage/transition detail counts reconcile',()=>{
+ const m=dashboardMetrics({jobs,candidates,applications,range});
+ assert.equal(m.departments.reduce((s,r)=>s+r.planned,0),m.totalHC);
+ assert.equal(m.departments.reduce((s,r)=>s+r.hires.length,0),m.hires.length);
+ assert.equal(m.hireBreakdown.reduce((s,r)=>s+r.count,0),m.hires.length);
+ assert.equal(m.sourceHires,m.hires.length);
+ assert.equal(m.monthly.reduce((s,r)=>s+r.rows.length,0),m.hires.length);
+ for(const r of m.analysis.pipelineRows)for(const key of ['reached','passed','current','rejected'])assert.equal(m.stageRows(r.label,key).length,r[key]);
+ for(const r of m.analysis.transitions)assert.equal(m.routeRows(r).length,r.count);
+});
+test('invalid dates and conflicting inactive stages do not inflate figures',async()=>{
+ const {day}=await import('../src/dashboard-metrics.js');
+ assert.equal(day('2026-02-31'),null);
+ const currentRange=periodRange('YTD','','',new Date('2026-10-07T10:00:00Z'));
+ const m=dashboardMetrics({jobs,candidates,applications:[{...applications[0],stage:'Applied',status:'Rejected',stageHistory:[]}],range:currentRange});
+ assert.equal(m.analysis.pipelineRows.find(r=>r.label==='Applied').current,0);
+});

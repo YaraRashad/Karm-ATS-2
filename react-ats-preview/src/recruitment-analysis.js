@@ -22,7 +22,7 @@ export function recruitmentAnalysis(candidates, applications) {
     mark('Applied', 'reached', id);
     const current = stageName(app.stage);
     mark(current, 'reached', id);
-    mark(current, 'current', id);
+    if (app.status !== 'Rejected' || current === 'Hired') mark(current, 'current', id);
     if (current === 'Rejected') rejected.add(id);
     if (!Array.isArray(app.stageHistory) || (!app.stageHistory.length && current !== 'Applied')) incomplete.add(id);
     for (const event of app.stageHistory || []) {
