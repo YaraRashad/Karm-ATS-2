@@ -38,3 +38,20 @@ test('hire audit reconciles included, undated and outside-period records; HC cat
  assert.equal(m.hcBreakdown[0].count,4);
  assert.equal(m.hcBreakdown.reduce((s,g)=>s+g.count,0),m.totalHC);
 });
+test('confirmed 2026 undated hires enter YTD only, with scope, month and duration safeguards',async()=>{
+ const {CONFIRMED_2026_HIRES}=await import('../src/dashboard-metrics.js');
+ const id=[...CONFIRMED_2026_HIRES][0];
+ const undated={...applications[0],id,stageHistory:[]};
+ const args={jobs,candidates,applications:[applications[0],undated,{...undated,id:'unconfirmed'}]};
+ const ytd=periodRange('YTD','','',new Date('2026-10-07T10:00:00Z'));
+ const m=dashboardMetrics({...args,range:ytd});
+ assert.equal(m.hires.length,2);
+ assert.equal(m.confirmedUndated.length,1);
+ assert.equal(m.fillRows.length,1);
+ assert.equal(m.monthly.at(-1).cumulative,1);
+ assert.equal(m.hireBreakdown.reduce((s,g)=>s+g.count,0),2);
+ assert.equal(m.hireAuditRows.find(r=>r.id===id).included,'Included · confirmed 2026, date missing');
+ assert.equal(dashboardMetrics({...args,range:periodRange('Month','','',new Date('2026-10-07T10:00:00Z'))}).confirmedUndated.length,0);
+ assert.equal(dashboardMetrics({...args,range:periodRange('YTD','','',new Date('2027-10-07T10:00:00Z'))}).confirmedUndated.length,0);
+ assert.equal(dashboardMetrics({...args,entity:'Cyprus',range:ytd}).hires.length,0);
+});

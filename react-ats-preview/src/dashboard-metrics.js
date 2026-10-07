@@ -1,5 +1,13 @@
 import { recruitmentAnalysis } from './recruitment-analysis.js';
 const DAY=86400000;
+// User confirmed these existing undated Hired records belong to 2026 on 7 October.
+// Reporting attribution only: do not fabricate hire dates or assign them to a month.
+export const CONFIRMED_2026_HIRES=new Set([
+ 'cmupa03ns00ei5yr2muwbsyki','cmup8qoci00ak5yr2n65o49dm',
+ 'cmul7tkfz015q11gkdjrrriou','cmsx4k1ja00l76eg2os25d1bn',
+ 'cmsvu0t4k00dh6eg2falszukf','cmseocra3009otccqocot5q3u',
+ 'cmrkg675u00ha6j5lucglbre4','cmqgqi2nn004tngfhzxw2wt7h'
+]);
 export function day(value){if(!value)return null; if(/^\d{4}-\d{2}-\d{2}$/.test(value))return value;const d=new Date(value);if(!Number.isFinite(+d))return null;return new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);}
 export function days(a,b){return Math.round((Date.parse(b)-Date.parse(a))/DAY)}
 const shift=(date,n)=>new Date(Date.parse(date)+n*DAY).toISOString().slice(0,10);
@@ -15,7 +23,9 @@ export function dashboardMetrics({jobs=[],candidates=[],applications=[],offers=[
  const apps=applications.filter(a=>jm.has(a.jobId));const am=new Map(apps.map(a=>[a.id,a]));const os=offers.filter(o=>jm.has(o.jobId)||am.has(o.applicationId));const ins=interviews.filter(i=>am.has(i.applicationId));const scopedCandidates=candidates.filter(c=>apps.some(a=>a.candidateId===c.id)||(!entity&&!department));
  const record=a=>({id:a.id,candidate:cm.get(a.candidateId)?.name||'Candidate',position:jm.get(a.jobId)?.title||'Unassigned',department:jm.get(a.jobId)?.dept||'Unassigned',stage:a.stage,applied:day(a.appliedDate),hired:hiredDate(a)});
  const appRows=rows=>rows.map(record);const jobRows=rows=>rows.map(j=>({id:j.id,position:j.title,department:j.dept,entity:j.entity,status:j.status,headcount:j.headcount,opened:j.recordedOpenDate||null,target:j.targetCloseDate||null}));const offerRows=rows=>rows.map(o=>({id:o.id,candidate:cm.get(am.get(o.applicationId)?.candidateId)?.name||o.candidateName||'Candidate',position:jm.get(o.jobId||am.get(o.applicationId)?.jobId)?.title||o.jobTitle,status:o.rawStatus||o.status,sent:o.sentAt,accepted:o.acceptedAt,declined:o.declinedAt}));
- const hirePool=apps.filter(a=>a.stage==='Hired');const hires=hirePool.filter(a=>range.valid&&within(hiredDate(a),range.start,range.end));const previousHires=hirePool.filter(a=>range.valid&&within(hiredDate(a),range.previousStart,range.previousEnd));
+ const hirePool=apps.filter(a=>a.stage==='Hired');
+ const confirmedUndated=hirePool.filter(a=>range.valid&&range.start==='2026-01-01'&&range.end>='2026-10-07'&&range.end<='2026-12-31'&&!hiredDate(a)&&CONFIRMED_2026_HIRES.has(a.id));
+ const hires=hirePool.filter(a=>range.valid&&(within(hiredDate(a),range.start,range.end)||confirmedUndated.includes(a)));const previousHires=hirePool.filter(a=>range.valid&&within(hiredDate(a),range.previousStart,range.previousEnd));
  const positionDate=j=>j.recordedOpenDate||j.createdAt;
  const periodPositions=js.filter(j=>range.valid&&within(positionDate(j),range.start,range.end));
  const previousPositions=js.filter(j=>range.valid&&within(positionDate(j),range.previousStart,range.previousEnd));
@@ -24,7 +34,7 @@ export function dashboardMetrics({jobs=[],candidates=[],applications=[],offers=[
  const positionDetailRows=periodPositions.map(j=>({...jobRows([j])[0],category:positionCategory(j),reportingDate:day(positionDate(j)),dateBasis:j.recordedOpenDate?'Opening date':'Creation date'}));
  const hireDetailRows=hires.map(a=>({...record(a),employmentType:hireEmploymentType(jm.get(a.jobId)),positionCategory:positionCategory(jm.get(a.jobId))}));
  const hcBreakdown=groupRecords(js,positionCategory).map(g=>({...g,count:g.rows.reduce((sum,j)=>sum+(Number(j.headcount)||1),0)}));
- const hireAuditRows=hirePool.map(a=>({...record(a),candidateId:a.candidateId,included:hires.includes(a)?'Included':!hiredDate(a)?'Missing hire date':'Outside selected period',lastEdited:day(a.lastActivityAt)}));
+ const hireAuditRows=hirePool.map(a=>({...record(a),candidateId:a.candidateId,included:confirmedUndated.includes(a)?'Included · confirmed 2026, date missing':hires.includes(a)?'Included':!hiredDate(a)?'Missing hire date':'Outside selected period',lastEdited:day(a.lastActivityAt)}));
  const hireAudit={total:hirePool.length,included:hires.length,missing:hirePool.filter(a=>!hiredDate(a)).length,outside:hirePool.filter(a=>hiredDate(a)&&!hires.includes(a)).length,uniqueIncluded:new Set(hires.map(a=>a.candidateId)).size};
  const fill=rows=>rows.flatMap(a=>{const start=day(jm.get(a.jobId)?.recordedOpenDate);const end=hiredDate(a);return start&&end&&end>=start?[{...record(a),opened:start,days:days(start,end)}]:[]});const fillRows=fill(hires),previousFill=fill(previousHires);
  const decisionDate=o=>(o.rawStatus||'').toLowerCase()==='accepted'?o.acceptedAt:o.declinedAt;const decided=os.filter(o=>['accepted','declined'].includes((o.rawStatus||'').toLowerCase()));const decisions=decided.filter(o=>range.valid&&within(decisionDate(o),range.start,range.end));const prevDecisions=decided.filter(o=>range.valid&&within(decisionDate(o),range.previousStart,range.previousEnd));const rate=rows=>rows.length?rows.filter(o=>o.rawStatus==='accepted').length/rows.length*100:null;
@@ -42,5 +52,5 @@ export function dashboardMetrics({jobs=[],candidates=[],applications=[],offers=[
  const monthly=[];if(range.valid){let d=range.start.slice(0,7)+'-01';while(d<=range.end&&monthly.length<120){const next=new Date(Date.parse(d));next.setUTCMonth(next.getUTCMonth()+1);const nextDay=next.toISOString().slice(0,10);const rows=hires.filter(a=>hiredDate(a)>=d&&hiredDate(a)<nextDay);monthly.push({month:d.slice(0,7),rows,cumulative:hires.filter(a=>hiredDate(a)<nextDay).length});d=nextDay;}}
  const repeats=hirePool.filter(a=>hirePool.filter(b=>b.candidateId===a.candidateId).length>1);
  const quality=[{label:'Hired records without a recorded hire event date',rows:appRows(hirePool.filter(a=>!hiredDate(a)))},{label:'Hired candidate IDs with multiple applications',rows:appRows(repeats)},{label:'Selected hires without usable opening / hire dates',rows:appRows(hires.filter(a=>!fillRows.some(r=>r.id===a.id)))},{label:'Open requisitions missing target dates',rows:jobRows(open.filter(j=>!day(j.targetCloseDate)))},{label:'Open requisitions missing opening dates',rows:jobRows(open.filter(j=>!day(j.recordedOpenDate)))},{label:'Decided offers missing decision dates',rows:offerRows(decided.filter(o=>!day(decisionDate(o))))},{label:'Sent offers missing sent date',rows:offerRows(pending.filter(o=>!day(o.sentAt)))},{label:'Incomplete stage history in selected cohort',rows:appRows(analysisApps.filter(a=>!a.stageHistory?.length&&a.stage!=='Applied'))}];
- return {hcBreakdown,hireAudit,hireAuditRows,periodPositions,previousPositions,positionBreakdown,hireBreakdown,positionDetailRows,hireDetailRows,jobs:js,apps,candidates:scopedCandidates,offers:os,open,hires,previousHires,fillRows,fillMean:mean(fillRows),previousFillMean:mean(previousFill),decisions,acceptance:rate(decisions),previousAcceptance:rate(prevDecisions),pending,oldOffers,overdue,alerts,analysis,stageRows,routeRows,sources,sourceHires,departments,recruiters,workloadMean,monthly,quality,appRows,jobRows,offerRows,totalHC:js.reduce((s,j)=>s+(Number(j.headcount)||1),0)};
+ return {confirmedUndated,hcBreakdown,hireAudit,hireAuditRows,periodPositions,previousPositions,positionBreakdown,hireBreakdown,positionDetailRows,hireDetailRows,jobs:js,apps,candidates:scopedCandidates,offers:os,open,hires,previousHires,fillRows,fillMean:mean(fillRows),previousFillMean:mean(previousFill),decisions,acceptance:rate(decisions),previousAcceptance:rate(prevDecisions),pending,oldOffers,overdue,alerts,analysis,stageRows,routeRows,sources,sourceHires,departments,recruiters,workloadMean,monthly,quality,appRows,jobRows,offerRows,totalHC:js.reduce((s,j)=>s+(Number(j.headcount)||1),0)};
 }
