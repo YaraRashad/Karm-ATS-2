@@ -63,3 +63,20 @@ test('HR rounds are combined using unique candidates', () => {
   const result = recruitmentAnalysis([{ id: 1 }], [{ candidateId: 1, stage: 'HR 2 Interview', stageHistory: [{ fromDisplayStage: 'HR 1 Interview', toDisplayStage: 'Technical Interview' }] }]);
   assert.equal(result.pipelineRows.find(r => r.label === 'HR Interview').reached, 1);
 });
+
+test('withdrawals retain stage history without counting as passed, rejected or currently active', () => {
+  const result = recruitmentAnalysis([{ id: 1 }], [{
+    candidateId: 1, stage: 'Withdrawn', status: 'Withdrawn',
+    stageHistory: [
+      { fromStage: 'applied', toStage: 'screening' },
+      { fromStage: 'screening', toStage: 'withdrawn' },
+    ],
+  }]);
+  const screening = result.rows.find(row => row.label === 'Screening');
+  assert.equal(screening.reached, 1);
+  assert.equal(screening.passed, 0);
+  assert.equal(screening.rejected, 0);
+  assert.equal(screening.current, 0);
+  assert.equal(result.rejected, 0);
+  assert.ok(result.transitions.some(route => route.from === 'Screening' && route.to === 'Withdrawn'));
+});

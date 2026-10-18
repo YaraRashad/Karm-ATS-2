@@ -44,7 +44,7 @@ export function dashboardMetrics({jobs=[],candidates=[],applications=[],offers=[
  const alerts=[{label:'Requisitions past target date',severity:'risk',rows:jobRows(overdue)},{label:'Offers pending more than 10 days',severity:'risk',rows:offerRows(veryOld)},{label:'Offers pending 6–10 days',severity:'watch',rows:offerRows(oldOffers.filter(o=>!veryOld.includes(o)))},{label:'Interviews missing feedback',severity:'watch',rows:feedback.map(i=>({...record(am.get(i.applicationId)),interviewId:i.id,scheduled:i.scheduledAt,feedback:'Missing after 24 hours'}))},{label:'No new candidates in 14 days',severity:'watch',rows:jobRows(noCandidates)}].filter(a=>a.rows.length).sort((a,b)=>(a.severity==='risk'?0:1)-(b.severity==='risk'?0:1)||b.rows.length-a.rows.length);
  const cohort=apps.filter(a=>range.valid&&within(a.appliedDate,range.start,range.end));
  const analysisApps=cohort.map(a=>{const hist=(a.stageHistory||[]).filter(e=>within(e.movedAt,'0001-01-01',range.end));const last=[...hist].sort((a,b)=>String(a.movedAt).localeCompare(String(b.movedAt))).at(-1);
- const generic={applied:'Applied',screening:'HR Screening',assessment:'Technical Interview',offer:'Offer',hired:'Hired',rejected:'Rejected'};
+ const generic={applied:'Applied',screening:'HR Screening',assessment:'Technical Interview',offer:'Offer',hired:'Hired',withdrawn:'Withdrawn',rejected:'Rejected'};
  const historicalStage=last?.toDisplayStage||generic[last?.toStage]||(within(a.stageEnteredAt,'0001-01-01',range.end)?a.stage:'Unknown');
  return {...a,stageHistory:hist,stage:range.end===range.today?a.stage:historicalStage,status:range.end===range.today?a.status:'Active'};});
 

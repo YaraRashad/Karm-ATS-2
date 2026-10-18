@@ -610,6 +610,7 @@ const stageBadge = (stage) => {
     "Offer": "badge-amber",
     "Hired": "badge-green",
     "Rejected": "badge-red",
+    "Withdrawn": "badge-gray",
     "On Hold": "badge-gray",
   };
   return map[stage] || "badge-gray";
@@ -628,6 +629,7 @@ const stageColor = (stage) => {
     "Offer": "#f59e0b",
     "Hired": "#4ade80",
     "Rejected": "#f87171",
+    "Withdrawn": "#58595B",
     "On Hold": "#555e78",
   };
   return map[stage] || "#555e78";
@@ -4300,8 +4302,8 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
 
   const recruiterApplications = applications.filter(a => filterRecruiter === "All" || pipelineRecruiters(a, jobs).includes(filterRecruiter));
   const activeApplications = recruiterApplications.filter(a => a.status === "Active" && a.stage !== "Hired");
-  const visiblePipelineApplications = recruiterApplications.filter(a => a.status === "Active" || a.stage === "Rejected" || a.status === "Rejected" || a.stage === "Hired");
-  const pipelineStages = [...PIPELINE_STAGES, "Rejected", "Hired"];
+  const visiblePipelineApplications = recruiterApplications.filter(a => a.status === "Active" || a.stage === "Rejected" || a.status === "Rejected" || a.stage === "Withdrawn" || a.stage === "Hired");
+  const pipelineStages = [...PIPELINE_STAGES, "Withdrawn", "Rejected", "Hired"];
   const delayedApps = activeApplications.filter(a => (a.daysInStage || 0) >= 5);
 
   const filteredApps = visiblePipelineApplications.filter(a => {
@@ -4312,7 +4314,7 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
       (filterEntity === "All" || (job && job.entity === filterEntity)) &&
       (filterDept === "All" || (job && job.dept === filterDept)) &&
       (filterPositionType === "All" || (job && (job.positionType || "Manpower") === filterPositionType)) &&
-      (!showDelayedOnly || (a.stage !== "Hired" && (a.daysInStage || 0) >= 5)) &&
+      (!showDelayedOnly || (!["Hired", "Withdrawn"].includes(a.stage) && (a.daysInStage || 0) >= 5)) &&
       (!q || `${cand?.name} ${job?.title} ${a.stage} ${a.notes}`.toLowerCase().includes(q));
   });
 
@@ -4534,6 +4536,7 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
               <span className="badge badge-blue">{selectedApps.length} selected</span>
               <select className="form-select" style={{ width: 150 }} value={bulkStage} onChange={e => setBulkStage(e.target.value)}>
                 {PIPELINE_STAGES.map(stage => <option key={stage}>{stage}</option>)}
+                <option>Withdrawn</option>
                 <option>Rejected</option>
               </select>
               <button className="btn btn-ghost btn-sm" onClick={bulkMove}>Move multiple</button>
@@ -4599,13 +4602,14 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
                       .filter(i => i.applicationId === app.id && i.status === "Scheduled")
                       .sort((a, b) => String(a.scheduledAt).localeCompare(String(b.scheduledAt)))[0];
                     const isHiredApp = app.stage === "Hired";
-                    const delayColor = app.daysInStage >= 5 ? "var(--red)" : app.daysInStage >= 3 ? "var(--amber)" : "var(--text3)";
+                    const isWithdrawnApp = app.stage === "Withdrawn";
+                    const delayColor = isWithdrawnApp ? "var(--text3)" : app.daysInStage >= 5 ? "var(--red)" : app.daysInStage >= 3 ? "var(--amber)" : "var(--text3)";
                     const delayBorder = app.daysInStage >= 5 ? "var(--red)" : app.daysInStage >= 3 ? "var(--amber)" : undefined;
-                    const delayLabel = app.daysInStage >= 5 ? "Delayed" : app.daysInStage >= 3 ? "Watch" : "Days";
+                    const delayLabel = isWithdrawnApp ? "Withdrawn" : app.daysInStage >= 5 ? "Delayed" : app.daysInStage >= 3 ? "Watch" : "Days";
                     const isTopCandidate = app.priority === "Top candidate";
-                    const isDelayed = !isHiredApp && app.daysInStage >= 5;
+                    const isDelayed = !isHiredApp && !isWithdrawnApp && app.daysInStage >= 5;
                     const isRejectedApp = app.stage === "Rejected" || app.status === "Rejected";
-                    const canActOnApp = canMove && !isRejectedApp && !isHiredApp;
+                    const canActOnApp = canMove && !isRejectedApp && !isHiredApp && !isWithdrawnApp;
                     return (
                       <div
                         key={app.id}
@@ -4618,7 +4622,7 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
                           opacity: isDragging ? 0.4 : 1,
                           cursor: canActOnApp ? "grab" : "default",
                           transition: "opacity 0.15s",
-                          borderColor: isHiredApp ? "var(--teal)" : isRejectedApp ? "var(--red)" : isTopCandidate ? "var(--amber)" : delayBorder,
+                          borderColor: isWithdrawnApp ? "var(--border)" : isHiredApp ? "var(--teal)" : isRejectedApp ? "var(--red)" : isTopCandidate ? "var(--amber)" : delayBorder,
                           borderWidth: isDelayed || isTopCandidate ? 2 : 1,
                           boxShadow: isTopCandidate ? "0 0 0 3px var(--amber-soft)" : undefined,
                           transform: isDelayed ? "scale(1.015)" : undefined,
@@ -4641,6 +4645,7 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
                           )}
                           {isRejectedApp && <span className="badge badge-red">Rejected</span>}
                           {isHiredApp && <span className="badge badge-green">Hired</span>}
+                          {isWithdrawnApp && <span className="badge badge-gray">Withdrawn</span>}
                           {scheduledInterview && (
                             <span className="badge badge-blue">📅 {formatDisplayDate(scheduledInterview.scheduledAt)}</span>
                           )}
@@ -4660,13 +4665,13 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
                           {canActOnApp && <span style={{ marginLeft: "auto", color: "var(--text3)", fontSize: 14, cursor: "grab" }}>⠿</span>}
                         </div>
                         <div className="kanban-card-job">{job?.title}</div>
-                        {!isHiredApp && app.nextAction && (
+                        {!isHiredApp && !isWithdrawnApp && app.nextAction && (
                           <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 6 }}>
                             Next: {app.nextAction}
                           </div>
                         )}
                         <div className="kanban-card-meta">
-                          <span className="kanban-card-days" style={{ color: isHiredApp ? "var(--teal)" : delayColor }}>{isHiredApp ? "Hiring completed" : `${delayLabel}: ${app.daysInStage}d in stage`}</span>
+                          <span className="kanban-card-days" style={{ color: isHiredApp ? "var(--teal)" : delayColor }}>{isHiredApp ? "Hiring completed" : isWithdrawnApp ? "Candidate withdrew" : `${delayLabel}: ${app.daysInStage}d in stage`}</span>
                           <span className="tag" style={{ fontSize: 9 }}>{job?.entity?.split(" ")[0] || "—"}</span>
                         </div>
                         <div style={{ fontSize: 10, color: "var(--text3)", fontFamily: "var(--mono)", marginTop: 6 }}>

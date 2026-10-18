@@ -24,7 +24,7 @@ import { auditLog } from '../lib/audit.js';
 export const applicationsRouter = Router();
 applicationsRouter.use(authenticate, scopeToUserEntities);
 
-const STAGES = ['applied','screening','interview','assessment','offer','hired','rejected'];
+const STAGES = ['applied','screening','interview','assessment','offer','hired','withdrawn','rejected'];
 
 function validate(req, res) {
   const e = validationResult(req);
@@ -51,7 +51,7 @@ applicationsRouter.get('/', async (req, res, next) => {
       candidate: { isActive: true },
       OR: [
         { isActive: true },
-        { stage: 'rejected' },
+        { stage: { in: ['rejected', 'withdrawn'] } },
       ],
       ...(positionId  && { positionId }),
       ...(candidateId && { candidateId }),
@@ -316,9 +316,9 @@ applicationsRouter.patch(
       });
 
       if (!application) return notFound(res, 'Application');
-      const reactivatingRejected = !application.isActive && application.stage === 'rejected' && stage !== 'rejected';
+      const reactivatingRejected = !application.isActive && ['rejected', 'withdrawn'].includes(application.stage) && stage !== application.stage;
       if (!application.isActive && !reactivatingRejected) return unprocessable(res, 'Application is not active');
-      const nextDisplayStage = displayStage || null;
+      const nextDisplayStage = stage === 'withdrawn' ? 'Withdrawn' : displayStage || null;
       if (application.stage === stage && application.displayStage === nextDisplayStage) {
         return unprocessable(res, 'Already in this stage');
       }
@@ -331,8 +331,8 @@ applicationsRouter.patch(
             stage,
             displayStage: nextDisplayStage,
             stageEnteredAt: new Date(),
-            isActive: stage !== 'rejected',
-            disqualifyReason: stage === 'rejected' ? (reason || application.disqualifyReason) : null,
+            isActive: !['rejected', 'withdrawn'].includes(stage),
+            disqualifyReason: ['rejected', 'withdrawn'].includes(stage) ? (reason || application.disqualifyReason) : null,
           },
         }),
         prisma.applicationStageHistory.create({

@@ -1,7 +1,7 @@
 import { normalizePipelineStage } from './pipeline-stages.js';
 
 const stages = ['Applied', 'Screening', 'HR 1 Interview', 'Technical Interview', 'HR 2 Interview', 'ExCom Interview', 'Final Interview', 'Offer', 'Hired'];
-const genericLabels = { applied: 'Applied', screening: 'Screening', assessment: 'Technical Interview', offer: 'Offer', hired: 'Hired', rejected: 'Rejected' };
+const genericLabels = { applied: 'Applied', screening: 'Screening', assessment: 'Technical Interview', offer: 'Offer', hired: 'Hired', withdrawn: 'Withdrawn', rejected: 'Rejected' };
 function stageName(display, generic) {
   const label = display ? normalizePipelineStage(display) : genericLabels[generic];
   return ['HR Screening', 'HM Review'].includes(label) ? 'Screening' : label;

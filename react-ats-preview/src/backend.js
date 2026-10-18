@@ -252,6 +252,7 @@ const stageLabel = {
   assessment: "Technical Interview",
   offer: "Offer",
   hired: "Hired",
+  withdrawn: "Withdrawn",
   rejected: "Rejected",
 };
 
@@ -382,7 +383,7 @@ export function mapBackendData({ positions = [], candidates = [], applications =
     stage: normalizePipelineStage(a.displayStage || stageLabel[a.stage] || a.stage),
     stageHistory: a.stageHistory,
     stageEnteredAt: a.stageEnteredAt,
-    status: a.isActive === false || a.stage === "rejected" ? "Rejected" : "Active",
+    status: a.stage === "withdrawn" ? "Withdrawn" : a.isActive === false || a.stage === "rejected" ? "Rejected" : "Active",
     recruiterId: a.position?.recruiterId || a.position?.recruiter?.userId || a.position?.recruiter?.user?.id || a.position?.recruiter?.id || "",
     recruiter: fullName(a.position?.recruiter?.user || a.position?.recruiter) || "Recruiter",
     appliedDate: a.appliedAt?.slice?.(0, 10) || "",

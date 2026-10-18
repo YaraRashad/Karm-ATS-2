@@ -84,6 +84,7 @@ enum HeadcountApprovalStatus {
 }
 
 enum ApplicationStage {
+  withdrawn
   applied
   screening
   interview
