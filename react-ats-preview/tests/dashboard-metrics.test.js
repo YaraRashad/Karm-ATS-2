@@ -2,7 +2,7 @@ import test from 'node:test';import assert from 'node:assert/strict';import {das
 const range=periodRange('Custom','2026-01-01','2026-01-31',new Date('2026-02-15T10:00:00Z'));
 const jobs=[{id:'j',title:'Engineer',dept:'A',entity:'Egypt',status:'Open',headcount:3,recordedOpenDate:'2025-12-01',targetCloseDate:'2026-01-01',recruiterIds:['u','v']}];
 const candidates=[{id:'c',name:'C',source:'referral'}];const applications=[{id:'a',jobId:'j',candidateId:'c',stage:'Hired',status:'Active',appliedDate:'2026-01-02',stageHistory:[{toStage:'hired',movedAt:'2026-01-21T10:00:00Z'}],lastActivityAt:'2026-02-14'}];
-test('hires use event date, not edits; missing event is excluded',()=>{const m=dashboardMetrics({jobs,candidates,applications:[...applications,{...applications[0],id:'b',stageHistory:[]}],range});assert.equal(m.hires.length,1);assert.equal(m.fillMean,51);assert.equal(m.quality[0].rows.length,1);assert.equal(m.totalHC,3)});
+test('hires use event date, not edits; missing event is excluded',()=>{const m=dashboardMetrics({jobs,candidates,applications:[...applications,{...applications[0],id:'b',stageHistory:[]}],range});assert.equal(m.hires.length,1);assert.equal(m.fillMean,null);assert.equal(m.quality[0].rows.length,1);assert.equal(m.totalHC,3)});
 test('organization filters cannot retain applications or offers outside eligible jobs',()=>{const m=dashboardMetrics({jobs,candidates,applications,offers:[{id:'o',applicationId:'a',rawStatus:'sent'}],entity:'Cyprus',range});assert.equal(m.apps.length,0);assert.equal(m.offers.length,0);assert.equal(m.totalHC,0)});
 test('acceptance is decision dated and pending excludes drafts',()=>{const offers=[{id:'o',jobId:'j',rawStatus:'accepted',acceptedAt:'2026-01-15'},{id:'d',jobId:'j',rawStatus:'declined',declinedAt:'2026-01-16'},{id:'x',jobId:'j',rawStatus:'accepted'},{id:'p',jobId:'j',rawStatus:'sent',sentAt:'2026-02-01'},{id:'draft',jobId:'j',rawStatus:'draft'}];const m=dashboardMetrics({jobs,candidates,applications,offers,range});assert.equal(m.acceptance,50);assert.equal(m.pending.length,1);assert.equal(m.quality[5].rows.length,1)});
 test('source cohort counts each candidate once; shared recruiter assignment not lost',()=>{const active=applications.map(a=>({...a,stage:'Technical Interview'}));const m=dashboardMetrics({jobs,candidates,applications:active,range});assert.equal(m.sources[0].applicants.length,1);assert.equal(m.recruiters.length,2);assert.equal(m.recruiters[0].apps.length,1);assert.equal(m.recruiters[1].apps.length,1)});
@@ -47,7 +47,7 @@ test('confirmed 2026 undated hires enter YTD only, with scope, month and duratio
  const m=dashboardMetrics({...args,range:ytd});
  assert.equal(m.hires.length,2);
  assert.equal(m.confirmedUndated.length,1);
- assert.equal(m.fillRows.length,1);
+ assert.equal(m.fillRows.length,0);
  assert.equal(m.monthly.at(-1).cumulative,1);
  assert.equal(m.hireBreakdown.reduce((s,g)=>s+g.count,0),2);
  assert.equal(m.hireAuditRows.find(r=>r.id===id).included,'Included · confirmed 2026, date missing');
@@ -104,4 +104,28 @@ test('invalid dates and conflicting inactive stages do not inflate figures',asyn
  const currentRange=periodRange('YTD','','',new Date('2026-10-07T10:00:00Z'));
  const m=dashboardMetrics({jobs,candidates,applications:[{...applications[0],stage:'Applied',status:'Rejected',stageHistory:[]}],range:currentRange});
  assert.equal(m.analysis.pipelineRows.find(r=>r.label==='Applied').current,0);
+});
+
+test('time to fill uses requisition to joining, not hire event, and reconciles department rows',()=>{
+ const offers=[{applicationId:'a',jobId:'j',rawStatus:'accepted',startDate:'2026-01-30'}];
+ const m=dashboardMetrics({jobs,candidates,applications,offers,range});
+ assert.equal(m.fillMean,60);
+ assert.equal(m.fillRows[0].joiningDate,'2026-01-30');
+ assert.equal(m.fillRows[0].requisitionDate,'2025-12-01');
+ assert.deepEqual(m.departments[0].fill,m.fillRows);
+ assert.equal(m.hires.length,1);
+ assert.equal(dashboardMetrics({jobs,candidates,applications,offers,range,entity:'Cyprus'}).fillMean,null);
+});
+test('time to fill excludes missing, conflicting, reversed, future and unrelated joining dates',()=>{
+ const offer={applicationId:'a',jobId:'j',rawStatus:'accepted',startDate:'2026-01-30'};
+ for(const offers of [[],[{...offer,startDate:''}],[{...offer,startDate:'2025-11-30'}],[{...offer,startDate:'2026-03-01'}],[{...offer,applicationId:'another'}],[{...offer,jobId:'another'}],[{...offer,rawStatus:'draft'}],[offer,{...offer,startDate:'2026-02-01'}]]){
+  const m=dashboardMetrics({jobs,candidates,applications,offers,range});assert.equal(m.fillMean,null);assert.equal(m.quality[2].rows.length,1);
+ }
+ assert.equal(dashboardMetrics({jobs:[{...jobs[0],recordedOpenDate:null,createdAt:'2025-12-01',openDate:'2025-12-01'}],applications,offers:[offer],range}).fillMean,null);
+ assert.equal(dashboardMetrics({jobs,applications,offers:[offer,{...offer}],range}).fillMean,60);
+});
+test('time to fill target includes exactly 60 days',async()=>{
+ const {timeToFillStatus,TIME_TO_FILL_TARGET}=await import('../src/dashboard-metrics.js');
+ assert.equal(TIME_TO_FILL_TARGET,60);
+ assert.equal(timeToFillStatus(60),'good');assert.equal(timeToFillStatus(60.1),'risk');assert.equal(timeToFillStatus(null),'neutral');
 });
