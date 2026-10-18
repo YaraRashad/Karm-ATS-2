@@ -10,6 +10,17 @@ export const CONFIRMED_2026_HIRES=new Set([
 ]);
 export function day(value){if(!value)return null; if(/^\d{4}-\d{2}-\d{2}$/.test(value)){const parsed=new Date(value);return Number.isFinite(+parsed)&&parsed.toISOString().slice(0,10)===value?value:null;}const d=new Date(value);if(!Number.isFinite(+d))return null;return new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);}
 export function days(a,b){return Math.round((Date.parse(b)-Date.parse(a))/DAY)}
+// Elapsed working days: exclude the requisition day, include the joining day.
+// Friday (5) and Saturday (6) are weekends; public holidays are not configured.
+export function workingDays(start,end){
+ const from=day(start),to=day(end);
+ if(!from||!to||to<from)return null;
+ const elapsed=days(from,to);
+ let count=Math.floor(elapsed/7)*5;
+ const weekday=new Date(from+'T00:00:00Z').getUTCDay();
+ for(let i=1;i<=elapsed%7;i++){const d=(weekday+i)%7;if(d!==5&&d!==6)count++;}
+ return count;
+}
 const shift=(date,n)=>new Date(Date.parse(date)+n*DAY).toISOString().slice(0,10);
 export function periodRange(mode,customStart,customEnd,now=new Date()) {const today=day(now);const [y,m]=today.split('-').map(Number);let start=mode==='Month'?`${y}-${String(m).padStart(2,'0')}-01`:mode==='Quarter'?`${y}-${String(Math.floor((m-1)/3)*3+1).padStart(2,'0')}-01`:`${y}-01-01`;let end=today;if(mode==='Custom'){start=customStart||start;end=customEnd&&customEnd<today?customEnd:today;}const valid=!!start&&!!end&&start<=end;const length=valid?days(start,end)+1:0;return {start,end,valid,previousStart:shift(start,-length),previousEnd:shift(start,-1),today};}
 export const within=(value,start,end)=>{const d=day(value);return !!d&&d>=start&&d<=end};
@@ -44,7 +55,7 @@ export function dashboardMetrics({jobs=[],candidates=[],applications=[],offers=[
   const linked=os.filter(o=>o.applicationId===a.id&&String(o.rawStatus||o.status).toLowerCase()==='accepted'&&(!o.jobId||o.jobId===a.jobId));
   const dates=[...new Set(linked.map(o=>day(o.startDate)))];
   const end=dates.length===1?dates[0]:null;
-  return start&&end&&end>=start&&end<=range.today?[{...record(a),requisitionDate:start,joiningDate:end,days:days(start,end)}]:[];
+  return start&&end&&end>=start&&end<=range.today?[{...record(a),requisitionDate:start,joiningDate:end,days:workingDays(start,end)}]:[];
  });const fillRows=fill(hires),previousFill=fill(previousHires);
  const decisionDate=o=>(o.rawStatus||'').toLowerCase()==='accepted'?o.acceptedAt:o.declinedAt;const decided=os.filter(o=>['accepted','declined'].includes((o.rawStatus||'').toLowerCase()));const decisions=decided.filter(o=>range.valid&&within(decisionDate(o),range.start,range.end));const prevDecisions=decided.filter(o=>range.valid&&within(decisionDate(o),range.previousStart,range.previousEnd));const rate=rows=>rows.length?rows.filter(o=>String(o.rawStatus).toLowerCase()==='accepted').length/rows.length*100:null;
  const open=js.filter(j=>j.status==='Open');const overdue=open.filter(j=>day(j.targetCloseDate)&&day(j.targetCloseDate)<range.today);const pending=os.filter(o=>o.rawStatus==='sent');const oldOffers=pending.filter(o=>day(o.sentAt)&&days(day(o.sentAt),range.today)>5);const veryOld=oldOffers.filter(o=>days(day(o.sentAt),range.today)>10);

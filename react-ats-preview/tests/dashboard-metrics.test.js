@@ -109,7 +109,7 @@ test('invalid dates and conflicting inactive stages do not inflate figures',asyn
 test('time to fill uses requisition to joining, not hire event, and reconciles department rows',()=>{
  const offers=[{applicationId:'a',jobId:'j',rawStatus:'accepted',startDate:'2026-01-30'}];
  const m=dashboardMetrics({jobs,candidates,applications,offers,range});
- assert.equal(m.fillMean,60);
+ assert.equal(m.fillMean,43);
  assert.equal(m.fillRows[0].joiningDate,'2026-01-30');
  assert.equal(m.fillRows[0].requisitionDate,'2025-12-01');
  assert.deepEqual(m.departments[0].fill,m.fillRows);
@@ -122,7 +122,7 @@ test('time to fill excludes missing, conflicting, reversed, future and unrelated
   const m=dashboardMetrics({jobs,candidates,applications,offers,range});assert.equal(m.fillMean,null);assert.equal(m.quality[2].rows.length,1);
  }
  assert.equal(dashboardMetrics({jobs:[{...jobs[0],recordedOpenDate:null,createdAt:'2025-12-01',openDate:'2025-12-01'}],applications,offers:[offer],range}).fillMean,null);
- assert.equal(dashboardMetrics({jobs,applications,offers:[offer,{...offer}],range}).fillMean,60);
+ assert.equal(dashboardMetrics({jobs,applications,offers:[offer,{...offer}],range}).fillMean,43);
 });
 test('time to fill target includes exactly 60 days',async()=>{
  const {timeToFillStatus,TIME_TO_FILL_TARGET}=await import('../src/dashboard-metrics.js');
@@ -137,4 +137,16 @@ test('recruiter workload measures open requested headcount, preserves zero load 
  assert.equal(m.workloadMean,8/3);
  assert.equal(m.recruiters[0].jobs.length,1);
  assert.equal(dashboardMetrics({jobs:positions,applications,range,department:'Other'}).recruiters.length,0);
+});
+
+test('working days exclude Fridays and Saturdays with elapsed-day boundaries',async()=>{
+ const {workingDays}=await import('../src/dashboard-metrics.js');
+ assert.equal(workingDays('2026-10-15','2026-10-18'),1); // Thursday to Sunday
+ assert.equal(workingDays('2026-10-15','2026-10-17'),0);
+ assert.equal(workingDays('2026-10-16','2026-10-18'),1);
+ assert.equal(workingDays('2026-10-18','2026-10-18'),0);
+ assert.equal(workingDays('2026-10-18','2026-10-25'),5);
+ assert.equal(workingDays('2026-10-18','2026-11-01'),10);
+ assert.equal(workingDays('2026-10-18','2026-10-17'),null);
+ assert.equal(workingDays(null,'2026-10-18'),null);
 });
