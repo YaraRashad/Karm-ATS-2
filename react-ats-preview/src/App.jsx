@@ -4275,6 +4275,7 @@ const extractCandidateName = (text) => {
 // ── PIPELINE PAGE ─────────────────────────────────────────────────────────────
 function PipelinePage({ applications, setApplications, candidates, setCandidates, jobs, setJobs, interviews, scorecards = [], roleConfig, openModal, backendActions, reloadData }) {
   const [filterRecruiter, setFilterRecruiter] = useState("All");
+  const [filterPositionType, setFilterPositionType] = useState("All");
   const [filterJob, setFilterJob] = useState("All");
   const [filterEntity, setFilterEntity] = useState("All");
   const [filterDept, setFilterDept] = useState("All");
@@ -4291,8 +4292,9 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
 
   const openJobs = jobs.filter(j => j.status === "Open");
   const deptOptions = Array.from(new Set(jobs.map(j => j.dept).filter(Boolean))).sort();
+  const positionTypeOptions = Array.from(new Set([...POSITION_TYPES, ...jobs.map(j => j.positionType).filter(Boolean)])).sort();
   const recruiterOptions = [...new Set(applications.flatMap(a => pipelineRecruiters(a, jobs)))].sort((a,b) => a.localeCompare(b));
-  useEffect(() => { setSelectedApps([]); }, [filterRecruiter, filterJob, filterEntity, filterDept, pipelineSearch, showDelayedOnly]);
+  useEffect(() => { setSelectedApps([]); }, [filterRecruiter, filterJob, filterEntity, filterDept, filterPositionType, pipelineSearch, showDelayedOnly]);
   const canMove = !!roleConfig.canMoveCandidates;
   const canUpload = !!roleConfig.canEditCandidates;
 
@@ -4309,6 +4311,7 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
     return (filterJob === "All" || String(a.jobId) === String(filterJob)) &&
       (filterEntity === "All" || (job && job.entity === filterEntity)) &&
       (filterDept === "All" || (job && job.dept === filterDept)) &&
+      (filterPositionType === "All" || (job && (job.positionType || "Manpower") === filterPositionType)) &&
       (!showDelayedOnly || (a.stage !== "Hired" && (a.daysInStage || 0) >= 5)) &&
       (!q || `${cand?.name} ${job?.title} ${a.stage} ${a.notes}`.toLowerCase().includes(q));
   });
@@ -4518,6 +4521,12 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
             <label className="form-label" htmlFor="pipeline-recruiter">Recruiter</label>
             <select id="pipeline-recruiter" className="form-select" value={filterRecruiter} onChange={e => setFilterRecruiter(e.target.value)}>
               <option value="All">All recruiters</option>{recruiterOptions.map(name => <option key={name} value={name}>{name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="form-label" htmlFor="pipeline-position-type">Position type</label>
+            <select id="pipeline-position-type" className="form-select" value={filterPositionType} onChange={e => setFilterPositionType(e.target.value)}>
+              <option value="All">All position types</option>{positionTypeOptions.map(type => <option key={type} value={type}>{type}</option>)}
             </select>
           </div>
           {canMove && selectedApps.length > 0 && (
