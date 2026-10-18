@@ -7060,6 +7060,8 @@ function ScorecardModal({ data, closeModal, ctx }) {
   const [scores, setScores] = useState({ knowledge: existingScore?.knowledge || 0, attitude: existingScore?.attitude || 0, feedback: existingScore?.feedback || 0 });
   const [recommendation, setRecommendation] = useState(existingScore?.recommendation || "");
   const [notes, setNotes] = useState(existingScore?.notes || "");
+  const [additionalFeedback, setAdditionalFeedback] = useState("");
+  const [addingFeedback, setAddingFeedback] = useState(false);
   const [saving, setSaving] = useState(false);
   const [completing, setCompleting] = useState(false);
 
@@ -7091,7 +7093,7 @@ function ScorecardModal({ data, closeModal, ctx }) {
     || (sessionEmail && activeInterviewerEmail && sessionEmail === activeInterviewerEmail)
   );
   const canSubmitActive = canSubmitInterviewScore({ role: ctx.sessionUser?.role || ctx.currentRole, canEditSubmitted, ownsInterview: ownsActiveInterview });
-  const readOnly = (!!activeScore && !canEditSubmitted) || !canSubmitActive;
+  const readOnly = !canSubmitActive;
   const completedCount = interviewTabs.filter(i => i.existingScore || findScorecardForInterview(ctx.scorecards, i)).length;
   const allScored = interviewTabs.length > 0 && completedCount === interviewTabs.length;
   const evaluationCompleteStage = "Interview Evaluation Completed";
@@ -7105,6 +7107,8 @@ function ScorecardModal({ data, closeModal, ctx }) {
     });
     setRecommendation(activeScore?.recommendation || "");
     setNotes(activeScore?.notes || "");
+    setAdditionalFeedback("");
+    setAddingFeedback(false);
   }, [activeInterview?.id, activeScore?.id, activeScore?.knowledge, activeScore?.attitude, activeScore?.feedback, activeScore?.recommendation, activeScore?.notes]);
 
   const avg = scores.knowledge && scores.attitude && scores.feedback
@@ -7143,11 +7147,12 @@ function ScorecardModal({ data, closeModal, ctx }) {
   );
 
   const submit = async () => {
-    if (!activeInterview || !recommendation || !scores.knowledge || !scores.attitude || !scores.feedback || saving) return;
+    if (readOnly || !activeInterview || !recommendation || !scores.knowledge || !scores.attitude || !scores.feedback || saving) return;
+    const savedNotes = additionalFeedback.trim() ? [notes.trim(), "Additional feedback:\n" + additionalFeedback.trim()].filter(Boolean).join("\n\n") : notes;
     setSaving(true);
     try {
       const saved = ctx.backendActions?.submitInterviewScore
-        ? await ctx.backendActions.submitInterviewScore(activeInterview.id, { scores, recommendation, notes })
+        ? await ctx.backendActions.submitInterviewScore(activeInterview.id, { scores, recommendation, notes: savedNotes })
         : null;
       const newSc = {
         id: saved?.id || activeScore?.id || `local-${Date.now()}`,
@@ -7159,7 +7164,7 @@ function ScorecardModal({ data, closeModal, ctx }) {
         attitude: scores.attitude,
         feedback: scores.feedback,
         recommendation,
-        notes,
+        notes: savedNotes,
         submittedDate: new Date().toISOString().split("T")[0],
       };
       ctx.setScorecards(prev => [...prev.filter(s => !scorecardMatchesInterview(s, activeInterview)), newSc]);
@@ -7235,7 +7240,7 @@ function ScorecardModal({ data, closeModal, ctx }) {
           {activeScore && (
             <div className="alert alert-info" style={{ marginBottom: 16 }}>
               <Icon name="alert" size={14} />
-              Scorecard submitted on {activeScore.submittedDate || "recorded date"}{canEditSubmitted ? " · You can edit and resubmit" : ""}
+              Scorecard submitted on {activeScore.submittedDate || "recorded date"}{!readOnly ? " · You can edit notes or add feedback, then update this scorecard" : ""}
             </div>
           )}
           {!canSubmitActive && !activeScore && (
@@ -7271,6 +7276,13 @@ function ScorecardModal({ data, closeModal, ctx }) {
             <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 6 }}>
               Notes are visible to authorized recruiters, hiring managers, interviewers, and Admins working on this candidate.
             </div>
+            {!readOnly && activeScore && !addingFeedback && <button type="button" className="btn btn-ghost" style={{ marginTop: 10 }} onClick={() => setAddingFeedback(true)}>Add feedback</button>}
+            {!readOnly && addingFeedback && <div style={{ marginTop: 12 }}>
+              <label className="form-label" htmlFor="additional-scorecard-feedback">Additional feedback</label>
+              <textarea id="additional-scorecard-feedback" className="form-textarea" value={additionalFeedback} onChange={e => setAdditionalFeedback(e.target.value)} placeholder="Add a follow-up without replacing the existing notes..." />
+              <small>This will be appended to Notes when you click Update Scorecard.</small>
+              <button type="button" className="btn btn-ghost" onClick={() => { setAdditionalFeedback(""); setAddingFeedback(false); }}>Cancel additional feedback</button>
+            </div>}
           </div>
 
           {allScored && (
