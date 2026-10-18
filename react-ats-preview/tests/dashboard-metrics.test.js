@@ -129,3 +129,12 @@ test('time to fill target includes exactly 60 days',async()=>{
  assert.equal(TIME_TO_FILL_TARGET,60);
  assert.equal(timeToFillStatus(60),'good');assert.equal(timeToFillStatus(60.1),'risk');assert.equal(timeToFillStatus(null),'neutral');
 });
+
+test('recruiter workload measures open requested headcount, preserves zero load and scopes departments',()=>{
+ const positions=[{...jobs[0],headcount:4},{...jobs[0],id:'closed',status:'Closed',headcount:20},{...jobs[0],id:'draft',status:'Draft',headcount:10}];
+ const m=dashboardMetrics({jobs:positions,applications,range,users:[{id:'zero',role:'Recruiter',name:'Zero'}]});
+ assert.deepEqual(m.recruiters.map(r=>r.activeHC),[4,4,0]);
+ assert.equal(m.workloadMean,8/3);
+ assert.equal(m.recruiters[0].jobs.length,1);
+ assert.equal(dashboardMetrics({jobs:positions,applications,range,department:'Other'}).recruiters.length,0);
+});
