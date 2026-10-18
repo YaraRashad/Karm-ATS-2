@@ -12,13 +12,14 @@ import { Router } from 'express';
 import { body, validationResult } from 'express-validator';
 import { prisma } from '../lib/prisma.js';
 import {
-  ok, created, noContent, badRequest, notFound, unprocessable, paginated,
+  ok, created, noContent, badRequest, notFound, unprocessable, paginated, forbidden,
 } from '../lib/response.js';
 import {
   authenticate, scopeToUserEntities,
   requireRoles, CAN_WRITE_CANDIDATES,
   buildApplicationScopeWhere, stripSalaryFields, ROLES,
 } from '../middleware/auth.js';
+import { canSetHired, requestsHired } from '../lib/hiringPermissions.js';
 import { auditLog } from '../lib/audit.js';
 
 export const applicationsRouter = Router();
@@ -310,6 +311,9 @@ applicationsRouter.patch(
     if (!validate(req, res)) return;
     try {
       const { stage, reason, displayStage } = req.body;
+      if (requestsHired(stage, displayStage) && !canSetHired(req.user.role)) {
+        return forbidden(res, 'Only admins can move candidates to Hired.');
+      }
       const application = await prisma.application.findFirst({
         where: { id: req.params.id, ...buildApplicationScopeWhere(req.user) },
         select: { id: true, stage: true, displayStage: true, isActive: true, disqualifyReason: true },

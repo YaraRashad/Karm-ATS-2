@@ -1114,6 +1114,7 @@ function LegacyAtsApp({ sessionUser, backendData, dataError, reloadData, logout:
   const roleConfig = {
     ...(ROLES_CONFIG[currentRole] || { ...ROLE_PERMISSIONS["Admin"], ...TEAM[9] }),
     ...sessionBase,
+    canHireCandidates: currentRole === "Admin",
     canApproveOffer: !!sessionUser.canApproveOffers,
     canApproveRequisition: !!sessionUser.canApproveRequisitions,
   };
@@ -4323,7 +4324,7 @@ function PipelinePage({ applications, setApplications, candidates, setCandidates
   };
 
   const moveApplications = async (ids, stage, notes = "") => {
-    if (!canMove) return;
+    if (!canMove || (stage === "Hired" && !roleConfig.canHireCandidates)) return;
     try {
       await Promise.all(ids.map(id => backendActions.moveApplication(id, { stage: STAGE_TO_BACKEND[stage] || "applied", displayStage: stage, reason: notes })));
       await reloadData?.();
@@ -5208,7 +5209,7 @@ function OffersPage({ offers, setOffers, applications, candidates, jobs, roleCon
     return value === "accepted" ? "Accepted" : value === "declined" ? "Declined" : "Draft";
   };
   const setOfferDecisionStatus = async (offer, nextStatus) => {
-    if (!backendActions?.updateOfferCandidateStatus) return;
+    if (!backendActions?.updateOfferCandidateStatus || (nextStatus === "accepted" && !roleConfig.canHireCandidates)) return;
     setSavingOfferStatusId(offer.id);
     try {
       await backendActions.updateOfferCandidateStatus(offer.id, {
@@ -5345,7 +5346,7 @@ function OffersPage({ offers, setOffers, applications, candidates, jobs, roleCon
                         style={{ minWidth: 120 }}
                       >
                         <option value="draft">Draft</option>
-                        <option value="accepted">Accepted</option>
+                        <option value="accepted" disabled={!roleConfig.canHireCandidates}>Accepted{!roleConfig.canHireCandidates ? " (Admin only)" : ""}</option>
                         <option value="declined">Declined</option>
                       </select>
                     </td>
@@ -6515,7 +6516,7 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
   }, [showCvPreview, cvUrl]);
 
   const saveStage = async () => {
-    if (!canMoveCandidate) return;
+    if (!canMoveCandidate || (selectedStage === "Hired" && !ctx.roleConfig.canHireCandidates)) return;
     try {
       if (selectedStage === "Rejected") {
         await ctx.backendActions.rejectApplication(activeApp.id, { reason: moveNotes.trim() || "Rejected from candidate profile" });
@@ -6833,7 +6834,7 @@ function ViewCandidateModal({ data, closeModal, ctx }) {
                 <div style={{ background: "var(--bg3)", borderRadius: "var(--radius)", padding: "16px", marginBottom: 16, border: "1px solid var(--border2)" }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", marginBottom: 12 }}>Move to stage</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 12 }}>
-                    {STAGES.map(stage => (
+                    {STAGES.filter(stage => stage !== "Hired" || ctx.roleConfig.canHireCandidates).map(stage => (
                       <div key={stage} onClick={() => setSelectedStage(stage)} style={{ padding: "8px 10px", borderRadius: "var(--radius)", border: `1px solid ${selectedStage === stage ? stageColor(stage) : "var(--border)"}`, background: selectedStage === stage ? stageColor(stage) + "18" : "transparent", cursor: "pointer", display: "flex", alignItems: "center", gap: 7 }}>
                         <div style={{ width: 7, height: 7, borderRadius: "50%", background: stageColor(stage), flexShrink: 0 }} />
                         <span style={{ fontSize: 11, color: selectedStage === stage ? "var(--text)" : "var(--text2)", fontWeight: selectedStage === stage ? 500 : 400 }}>{stage}</span>
@@ -6979,6 +6980,7 @@ function MoveStageModal({ data, closeModal, ctx }) {
   const requiresReason = selectedStage === "Rejected" || isBackwardMove(app.stage, selectedStage);
 
   const save = async () => {
+    if (selectedStage === "Hired" && !ctx.roleConfig.canHireCandidates) return;
     if (requiresReason && !notes.trim()) return;
     try {
       if (selectedStage === "Rejected") {
@@ -7025,7 +7027,7 @@ function MoveStageModal({ data, closeModal, ctx }) {
           <div className="form-group">
             <label className="form-label">Move to stage</label>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              {STAGES.map(stage => (
+              {STAGES.filter(stage => stage !== "Hired" || ctx.roleConfig.canHireCandidates).map(stage => (
                 <div key={stage} onClick={() => setSelectedStage(stage)} style={{ padding: "9px 12px", borderRadius: "var(--radius)", border: `1px solid ${selectedStage === stage ? stageColor(stage) : "var(--border)"}`, background: selectedStage === stage ? stageColor(stage) + "18" : "var(--bg3)", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, transition: "all 0.1s" }}>
                   <div style={{ width: 8, height: 8, borderRadius: "50%", background: stageColor(stage), flexShrink: 0 }} />
                   <span style={{ fontSize: 12, color: selectedStage === stage ? "var(--text)" : "var(--text2)", fontWeight: selectedStage === stage ? 500 : 400 }}>{stage}</span>

@@ -12,6 +12,7 @@
 // POST   /api/v1/offers/:id/trigger-onboarding
 // GET    /api/v1/offers/:id/letter             — rendered letter content
 
+import { canSetHired } from '../lib/hiringPermissions.js';
 import { Router } from 'express';
 import { body, validationResult } from 'express-validator';
 import { prisma } from '../lib/prisma.js';
@@ -553,6 +554,7 @@ offersRouter.patch(
     if (!validate(req, res)) return;
     try {
       const { status, reason } = req.body;
+      if (status === 'accepted' && !canSetHired(req.user.role)) return forbidden(res, 'Only admins can accept offers and move candidates to Hired.');
       const offer = await prisma.offer.findUnique({ where: { id: req.params.id } });
       if (!offer) return notFound(res, 'Offer');
 
@@ -603,7 +605,7 @@ offersRouter.patch(
 );
 
 // ── POST /offers/:id/mark-accepted ────────────────────────────────────
-offersRouter.post('/:id/mark-accepted', canModifyOffer, async (req, res, next) => {
+offersRouter.post('/:id/mark-accepted', canModifyOffer, requireRoles([ROLES.ADMIN]), async (req, res, next) => {
   try {
     const offer = await prisma.offer.findUnique({ where: { id: req.params.id } });
     if (!offer) return notFound(res, 'Offer');
