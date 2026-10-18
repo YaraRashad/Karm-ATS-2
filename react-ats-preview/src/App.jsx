@@ -3057,14 +3057,14 @@ function JobsPage({ jobs, setJobs, applications, candidates, offers = [], roleCo
     }
     return { text: "Not recorded", title: "Approval date was not captured for this requisition." };
   };
-  const requisitionStatusOptions = ["Open", "Draft", "Closed"];
+  const requisitionStatusOptions = ["Open", "Draft", "Closed", "On Hold"];
   const liveStatusOptions = Array.from(new Set(jobs.map(j => statusDisplayLabel(j.status)).filter(Boolean)));
   const statusOptions = Array.from(new Set([
     ...requisitionStatusOptions,
     ...liveStatusOptions,
   ]));
   const entityOptions = Array.from(new Set(jobs.map(j => entityDisplayLabel(j.entity)).filter(Boolean))).sort();
-  const deptOptions = Array.from(new Set([...DEPARTMENTS, ...jobs.map(j => j.dept).filter(Boolean)]))
+  const deptOptions = Array.from(new Set([...DEPARTMENTS, "PMO", ...jobs.map(j => j.dept).filter(Boolean)]))
     .filter(department => !["generation", "distribution", "management"].includes(department.trim().toLowerCase()))
     .sort();
   const positionTypeOptions = Array.from(new Set([...POSITION_TYPES, ...jobs.map(j => j.positionType).filter(Boolean)])).sort();
