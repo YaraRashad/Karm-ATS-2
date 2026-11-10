@@ -43,6 +43,7 @@ const positionBody = [
   body('salaryMin').isInt({ min: 0 }).withMessage('Salary min must be positive integer'),
   body('salaryMax').isInt({ min: 0 }).withMessage('Salary max must be positive integer'),
   body('headcount').optional().isInt({ min: 1 }).withMessage('Headcount must be at least 1'),
+  body('status').optional().isIn(['draft','open','on_hold']),
   body('priority').isIn(['low','normal','high','urgent']).optional(),
   body('requirements').isArray().optional(),
   body('description').isString().optional(),
@@ -223,6 +224,7 @@ positionsRouter.post(
         requirements, targetCloseDate, headcountRationale,
       } = req.body;
 
+      if (req.body.status === 'on_hold' && req.user.role !== ROLES.ADMIN) return forbidden(res, 'Only admins can create an On Hold requisition');
       let replacement;
       try { replacement = replacementFields(req.body); }
       catch (error) { return badRequest(res, error.message); }
@@ -253,7 +255,7 @@ positionsRouter.post(
           currency, salaryMin, salaryMax,
           priority: priority || 'normal',
           headcount: Number(headcount || 1),
-          status: 'draft',
+          status: req.body.status === 'on_hold' ? 'on_hold' : 'draft',
           headcountStatus: 'pending',
           hiringManagerId,
           recruiterId: req.user.id,

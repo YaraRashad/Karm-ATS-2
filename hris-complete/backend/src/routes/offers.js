@@ -1,3 +1,4 @@
+import { offerHireHistory } from '../lib/offerHireHistory.js';
 // ─── Offers Routes ────────────────────────────────────────────────────
 // GET    /api/v1/offers
 // POST   /api/v1/offers
@@ -330,6 +331,29 @@ offersRouter.get('/:id', requireRoles(CAN_READ_OFFERS), async (req, res, next) =
   } catch (err) { next(err); }
 });
 
+// Admin can correct the joining date without changing the offer decision.
+offersRouter.patch('/:id/start-date', requireRoles([ROLES.ADMIN]), [
+  body('startDate').isString().matches(/^\d{4}-\d{2}-\d{2}$/).isISO8601({ strict: true }),
+], async (req, res, next) => {
+  if (!validate(req, res)) return;
+  try {
+    const offer = await prisma.offer.findFirst({ where: {
+      id: req.params.id, deletedAt: null,
+      application: buildApplicationScopeWhere(req.user),
+    } });
+    if (!offer) return notFound(res, 'Offer');
+    const startDate = new Date(req.body.startDate + 'T00:00:00Z');
+    const [updated] = await prisma.$transaction([
+      prisma.offer.update({ where: { id: offer.id }, data: { startDate } }),
+      prisma.offerHistory.create({ data: {
+        offerId: offer.id, event: 'Start date updated', actorName: req.user.name, actorId: req.user.id,
+        metadata: { before: offer.startDate?.toISOString() || null, after: startDate.toISOString() },
+      } }),
+    ]);
+    return ok(res, { id: updated.id, startDate: updated.startDate });
+  } catch (err) { next(err); }
+});
+
 // ── POST /offers/:id/submit ───────────────────────────────────────────
 offersRouter.post('/:id/submit', canModifyOffer, async (req, res, next) => {
   try {
@@ -555,12 +579,12 @@ offersRouter.patch(
     try {
       const { status, reason } = req.body;
       if (status === 'accepted' && !canSetHired(req.user.role)) return forbidden(res, 'Only admins can accept offers and move candidates to Hired.');
-      const offer = await prisma.offer.findUnique({ where: { id: req.params.id } });
+      const offer = await prisma.offer.findFirst({ where: { id: req.params.id, deletedAt: null, application: buildApplicationScopeWhere(req.user) }, include: { application: { include: { stageHistory: true } } } });
       if (!offer) return notFound(res, 'Offer');
 
       const now = new Date();
       const offerData = status === 'accepted'
-        ? { status: 'accepted', acceptedAt: now, declinedAt: null, declineReason: null, declineNotes: null }
+        ? { status: 'accepted', acceptedAt: offer.acceptedAt || now, declinedAt: null, declineReason: null, declineNotes: null }
         : status === 'declined'
           ? { status: 'declined', declinedAt: now, declineReason: reason || 'Candidate declined', declineNotes: null }
           : { status: 'draft', acceptedAt: null, declinedAt: null, declineReason: null, declineNotes: null };
@@ -578,7 +602,7 @@ offersRouter.patch(
         }),
         prisma.application.update({
           where: { id: offer.applicationId },
-          data: applicationData,
+          data: { ...applicationData, ...(status === 'accepted' ? offerHireHistory(offer.application, offer.acceptedAt || now, req.user.id) : {}) },
         }),
         prisma.offerHistory.create({
           data: {
@@ -607,21 +631,22 @@ offersRouter.patch(
 // ── POST /offers/:id/mark-accepted ────────────────────────────────────
 offersRouter.post('/:id/mark-accepted', canModifyOffer, requireRoles([ROLES.ADMIN]), async (req, res, next) => {
   try {
-    const offer = await prisma.offer.findUnique({ where: { id: req.params.id } });
+    const offer = await prisma.offer.findFirst({ where: { id: req.params.id, deletedAt: null, application: buildApplicationScopeWhere(req.user) }, include: { application: { include: { stageHistory: true } } } });
     if (!offer) return notFound(res, 'Offer');
     if (!['draft', 'approved', 'sent'].includes(offer.status)) {
       return unprocessable(res, 'Only draft, approved, or sent offers can be accepted');
     }
 
+    const now = new Date();
     const [updated] = await prisma.$transaction([
       prisma.offer.update({
         where: { id: req.params.id },
-        data:  { status: 'accepted', acceptedAt: new Date() },
+        data:  { status: 'accepted', acceptedAt: now },
       }),
       // Move application to hired
       prisma.application.update({
         where: { id: offer.applicationId },
-        data:  { stage: 'hired', displayStage: 'Hired', stageEnteredAt: new Date(), isActive: true, disqualifyReason: null },
+        data:  { stage: 'hired', displayStage: 'Hired', stageEnteredAt: now, isActive: true, disqualifyReason: null, ...offerHireHistory(offer.application, now, req.user.id) },
       }),
       prisma.offerHistory.create({
         data: {

@@ -494,6 +494,7 @@ export async function fetchAtsData({ includeAudit = false, includeUsers = false 
 }
 
 export const backendActions = {
+  updateOfferStartDate: (id, startDate) => api(`/offers/${id}/start-date`, { method: "PATCH", body: JSON.stringify({ startDate }) }),
   deleteOffer: id => api(`/offers/${id}`, { method: "DELETE" }),
   createCandidate: (payload) => api("/candidates", {
     method: "POST",
@@ -513,6 +514,7 @@ export const backendActions = {
     method: "POST",
     body: JSON.stringify({
       title: payload.title,
+      status: ({Open:"open",Draft:"draft","On Hold":"on_hold"})[payload.status] || "draft",
       departmentName: payload.dept,
       entity: entityToApi[payload.entity] || "egypt",
       seniority: seniorityToApi[payload.level] || "mid",

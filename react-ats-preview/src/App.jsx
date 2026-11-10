@@ -2821,7 +2821,7 @@ function JobDetailModal({ job, applications, candidates, jobs, setJobs, openModa
               <ReplacementNameField form={form} set={set} />
               <div className="form-row">
                 <div className="form-group"><label className="form-label">Headcount</label><input className="form-input" type="number" min="1" value={form.headcount} onChange={e => set("headcount", parseInt(e.target.value) || 1)} /></div>
-                <div className="form-group"><label className="form-label">Status</label><select className="form-select" value={form.status} onChange={e => set("status", e.target.value)}><option>Open</option><option>Draft</option><option>Closed</option></select></div>
+                <div className="form-group"><label className="form-label">Status</label><select className="form-select" value={form.status} onChange={e => set("status", e.target.value)}><option>Open</option><option>Draft</option><option>Closed</option><option>On Hold</option></select></div>
               </div>
               <div className="form-row">
                 <div className="form-group"><label className="form-label">Salary min (EGP)</label><input className="form-input" type="number" value={form.salaryMin} onChange={e => set("salaryMin", parseFloat(e.target.value) || 0)} /></div>
@@ -6327,7 +6327,7 @@ function AddJobModal({ data, closeModal, ctx }) {
           <ReplacementNameField form={form} set={set} />
           <div className="form-row">
             <div className="form-group"><label className="form-label">Headcount</label><input className="form-input" type="number" min="1" value={form.headcount} onChange={e => set("headcount", e.target.value)} /></div>
-            <div className="form-group"><label className="form-label">Initial status</label><select className="form-select" value={form.status} onChange={e => set("status", e.target.value)}><option>Draft</option><option>Open</option></select></div>
+            <div className="form-group"><label className="form-label">Initial status</label><select className="form-select" value={form.status} onChange={e => set("status", e.target.value)}><option>Draft</option><option>Open</option>{ctx.roleConfig.canHireCandidates && <option>On Hold</option>}</select></div>
           </div>
           {ctx.canViewSalary ? (
             <div className="form-row">
@@ -7414,7 +7414,24 @@ function AddOfferModal({ data, closeModal, ctx }) {
 }
 
 function ViewOfferModal({ data, closeModal, ctx }) {
-  const { offer } = data;
+  const offer = { ...data.offer, ...ctx.offers?.find(o => o.id === data.offer.id) };
+  const [startDate, setStartDate] = useState(offer.startDate || "");
+  const [savingDate, setSavingDate] = useState(false);
+  const [dateMessage, setDateMessage] = useState("");
+  const canEditDate = !!ctx.roleConfig.canHireCandidates;
+  const saveStartDate = async () => {
+    if (!canEditDate || !startDate || savingDate) return;
+    setSavingDate(true); setDateMessage("");
+    try {
+      const saved = await ctx.backendActions.updateOfferStartDate(offer.id, startDate);
+      const value = saved.startDate.slice(0, 10);
+      ctx.setOffers(prev => prev.map(o => o.id === offer.id ? { ...o, startDate: value } : o));
+      setStartDate(value);
+      setDateMessage("Start date saved.");
+      await ctx.reloadData?.();
+    } catch (error) { setDateMessage(error.message || "Could not save start date."); }
+    finally { setSavingDate(false); }
+  };
   const { cand, job, app } = offer;
   const canViewSalary = !!ctx.canViewSalary;
   const isPlaceholderName = (value) => {
@@ -7460,7 +7477,11 @@ function ViewOfferModal({ data, closeModal, ctx }) {
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
               <div><div className="form-label">Proposed salary</div><div style={{ fontSize: 22, fontWeight: 600, color: "var(--accent)", fontFamily: "var(--mono)" }}>{canViewSalary ? <>{offer.salary.toLocaleString()} <span style={{ fontSize: 13, color: "var(--text3)" }}>{offer.currency}</span></> : "Restricted"}</div></div>
-              <div><div className="form-label">Start date</div><div style={{ fontSize: 15, fontWeight: 500, color: "var(--text)" }}>{offer.startDate}</div></div>
+              <div><label className="form-label" htmlFor="offer-start-date">Start date</label>{canEditDate ? <>
+                <input id="offer-start-date" className="form-input" type="date" value={startDate} disabled={savingDate} onChange={e => { setStartDate(e.target.value); setDateMessage(""); }} />
+                <button className="btn btn-primary" style={{ marginTop: 8 }} disabled={savingDate || !startDate || startDate === offer.startDate} onClick={saveStartDate}>{savingDate ? "Saving..." : "Save start date"}</button>
+                <div role="status" style={{ marginTop: 6 }}>{dateMessage}</div>
+              </> : <div>{offer.startDate || "Not recorded"}</div>}</div>
               <div><div className="form-label">Basic salary</div><div style={{ fontSize: 13, color: "var(--text2)", fontFamily: "var(--mono)" }}>{canViewSalary ? `${basicSalary.toLocaleString()} ${offer.currency}` : "Restricted"}</div></div>
               <div><div className="form-label">Variable pay</div><div style={{ fontSize: 13, color: "var(--text2)", fontFamily: "var(--mono)" }}>{canViewSalary ? `${variablePay.toLocaleString()} ${offer.currency}` : "Restricted"}</div></div>
               <div><div className="form-label">Created by</div><div style={{ fontSize: 13, color: "var(--text2)" }}>{createdByName}</div></div>
